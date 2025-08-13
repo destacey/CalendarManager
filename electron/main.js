@@ -41,6 +41,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    frame: false,
+    titleBarStyle: 'hiddenInset',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -55,8 +57,8 @@ function createWindow() {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           process.env.NODE_ENV === 'development' 
-            ? "default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:3000 ws://localhost:3000; img-src 'self' data: blob:; font-src 'self' data:;"
-            : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self';"
+            ? "default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:3000 ws://localhost:3000 https://login.microsoftonline.com https://login.live.com https://aadcdn.msauth.net https://aadcdn.msftauth.net; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:3000 https://login.microsoftonline.com https://login.live.com https://aadcdn.msauth.net https://aadcdn.msftauth.net; style-src 'self' 'unsafe-inline' https://aadcdn.msauth.net https://aadcdn.msftauth.net; img-src 'self' data: blob: https://aadcdn.msauth.net https://aadcdn.msftauth.net https://login.live.com; font-src 'self' data: https://aadcdn.msauth.net https://aadcdn.msftauth.net; connect-src 'self' ws://localhost:3000 https://login.microsoftonline.com https://graph.microsoft.com https://login.live.com;"
+            : "default-src 'self' https://login.microsoftonline.com https://login.live.com https://aadcdn.msauth.net https://aadcdn.msftauth.net; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://login.microsoftonline.com https://login.live.com https://aadcdn.msauth.net https://aadcdn.msftauth.net; style-src 'self' 'unsafe-inline' https://aadcdn.msauth.net https://aadcdn.msftauth.net; img-src 'self' data: blob: https://aadcdn.msauth.net https://aadcdn.msftauth.net https://login.live.com; font-src 'self' data: https://aadcdn.msauth.net https://aadcdn.msftauth.net; connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com https://login.live.com;"
         ]
       }
     });
@@ -73,6 +75,7 @@ function createWindow() {
 app.whenReady().then(() => {
   initDatabase();
   createWindow();
+  setupWindowStateEvents();
 });
 
 app.on('window-all-closed', () => {
@@ -179,3 +182,37 @@ ipcMain.handle('db:createCategory', (event, categoryData) => {
   const result = stmt.run(categoryData.name, categoryData.color);
   return { id: result.lastInsertRowid, ...categoryData };
 });
+
+// Window controls
+ipcMain.handle('window:minimize', () => {
+  mainWindow?.minimize();
+});
+
+ipcMain.handle('window:maximize', () => {
+  if (mainWindow?.isMaximized()) {
+    mainWindow.restore();
+  } else {
+    mainWindow?.maximize();
+  }
+});
+
+ipcMain.handle('window:close', () => {
+  mainWindow?.close();
+});
+
+ipcMain.handle('window:isMaximized', () => {
+  return mainWindow?.isMaximized() || false;
+});
+
+// Window state change events
+function setupWindowStateEvents() {
+  if (mainWindow) {
+    mainWindow.on('maximize', () => {
+      mainWindow.webContents.send('window-state-change', true);
+    });
+    
+    mainWindow.on('unmaximize', () => {
+      mainWindow.webContents.send('window-state-change', false);
+    });
+  }
+}

@@ -34,6 +34,9 @@
   },
   "dependencies": {
     "@ant-design/v5-patch-for-react-19": "^1.0.3",
+    "@azure/msal-browser": "^4.19.0",
+    "@azure/msal-node": "^3.7.0",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
     "antd": "^5.26.7",
     "better-sqlite3": "^12.2.0",
     "dayjs": "^1.11.13",

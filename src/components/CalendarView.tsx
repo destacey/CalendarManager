@@ -133,8 +133,14 @@ const CalendarView: React.FC = () => {
   }
 
   return (
-    <div className="calendar-container">
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div className="calendar-container-responsive">
+      <div style={{ 
+        marginBottom: 16, 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        flexShrink: 0
+      }}>
         <h2 style={{ margin: 0 }}>Calendar View</h2>
         <Button 
           icon={<SyncOutlined />} 
@@ -145,9 +151,15 @@ const CalendarView: React.FC = () => {
         </Button>
       </div>
       
-      <Calendar
-        cellRender={cellRender}
-      />
+      <div style={{ 
+        flex: 1, 
+        display: 'flex',
+        flexDirection: 'column'
+      }}>
+        <Calendar
+          cellRender={cellRender}
+        />
+      </div>
 
       <Modal
         title={

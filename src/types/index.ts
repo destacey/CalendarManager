@@ -62,16 +62,42 @@ export interface Category {
 }
 
 export interface ElectronAPI {
-  // Read operations
+  // Database operations
   getEvents: () => Promise<Event[]>
+  createEvent: (eventData: Event) => Promise<Event>
+  updateEvent: (id: number, eventData: Event) => Promise<Event>
+  deleteEvent: (id: number) => Promise<boolean>
+  
+  // Category management
   getCategories: () => Promise<Category[]>
+  createCategory: (categoryData: Category) => Promise<Category>
   
   // Microsoft Graph sync
-  syncGraphEvents: (events: GraphEvent[]) => Promise<void>
+  syncGraphEvents: (events: GraphEvent[]) => Promise<{ synced: number }>
+  
+  // File operations
+  openFile: () => Promise<any>
+  saveFile: (content: string) => Promise<any>
+  onMenuAction: (callback: (event: any, action: string) => void) => void
+  removeAllListeners: (channel: string) => void
+  
+  // Window controls
+  minimizeWindow: () => Promise<void>
+  maximizeWindow: () => Promise<void>
+  closeWindow: () => Promise<void>
+  isWindowMaximized: () => Promise<boolean>
+  onWindowStateChange: (callback: (event: any, maximized: boolean) => void) => void
 }
 
 declare global {
   interface Window {
-    electronAPI: ElectronAPI
+    electronAPI?: ElectronAPI
+  }
+}
+
+// Extend CSSProperties to include Webkit properties for Electron
+declare module 'react' {
+  interface CSSProperties {
+    WebkitAppRegion?: 'drag' | 'no-drag';
   }
 }
