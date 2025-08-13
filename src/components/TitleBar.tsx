@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button, Space } from 'antd';
 import { MinusOutlined, BorderOutlined, CloseOutlined, BlockOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
 import UserMenu from './UserMenu';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface TitleBarProps {
   showUserMenu?: boolean;
@@ -19,6 +20,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
   sideNavCollapsed = false 
 }) => {
   const [isMaximized, setIsMaximized] = useState(false);
+  const { themeMode } = useTheme();
 
   useEffect(() => {
     // Check initial window state
@@ -71,16 +73,23 @@ const TitleBar: React.FC<TitleBarProps> = ({
     }
   };
 
+  const titleBarColors = {
+    background: themeMode === 'dark' ? '#141414' : '#f5f5f5',
+    border: themeMode === 'dark' ? '#434343' : '#d9d9d9',
+    text: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.85)' : '#666',
+    buttonText: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.65)' : '#666'
+  };
+
   return (
     <div
       style={{
         height: '32px',
-        background: '#f5f5f5',
+        background: titleBarColors.background,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '0 12px',
-        borderBottom: '1px solid #d9d9d9',
+        borderBottom: `1px solid ${titleBarColors.border}`,
         WebkitAppRegion: 'drag',
         userSelect: 'none',
       }}
@@ -97,13 +106,13 @@ const TitleBar: React.FC<TitleBarProps> = ({
             onClick={onMenuToggle}
             style={{ 
               WebkitAppRegion: 'no-drag',
-              color: '#666',
+              color: titleBarColors.buttonText,
               border: 'none'
             }}
             title={sideNavCollapsed ? 'Expand menu' : 'Collapse menu'}
           />
         )}
-        <div style={{ fontSize: '14px', fontWeight: 500, color: '#666' }}>
+        <div style={{ fontSize: '14px', fontWeight: 500, color: titleBarColors.text }}>
           Calendar Manager
         </div>
       </div>
@@ -124,7 +133,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
                 width: '32px', 
                 height: '32px',
                 border: 'none',
-                color: '#666'
+                color: titleBarColors.buttonText
               }}
             />
             <Button
@@ -140,7 +149,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
                 width: '32px', 
                 height: '32px',
                 border: 'none',
-                color: '#666'
+                color: titleBarColors.buttonText
               }}
             />
             <Button
@@ -152,7 +161,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
                 width: '32px', 
                 height: '32px',
                 border: 'none',
-                color: '#666'
+                color: titleBarColors.buttonText
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = '#ff4d4f';
@@ -160,7 +169,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.color = '#666';
+                e.currentTarget.style.color = titleBarColors.buttonText;
               }}
             />
           </Space>

@@ -2,6 +2,7 @@ import React from 'react'
 import { Layout, Menu } from 'antd'
 import { HomeOutlined, CalendarOutlined, SettingOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
+import { useTheme } from '../contexts/ThemeContext'
 
 const { Sider } = Layout
 
@@ -36,16 +37,23 @@ const SideNavigation: React.FC<SideNavigationProps> = ({
   selectedKey = 'home',
   onMenuSelect
 }) => {
+  const { themeMode } = useTheme()
+  
   const handleMenuClick = ({ key }: { key: string }) => {
     onMenuSelect?.(key)
+  }
+
+  const sideNavColors = {
+    background: themeMode === 'dark' ? '#141414' : '#fff',
+    border: themeMode === 'dark' ? '#434343' : '#f0f0f0'
   }
 
   return (
     <Sider
       collapsed={collapsed}
       style={{
-        background: '#fff',
-        borderRight: '1px solid #f0f0f0',
+        background: sideNavColors.background,
+        borderRight: `1px solid ${sideNavColors.border}`,
         height: 'calc(100vh - 32px)',
         position: 'fixed',
         left: 0,

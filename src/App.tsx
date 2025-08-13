@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { ConfigProvider, Layout, theme, App as AntApp } from 'antd'
+import { ConfigProvider, Layout, App as AntApp } from 'antd'
 import CalendarView from './components/CalendarView'
 import AppSetup from './components/AppSetup'
 import Login from './components/Login'
 import TitleBar from './components/TitleBar'
 import LoadingScreen from './components/LoadingScreen'
 import SideNavigation from './components/SideNavigation'
+import { ThemeProvider, useTheme } from './contexts/ThemeContext'
 import { storageService } from './services/storage'
 import { authService } from './services/auth'
 import './App.css'
@@ -88,12 +89,7 @@ function AppContent() {
     switch (selectedNavKey) {
       case 'home':
         return (
-          <div style={{ 
-            padding: '24px',
-            background: '#f5f5f5',
-            borderRadius: '8px',
-            margin: '16px 0'
-          }}>
+          <div className="side-nav-content">
             <h1>Welcome to Calendar Manager</h1>
             <p>Select Calendar from the sidebar to view your events, or Settings to configure the application.</p>
           </div>
@@ -102,12 +98,7 @@ function AppContent() {
         return <CalendarView />
       case 'settings':
         return (
-          <div style={{ 
-            padding: '24px',
-            background: '#f5f5f5',
-            borderRadius: '8px',
-            margin: '16px 0'
-          }}>
+          <div className="side-nav-content">
             <h2>Settings</h2>
             <p>Settings panel coming soon...</p>
           </div>
@@ -186,20 +177,23 @@ function AppContent() {
   return renderContent()
 }
 
-function App() {
+function ThemedAppContent() {
+  const { antdTheme } = useTheme()
+  
   return (
-    <ConfigProvider
-      theme={{
-        algorithm: theme.defaultAlgorithm,
-        token: {
-          colorPrimary: '#1890ff',
-        },
-      }}
-    >
+    <ConfigProvider theme={antdTheme}>
       <AntApp>
         <AppContent />
       </AntApp>
     </ConfigProvider>
+  )
+}
+
+function App() {
+  return (
+    <ThemeProvider>
+      <ThemedAppContent />
+    </ThemeProvider>
   )
 }
 

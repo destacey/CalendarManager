@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Dropdown, Avatar, Typography, Space, Button } from 'antd';
-import { UserOutlined, LogoutOutlined, LoadingOutlined } from '@ant-design/icons';
+import { Dropdown, Avatar, Typography, Space, Button, Switch } from 'antd';
+import { UserOutlined, LogoutOutlined, LoadingOutlined, MoonOutlined, SunOutlined } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { authService } from '../services/auth';
+import { useTheme } from '../contexts/ThemeContext';
 
 const { Text } = Typography;
 
@@ -20,6 +21,7 @@ interface UserInfo {
 const UserMenu: React.FC<UserMenuProps> = ({ onLogout }) => {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const { themeMode, toggleTheme } = useTheme();
 
   useEffect(() => {
     const fetchUserInfo = async () => {
@@ -73,6 +75,28 @@ const UserMenu: React.FC<UserMenuProps> = ({ onLogout }) => {
         </div>
       ),
       disabled: true,
+    },
+    {
+      type: 'divider',
+    },
+    {
+      key: 'theme',
+      label: (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: '200px' }}>
+          <Space>
+            {themeMode === 'dark' ? <MoonOutlined /> : <SunOutlined />}
+            Dark Mode
+          </Space>
+          <Switch
+            checked={themeMode === 'dark'}
+            onChange={toggleTheme}
+            size="small"
+          />
+        </div>
+      ),
+      onClick: (e) => {
+        e.domEvent.stopPropagation();
+      },
     },
     {
       type: 'divider',
