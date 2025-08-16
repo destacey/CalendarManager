@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Calendar, Badge, Modal, Descriptions, Tag, Tooltip, Flex, Space, Grid, Spin } from 'antd'
-import { EyeOutlined, WifiOutlined } from '@ant-design/icons'
+import { EyeOutlined } from '@ant-design/icons'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
@@ -18,7 +18,6 @@ const { useBreakpoint } = Grid
 const CalendarViewer: React.FC = () => {
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
-  const [isOnline, setIsOnline] = useState(navigator.onLine)
   const screens = useBreakpoint()
   
   const isLargeScreen = screens.xl // xl breakpoint is 1200px
@@ -28,30 +27,19 @@ const CalendarViewer: React.FC = () => {
     loading,
     getEventsForDate,
     getEventColor,
-    getShowAsDisplay
+    getShowAsDisplay,
+    userTimezone
   } = useCalendarEvents()
 
-  useEffect(() => {
-    // Set up online/offline detection
-    const handleOnline = () => setIsOnline(true)
-    const handleOffline = () => setIsOnline(false)
-    
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-    }
-  }, [])
 
   const formatEventTime = (startDate: string, endDate?: string, isAllDay?: boolean) => {
     if (isAllDay) return ''
     
-    const userTimezone = storageService.getTimezone()
+    // Use userTimezone from hook, fallback to browser timezone if not available
+    const timezone = userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone
     // Assume the stored date is in UTC and convert to user timezone
-    const start = dayjs.utc(startDate).tz(userTimezone)
-    const end = endDate ? dayjs.utc(endDate).tz(userTimezone) : start
+    const start = dayjs.utc(startDate).tz(timezone)
+    const end = endDate ? dayjs.utc(endDate).tz(timezone) : start
     
     if (start.isSame(end, 'day')) {
       return start.format('h:mmA')
@@ -179,10 +167,11 @@ const CalendarViewer: React.FC = () => {
   }, [getEventsForDate, isLargeScreen, formatEventTime, getShowAsDisplay, getEventBackgroundColor])
 
   const formatEventDateTime = (startDate: string, endDate?: string, isAllDay?: boolean) => {
-    const userTimezone = storageService.getTimezone()
+    // Use userTimezone from hook, fallback to browser timezone if not available
+    const timezone = userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone
     // Assume the stored date is in UTC and convert to user timezone
-    const start = dayjs.utc(startDate).tz(userTimezone)
-    const end = endDate ? dayjs.utc(endDate).tz(userTimezone) : start
+    const start = dayjs.utc(startDate).tz(timezone)
+    const end = endDate ? dayjs.utc(endDate).tz(timezone) : start
     
     if (isAllDay) {
       if (start.isSame(end, 'day')) {
@@ -221,20 +210,9 @@ const CalendarViewer: React.FC = () => {
       <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
         <Space align="center" size="middle">
           <h2 style={{ margin: 0 }}>Calendar View</h2>
-          <Tooltip title={isOnline ? 'Online' : 'Offline'}>
-            {isOnline ? 
-              <WifiOutlined style={{ color: '#52c41a' }} /> : 
-              <WifiOutlined style={{ color: '#ff4d4f' }} />
-            }
-          </Tooltip>
           {(() => {
-            const syncStatus = calendarService.getSyncStatus()
-            const userTimezone = storageService.getTimezone()
-            return syncStatus.lastSync && (
-              <span style={{ fontSize: '12px', color: '#666' }}>
-                Last sync: {dayjs(syncStatus.lastSync).tz(userTimezone).format('MMM D, HH:mm')}
-              </span>
-            )
+            // TODO: Fix getSyncStatus to be async - for now just hide this
+            return null
           })()}
         </Space>
       </Flex>
@@ -349,7 +327,7 @@ const CalendarViewer: React.FC = () => {
             
             {selectedEvent.synced_at && (
               <Descriptions.Item label="Last Synced">
-                {dayjs(selectedEvent.synced_at).tz(storageService.getTimezone()).format('MMMM D, YYYY h:mm A')}
+                {dayjs(selectedEvent.synced_at).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone).format('MMMM D, YYYY h:mm A')}
               </Descriptions.Item>
             )}
           </Descriptions>

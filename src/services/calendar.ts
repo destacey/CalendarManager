@@ -140,13 +140,13 @@ class CalendarService {
   }
 
   // Get sync metadata from storage
-  private getSyncMetadata(): SyncMetadata | null {
-    return storageService.getSyncMetadata()
+  private async getSyncMetadata(): Promise<SyncMetadata | null> {
+    return await storageService.getSyncMetadata()
   }
 
   // Save sync metadata to storage
-  private setSyncMetadata(metadata: SyncMetadata): void {
-    storageService.setSyncMetadata(metadata)
+  private async setSyncMetadata(metadata: SyncMetadata): Promise<void> {
+    await storageService.setSyncMetadata(metadata)
   }
 
   // Simplified sync - only manages events within the specified date range
@@ -192,8 +192,8 @@ class CalendarService {
   }
 
   private async performDateRangeSync(): Promise<void> {
-    const config = storageService.getSyncConfig()
-    const dateRange = this.calculateDateRange(config)
+    const config = await storageService.getSyncConfig()
+    const dateRange = await this.calculateDateRange(config)
 
     this.updateProgress({
       total: 0,
@@ -217,7 +217,7 @@ class CalendarService {
   }
 
   private async performDifferentialSyncWithFallback(): Promise<void> {
-    const metadata = this.getSyncMetadata()
+    const metadata = await this.getSyncMetadata()
     
     if (!metadata || !metadata.deltaToken) {
       // No previous sync data, perform full sync
@@ -237,7 +237,7 @@ class CalendarService {
       await this.processSyncEvents(deltaResult.events, 'differential')
       
       // Update metadata with new delta token
-      this.setSyncMetadata({
+      await this.setSyncMetadata({
         lastSyncTime: new Date().toISOString(),
         deltaToken: deltaResult.deltaToken,
         lastEventModified: this.getLatestEventModified(deltaResult.events)
@@ -255,8 +255,8 @@ class CalendarService {
   }
 
   private async performFullSync(): Promise<void> {
-    const config = storageService.getSyncConfig()
-    const dateRange = this.calculateDateRange(config)
+    const config = await storageService.getSyncConfig()
+    const dateRange = await this.calculateDateRange(config)
 
     this.updateProgress({
       total: 0,
@@ -269,7 +269,7 @@ class CalendarService {
     await this.processSyncEvents(result.events, 'full')
 
     // Save new sync metadata with delta token for next differential sync
-    this.setSyncMetadata({
+    await this.setSyncMetadata({
       lastSyncTime: new Date().toISOString(),
       deltaToken: result.deltaToken,
       lastEventModified: this.getLatestEventModified(result.events)
@@ -607,8 +607,8 @@ class CalendarService {
     }
   }
 
-  private calculateDateRange(config: SyncConfig): DateRange {
-    const userTimezone = storageService.getTimezone()
+  private async calculateDateRange(config: SyncConfig): Promise<DateRange> {
+    const userTimezone = await storageService.getTimezone()
     const start = dayjs.tz(config.startDate, userTimezone).startOf('day')
     const end = dayjs.tz(config.endDate, userTimezone).endOf('day')
     
@@ -664,15 +664,15 @@ class CalendarService {
     }
   }
 
-  getCurrentSyncConfig(): SyncConfig {
-    const stored = storageService.getSyncConfig()
+  async getCurrentSyncConfig(): Promise<SyncConfig> {
+    const stored = await storageService.getSyncConfig()
     // Always use current defaults to ensure dates are relative to today
     return this.getDefaultSyncConfig()
   }
 
-  setSyncConfig(config: SyncConfig): void {
+  async setSyncConfig(config: SyncConfig): Promise<void> {
     if (this.validateSyncConfig(config)) {
-      storageService.setSyncConfig(config)
+      await storageService.setSyncConfig(config)
     } else {
       throw new Error('Invalid sync configuration')
     }
@@ -696,12 +696,12 @@ class CalendarService {
     )
   }
 
-  getSyncStatus(): {
+  async getSyncStatus(): Promise<{
     isActive: boolean
     lastSync?: string
     canSync: boolean
-  } {
-    const metadata = this.getSyncMetadata()
+  }> {
+    const metadata = await this.getSyncMetadata()
     const lastSync = metadata?.lastSyncTime && 
                      metadata.lastSyncTime !== null && 
                      metadata.lastSyncTime.trim() !== '' ? metadata.lastSyncTime : undefined

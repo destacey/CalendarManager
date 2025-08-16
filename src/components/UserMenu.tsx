@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Dropdown, Avatar, Typography, Space, Button, Switch } from 'antd';
-import { UserOutlined, LogoutOutlined, LoadingOutlined, MoonOutlined, SunOutlined } from '@ant-design/icons';
+import { UserOutlined, LogoutOutlined, LoadingOutlined, MoonOutlined, SunOutlined, DatabaseOutlined } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { authService } from '../services/auth';
 import { useTheme } from '../contexts/ThemeContext';
@@ -10,6 +10,7 @@ const { Text } = Typography;
 interface UserMenuProps {
   onLogout: () => void;
   showName?: boolean;
+  onDataManagement?: () => void;
 }
 
 interface UserInfo {
@@ -19,7 +20,7 @@ interface UserInfo {
   surname: string;
 }
 
-const UserMenu: React.FC<UserMenuProps> = ({ onLogout, showName = true }) => {
+const UserMenu: React.FC<UserMenuProps> = ({ onLogout, showName = true, onDataManagement }) => {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const { themeMode, toggleTheme } = useTheme();
@@ -102,6 +103,19 @@ const UserMenu: React.FC<UserMenuProps> = ({ onLogout, showName = true }) => {
     {
       type: 'divider',
     },
+    ...(onDataManagement ? [{
+      key: 'data-management',
+      label: (
+        <Space>
+          <DatabaseOutlined />
+          Data Management
+        </Space>
+      ),
+      onClick: onDataManagement,
+    }] : []),
+    ...(onDataManagement ? [{
+      type: 'divider' as const,
+    }] : []),
     {
       key: 'logout',
       label: (

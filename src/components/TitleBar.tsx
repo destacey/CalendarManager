@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Space, Tooltip, Dropdown, MenuProps } from 'antd';
-import { MinusOutlined, BorderOutlined, CloseOutlined, BlockOutlined, MenuFoldOutlined, MenuUnfoldOutlined, SyncOutlined, MenuOutlined, HomeOutlined, CalendarOutlined, SettingOutlined } from '@ant-design/icons';
+import { MinusOutlined, BorderOutlined, CloseOutlined, BlockOutlined, MenuFoldOutlined, MenuUnfoldOutlined, CloudSyncOutlined, MenuOutlined, HomeOutlined, CalendarOutlined, SettingOutlined } from '@ant-design/icons';
 import UserMenu from './UserMenu';
 import SyncProgress from './SyncProgress';
 import SyncModal from './SyncModal';
@@ -16,6 +16,7 @@ interface TitleBarProps {
   isMobile?: boolean;
   selectedNavKey?: string;
   onNavSelect?: (key: string) => void;
+  onDataManagement?: () => void;
 }
 
 const TitleBar: React.FC<TitleBarProps> = ({ 
@@ -26,7 +27,8 @@ const TitleBar: React.FC<TitleBarProps> = ({
   sideNavCollapsed = false,
   isMobile = false,
   selectedNavKey = 'home',
-  onNavSelect
+  onNavSelect,
+  onDataManagement
 }) => {
   const [isMaximized, setIsMaximized] = useState(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgressType | null>(null);
@@ -221,7 +223,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
           <Tooltip title="Open sync options">
             <Button
               type="text"
-              icon={<SyncOutlined />}
+              icon={<CloudSyncOutlined />}
               onClick={handleSyncButtonClick}
               style={{
                 color: titleBarColors.buttonText,
@@ -236,7 +238,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
         <Space size={8}>
           {showUserMenu && onLogout && (
             <div style={{ marginRight: '8px' }}>
-              <UserMenu onLogout={onLogout} showName={!isMobile} />
+              <UserMenu onLogout={onLogout} showName={!isMobile} onDataManagement={onDataManagement} />
             </div>
           )}
           <Space size={0}>

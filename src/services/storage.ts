@@ -10,66 +10,97 @@ interface AppConfig {
 class StorageService {
   private readonly APP_CONFIG_KEY = 'calendar-manager-config';
 
-  getAppRegistrationId(): string | null {
+  // Check if we're in Electron environment
+  private get isElectron(): boolean {
+    return typeof window !== 'undefined' && window.electronAPI;
+  }
+
+  async getAppRegistrationId(): Promise<string | null> {
     try {
-      const config = this.getConfig();
-      return config.appRegistrationId;
+      if (this.isElectron) {
+        return await window.electronAPI.getConfig('appRegistrationId');
+      } else {
+        // Fallback to localStorage for web/dev environment
+        const config = this.getLocalStorageConfig();
+        return config.appRegistrationId;
+      }
     } catch (error) {
       console.error('Error getting app registration ID:', error);
       return null;
     }
   }
 
-  setAppRegistrationId(appRegistrationId: string): void {
+  async setAppRegistrationId(appRegistrationId: string): Promise<void> {
     try {
-      const config = this.getConfig();
-      config.appRegistrationId = appRegistrationId;
-      this.setConfig(config);
+      if (this.isElectron) {
+        await window.electronAPI.setConfig('appRegistrationId', appRegistrationId);
+      } else {
+        // Fallback to localStorage for web/dev environment
+        const config = this.getLocalStorageConfig();
+        config.appRegistrationId = appRegistrationId;
+        this.setLocalStorageConfig(config);
+      }
     } catch (error) {
       console.error('Error setting app registration ID:', error);
     }
   }
 
-  getSyncConfig(): SyncConfig {
+  async getSyncConfig(): Promise<SyncConfig> {
     try {
-      const config = this.getConfig();
-      return config.syncConfig || { 
+      const defaultConfig = {
         startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         endDate: new Date().toISOString().split('T')[0]
       };
+
+      if (this.isElectron) {
+        const config = await window.electronAPI.getConfig('syncConfig');
+        return config || defaultConfig;
+      } else {
+        // Fallback to localStorage for web/dev environment
+        const config = this.getLocalStorageConfig();
+        return config.syncConfig || defaultConfig;
+      }
     } catch (error) {
       console.error('Error getting sync config:', error);
-      return { 
+      return {
         startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         endDate: new Date().toISOString().split('T')[0]
       };
     }
   }
 
-  setSyncConfig(syncConfig: SyncConfig): void {
+  async setSyncConfig(syncConfig: SyncConfig): Promise<void> {
     try {
-      const config = this.getConfig();
-      config.syncConfig = syncConfig;
-      this.setConfig(config);
+      if (this.isElectron) {
+        await window.electronAPI.setConfig('syncConfig', syncConfig);
+      } else {
+        // Fallback to localStorage for web/dev environment
+        const config = this.getLocalStorageConfig();
+        config.syncConfig = syncConfig;
+        this.setLocalStorageConfig(config);
+      }
     } catch (error) {
       console.error('Error setting sync config:', error);
     }
   }
 
-  getSyncMetadata(): SyncMetadata | null {
+  async getSyncMetadata(): Promise<SyncMetadata | null> {
     try {
-      const config = this.getConfig();
-      return config.syncMetadata || null;
+      if (this.isElectron) {
+        return await window.electronAPI.getConfig('syncMetadata');
+      } else {
+        // Fallback to localStorage for web/dev environment
+        const config = this.getLocalStorageConfig();
+        return config.syncMetadata || null;
+      }
     } catch (error) {
       console.error('Error getting sync metadata:', error);
       return null;
     }
   }
 
-  setSyncMetadata(syncMetadata: SyncMetadata): void {
+  async setSyncMetadata(syncMetadata: SyncMetadata): Promise<void> {
     try {
-      const config = this.getConfig();
-      
       // Clean up undefined values to avoid JSON serialization issues
       const cleanMetadata: SyncMetadata = {};
       if (syncMetadata.lastSyncTime !== undefined && syncMetadata.lastSyncTime !== null) {
@@ -82,14 +113,67 @@ class StorageService {
         cleanMetadata.lastEventModified = syncMetadata.lastEventModified;
       }
       
-      config.syncMetadata = cleanMetadata;
-      this.setConfig(config);
+      if (this.isElectron) {
+        await window.electronAPI.setConfig('syncMetadata', cleanMetadata);
+      } else {
+        // Fallback to localStorage for web/dev environment
+        const config = this.getLocalStorageConfig();
+        config.syncMetadata = cleanMetadata;
+        this.setLocalStorageConfig(config);
+      }
     } catch (error) {
       console.error('Error setting sync metadata:', error);
     }
   }
 
-  private getConfig(): AppConfig {
+  async getTimezone(): Promise<string> {
+    try {
+      const defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      
+      if (this.isElectron) {
+        const timezone = await window.electronAPI.getConfig('timezone');
+        return timezone || defaultTimezone;
+      } else {
+        // Fallback to localStorage for web/dev environment
+        const config = this.getLocalStorageConfig();
+        return config.timezone || defaultTimezone;
+      }
+    } catch (error) {
+      console.error('Error getting timezone:', error);
+      return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    }
+  }
+
+  async setTimezone(timezone: string): Promise<void> {
+    try {
+      if (this.isElectron) {
+        await window.electronAPI.setConfig('timezone', timezone);
+      } else {
+        // Fallback to localStorage for web/dev environment
+        const config = this.getLocalStorageConfig();
+        config.timezone = timezone;
+        this.setLocalStorageConfig(config);
+      }
+    } catch (error) {
+      console.error('Error setting timezone:', error);
+    }
+  }
+
+  async clearConfig(): Promise<void> {
+    try {
+      if (this.isElectron) {
+        await window.electronAPI.clearConfig();
+      } else {
+        // Fallback to localStorage for web/dev environment
+        localStorage.removeItem(this.APP_CONFIG_KEY);
+      }
+    } catch (error) {
+      console.error('Error clearing config:', error);
+    }
+  }
+
+  // Fallback methods for localStorage (dev environment)
+  private getLocalStorageConfig(): AppConfig {
     try {
       const configJson = localStorage.getItem(this.APP_CONFIG_KEY);
       if (!configJson) {
@@ -102,32 +186,8 @@ class StorageService {
     }
   }
 
-  private setConfig(config: AppConfig): void {
+  private setLocalStorageConfig(config: AppConfig): void {
     localStorage.setItem(this.APP_CONFIG_KEY, JSON.stringify(config));
-  }
-
-  getTimezone(): string {
-    try {
-      const config = this.getConfig();
-      return config.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-    } catch (error) {
-      console.error('Error getting timezone:', error);
-      return Intl.DateTimeFormat().resolvedOptions().timeZone;
-    }
-  }
-
-  setTimezone(timezone: string): void {
-    try {
-      const config = this.getConfig();
-      config.timezone = timezone;
-      this.setConfig(config);
-    } catch (error) {
-      console.error('Error setting timezone:', error);
-    }
-  }
-
-  clearConfig(): void {
-    localStorage.removeItem(this.APP_CONFIG_KEY);
   }
 }
 

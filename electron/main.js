@@ -1,9 +1,67 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const Database = require('better-sqlite3');
+const Store = require('electron-store').default || require('electron-store');
 
 let mainWindow;
 let db;
+let store;
+
+function initStore() {
+  const schema = {
+    appRegistrationId: {
+      type: ['string', 'null'],
+      default: null
+    },
+    syncConfig: {
+      type: 'object',
+      properties: {
+        startDate: { type: 'string' },
+        endDate: { type: 'string' }
+      },
+      default: {
+        startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        endDate: new Date().toISOString().split('T')[0]
+      }
+    },
+    syncMetadata: {
+      type: 'object',
+      properties: {
+        lastSyncTime: { type: 'string' },
+        deltaToken: { type: 'string' },
+        lastEventModified: { type: 'string' }
+      },
+      default: {}
+    },
+    timezone: {
+      type: ['string', 'null'],
+      default: null
+    }
+  };
+
+  store = new Store({
+    schema,
+    clearInvalidConfig: true
+  });
+
+  // Migrate existing localStorage data if any exists
+  const legacyConfigKey = 'calendar-manager-config';
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const legacyConfig = localStorage.getItem(legacyConfigKey);
+      if (legacyConfig) {
+        const parsed = JSON.parse(legacyConfig);
+        if (parsed.appRegistrationId) store.set('appRegistrationId', parsed.appRegistrationId);
+        if (parsed.syncConfig) store.set('syncConfig', parsed.syncConfig);
+        if (parsed.syncMetadata) store.set('syncMetadata', parsed.syncMetadata);
+        if (parsed.timezone) store.set('timezone', parsed.timezone);
+        localStorage.removeItem(legacyConfigKey);
+      }
+    } catch (error) {
+      console.warn('Failed to migrate legacy config:', error);
+    }
+  }
+}
 
 function initDatabase() {
   const dbPath = path.join(__dirname, '..', 'calendar.db');
@@ -101,6 +159,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  initStore();
   initDatabase();
   createWindow();
   setupWindowStateEvents();
@@ -245,6 +304,19 @@ ipcMain.handle('window:close', () => {
 
 ipcMain.handle('window:isMaximized', () => {
   return mainWindow?.isMaximized() || false;
+});
+
+// Configuration management with electron-store
+ipcMain.handle('config:get', (event, key) => {
+  return store.get(key);
+});
+
+ipcMain.handle('config:set', (event, key, value) => {
+  store.set(key, value);
+});
+
+ipcMain.handle('config:clear', () => {
+  store.clear();
 });
 
 // Window state change events

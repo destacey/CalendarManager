@@ -40,6 +40,7 @@
     "antd": "^5.27.0",
     "better-sqlite3": "^12.2.0",
     "dayjs": "^1.11.13",
+    "electron-store": "^10.1.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   }

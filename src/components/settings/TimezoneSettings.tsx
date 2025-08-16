@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Select, Typography, Space, Alert, Button, Input, Divider } from 'antd'
-import { ClockCircleOutlined, CheckOutlined, AppstoreOutlined } from '@ant-design/icons'
-import { storageService } from '../services/storage'
+import { Card, Select, Typography, Space, Alert, Button } from 'antd'
+import { ClockCircleOutlined, CheckOutlined } from '@ant-design/icons'
+import { storageService } from '../../services/storage'
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
@@ -9,21 +9,23 @@ import utc from 'dayjs/plugin/utc'
 dayjs.extend(utc)
 dayjs.extend(timezone)
 
-const { Title, Text } = Typography
+const { Title, Text, Paragraph } = Typography
 
-const TimezoneSettings: React.FC = () => {
+interface TimezoneSettingsProps {
+  searchTerm?: string
+}
+
+const TimezoneSettings: React.FC<TimezoneSettingsProps> = ({ searchTerm = '' }) => {
   const [selectedTimezone, setSelectedTimezone] = useState<string>('')
   const [currentTime, setCurrentTime] = useState<string>('')
-  const [timezoneSaved, setTimezoneSaved] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [storedTimezone, setStoredTimezone] = useState<string>('')
-  
-  const [clientId, setClientId] = useState<string>('')
-  const [clientIdSaved, setClientIdSaved] = useState(false)
-  const [storedClientId, setStoredClientId] = useState<string>('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const loadTimezone = async () => {
       try {
+        setLoading(true)
         const timezone = await storageService.getTimezone()
         setSelectedTimezone(timezone)
         setStoredTimezone(timezone)
@@ -35,6 +37,8 @@ const TimezoneSettings: React.FC = () => {
         setSelectedTimezone(fallback)
         setStoredTimezone(fallback)
         updateCurrentTime(fallback)
+      } finally {
+        setLoading(false)
       }
     }
     loadTimezone()
@@ -183,21 +187,31 @@ const TimezoneSettings: React.FC = () => {
 
   const hasUnsavedChanges = selectedTimezone !== storedTimezone
 
+  // Filter based on search term
+  const isVisible = !searchTerm || 
+    'timezone time zone clock display events'.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    selectedTimezone.toLowerCase().includes(searchTerm.toLowerCase())
+
+  if (!isVisible) return null
+
   return (
-    <div>
-      <Title level={3}>
-        <ClockCircleOutlined style={{ marginRight: 8 }} />
-        Timezone Settings
+    <div style={{ marginBottom: '32px' }}>
+      <Title level={4} style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
+        <ClockCircleOutlined style={{ marginRight: '8px' }} />
+        Timezone
       </Title>
       
-      <Card>
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Card size="small">
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <div>
-            <Text strong>Select your timezone:</Text>
+            <Text strong>Display Timezone</Text>
+            <Paragraph type="secondary" style={{ marginBottom: '8px', marginTop: '4px' }}>
+              This timezone will be used for displaying all calendar events and analytics throughout the application.
+            </Paragraph>
             <Select
               value={selectedTimezone}
               onChange={handleTimezoneChange}
-              style={{ width: '100%', marginTop: 8 }}
+              style={{ width: '100%' }}
               showSearch
               placeholder="Search for your timezone..."
               optionFilterProp="children"
@@ -205,6 +219,7 @@ const TimezoneSettings: React.FC = () => {
                 option?.search?.includes(input.toLowerCase()) ?? false
               }
               options={getTimezoneOptions()}
+              disabled={loading}
             />
           </div>
 
@@ -218,25 +233,23 @@ const TimezoneSettings: React.FC = () => {
               }
               type="info"
               showIcon
+              size="small"
             />
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text type="secondary">
-              This timezone will be used for displaying all calendar events and analytics.
-            </Text>
-            
-            {hasUnsavedChanges && (
+          {hasUnsavedChanges && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <Button
                 type="primary"
                 icon={saved ? <CheckOutlined /> : undefined}
                 onClick={handleSave}
                 disabled={saved}
+                size="small"
               >
                 {saved ? 'Saved!' : 'Save Changes'}
               </Button>
-            )}
-          </div>
+            </div>
+          )}
 
           {saved && (
             <Alert
@@ -244,6 +257,7 @@ const TimezoneSettings: React.FC = () => {
               type="success"
               showIcon
               closable
+              size="small"
             />
           )}
         </Space>

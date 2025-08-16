@@ -25,5 +25,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
   isWindowMaximized: () => ipcRenderer.invoke('window:isMaximized'),
-  onWindowStateChange: (callback) => ipcRenderer.on('window-state-change', callback)
+  onWindowStateChange: (callback) => ipcRenderer.on('window-state-change', callback),
+  
+  // Configuration management
+  getConfig: (key) => ipcRenderer.invoke('config:get', key),
+  setConfig: (key, value) => ipcRenderer.invoke('config:set', key, value),
+  clearConfig: () => ipcRenderer.invoke('config:clear')
 });

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ConfigProvider, Layout, App as AntApp, Tabs, Grid } from 'antd'
-import { SettingOutlined, DatabaseOutlined } from '@ant-design/icons'
+import { ConfigProvider, Layout, App as AntApp, Modal, Grid } from 'antd'
 import CalendarViewer from './components/CalendarViewer'
 import AppSetup from './components/AppSetup'
 import Login from './components/Login'
@@ -8,7 +7,7 @@ import TitleBar from './components/TitleBar'
 import LoadingScreen from './components/LoadingScreen'
 import SideNavigation from './components/SideNavigation'
 import DataManagement from './components/DataManagement'
-import TimezoneSettings from './components/TimezoneSettings'
+import Settings from './components/Settings'
 import { ThemeProvider, useTheme } from './contexts/ThemeContext'
 import { storageService } from './services/storage'
 import { authService } from './services/auth'
@@ -23,6 +22,7 @@ function AppContent() {
   const [appState, setAppState] = useState<AppState>('loading')
   const [sideNavCollapsed, setSideNavCollapsed] = useState(false)
   const [selectedNavKey, setSelectedNavKey] = useState('home')
+  const [dataManagementVisible, setDataManagementVisible] = useState(false)
   const screens = useBreakpoint()
 
   // Use mobile navigation on small screens (sm and below)
@@ -41,7 +41,7 @@ function AppContent() {
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        const appRegistrationId = storageService.getAppRegistrationId()
+        const appRegistrationId = await storageService.getAppRegistrationId()
         
         if (!appRegistrationId) {
           setAppState('setup')
@@ -74,7 +74,7 @@ function AppContent() {
 
   const handleSetupComplete = async (appRegistrationId: string) => {
     try {
-      storageService.setAppRegistrationId(appRegistrationId)
+      await storageService.setAppRegistrationId(appRegistrationId)
       await authService.initialize(appRegistrationId)
       setAppState('login')
     } catch (error) {
@@ -103,6 +103,10 @@ function AppContent() {
     setSideNavCollapsed(!sideNavCollapsed)
   }
 
+  const handleDataManagement = () => {
+    setDataManagementVisible(true)
+  }
+
   const renderMainContent = () => {
     switch (selectedNavKey) {
       case 'home':
@@ -115,25 +119,7 @@ function AppContent() {
       case 'calendar':
         return <CalendarViewer />
       case 'settings':
-        return (
-          <div style={{ padding: '24px' }}>
-            <Tabs
-              defaultActiveKey="general"
-              items={[
-                {
-                  key: 'general',
-                  label: 'General',
-                  children: <TimezoneSettings />,
-                },
-                {
-                  key: 'data',
-                  label: 'Data Management',
-                  children: <DataManagement />,
-                },
-              ]}
-            />
-          </div>
-        )
+        return <Settings />
       default:
         return <CalendarViewer />
     }
@@ -169,6 +155,7 @@ function AppContent() {
               isMobile={isMobile}
               selectedNavKey={selectedNavKey}
               onNavSelect={handleNavMenuSelect}
+              onDataManagement={handleDataManagement}
             />
             <Layout style={{ 
               display: 'flex',
@@ -203,6 +190,18 @@ function AppContent() {
                 </Content>
               </Layout>
             </Layout>
+            
+            {/* Data Management Modal */}
+            <Modal
+              title="Data Management"
+              open={dataManagementVisible}
+              onCancel={() => setDataManagementVisible(false)}
+              footer={null}
+              width={800}
+              destroyOnHidden
+            >
+              <DataManagement />
+            </Modal>
           </Layout>
         )
       default:

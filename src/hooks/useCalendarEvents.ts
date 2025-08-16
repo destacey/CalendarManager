@@ -13,6 +13,7 @@ dayjs.extend(timezone)
 export const useCalendarEvents = () => {
   const [events, setEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(false)
+  const [userTimezone, setUserTimezone] = useState<string>(Intl.DateTimeFormat().resolvedOptions().timeZone)
   const { message } = App.useApp()
 
   const loadEvents = useCallback(async () => {
@@ -27,6 +28,19 @@ export const useCalendarEvents = () => {
       setLoading(false)
     }
   }, [message])
+
+  // Load user timezone
+  useEffect(() => {
+    const loadTimezone = async () => {
+      try {
+        const timezone = await storageService.getTimezone()
+        setUserTimezone(timezone)
+      } catch (error) {
+        console.error('Error loading timezone:', error)
+      }
+    }
+    loadTimezone()
+  }, [])
 
   // Set up sync completion callback to refresh calendar
   useEffect(() => {
@@ -52,7 +66,6 @@ export const useCalendarEvents = () => {
 
   // Memoized event date map for fast lookups
   const eventsByDate = useMemo(() => {
-    const userTimezone = storageService.getTimezone()
     const dateMap = new Map<string, Event[]>()
     
     // Only process events if we have them
@@ -85,7 +98,7 @@ export const useCalendarEvents = () => {
     })
     
     return dateMap
-  }, [events])
+  }, [events, userTimezone])
 
   const getEventsForDate = useCallback((date: Dayjs) => {
     const dateStr = date.format('YYYY-MM-DD')
@@ -120,6 +133,7 @@ export const useCalendarEvents = () => {
     loadEvents,
     getEventsForDate,
     getEventColor,
-    getShowAsDisplay
+    getShowAsDisplay,
+    userTimezone
   }
 }
