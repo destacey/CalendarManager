@@ -49,6 +49,9 @@ export interface Event {
   is_all_day: boolean
   show_as: string
   categories: string
+  location?: string
+  organizer?: string // JSON string containing organizer info
+  attendees?: string // JSON string containing attendees array
   created_at?: string
   updated_at?: string
   synced_at?: string
@@ -67,6 +70,7 @@ export interface ElectronAPI {
   createEvent: (eventData: Event) => Promise<Event>
   updateEvent: (id: number, eventData: Event) => Promise<Event>
   deleteEvent: (id: number) => Promise<boolean>
+  deleteAllEvents: () => Promise<{ deleted: number }>
   
   // Category management
   getCategories: () => Promise<Category[]>

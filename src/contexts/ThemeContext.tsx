@@ -37,6 +37,15 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
   const antdTheme = {
     algorithm: themeMode === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
+    components: {
+      Calendar: {
+        cellHoverBg: themeMode === 'dark' ? 'rgba(177, 186, 194, 0.06)' : 'rgba(24, 144, 255, 0.06)',
+        itemActiveBg: themeMode === 'dark' ? '#177ddc' : '#1890ff',
+        cellActiveWithRangeBg: themeMode === 'dark' ? 'rgba(177, 186, 194, 0.06)' : 'rgba(24, 144, 255, 0.06)',
+        cellRangeBorderColor: themeMode === 'dark' ? '#177ddc' : '#1890ff',
+        cellBgDisabled: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)',
+      },
+    },
   }
 
   return (

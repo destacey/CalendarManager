@@ -20,6 +20,9 @@ function initDatabase() {
       is_all_day BOOLEAN DEFAULT 0,
       show_as TEXT DEFAULT 'busy',
       categories TEXT,
+      location TEXT,
+      organizer TEXT,
+      attendees TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       synced_at DATETIME
@@ -35,6 +38,31 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_events_graph_id ON events(graph_id);
     CREATE INDEX IF NOT EXISTS idx_events_start_date ON events(start_date);
   `);
+
+  // Add migration for new columns (safe to run multiple times)
+  try {
+    db.exec(`
+      ALTER TABLE events ADD COLUMN location TEXT;
+    `);
+  } catch (e) {
+    // Column already exists, ignore error
+  }
+  
+  try {
+    db.exec(`
+      ALTER TABLE events ADD COLUMN organizer TEXT;
+    `);
+  } catch (e) {
+    // Column already exists, ignore error
+  }
+  
+  try {
+    db.exec(`
+      ALTER TABLE events ADD COLUMN attendees TEXT;
+    `);
+  } catch (e) {
+    // Column already exists, ignore error
+  }
 }
 
 function createWindow() {
@@ -142,24 +170,39 @@ ipcMain.handle('db:deleteEvent', (event, id) => {
 // Microsoft Graph sync functionality
 ipcMain.handle('db:syncGraphEvents', (event, graphEvents) => {
   const insertStmt = db.prepare(`
-    INSERT OR REPLACE INTO events (graph_id, title, description, start_date, end_date, is_all_day, show_as, categories, synced_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT OR REPLACE INTO events (graph_id, title, description, start_date, end_date, is_all_day, show_as, categories, location, organizer, attendees, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `);
 
   const transaction = db.transaction((events) => {
     for (const graphEvent of events) {
       const categories = graphEvent.categories ? graphEvent.categories.join(',') : '';
       const description = graphEvent.body ? graphEvent.body.content : '';
+      const location = graphEvent.location ? graphEvent.location.displayName : '';
+      const organizer = graphEvent.organizer ? JSON.stringify({
+        name: graphEvent.organizer.emailAddress.name,
+        email: graphEvent.organizer.emailAddress.address
+      }) : '';
+      const attendees = graphEvent.attendees ? JSON.stringify(
+        graphEvent.attendees.map(att => ({
+          name: att.emailAddress.name,
+          email: att.emailAddress.address,
+          response: att.status.response
+        }))
+      ) : '';
       
       insertStmt.run(
         graphEvent.id,
-        graphEvent.subject,
+        graphEvent.subject || 'Untitled Event',
         description,
-        graphEvent.start.dateTime,
-        graphEvent.end.dateTime,
+        graphEvent.start?.dateTime || new Date().toISOString(),
+        graphEvent.end?.dateTime || new Date().toISOString(),
         graphEvent.isAllDay ? 1 : 0,
-        graphEvent.showAs,
-        categories
+        graphEvent.showAs || 'busy',
+        categories,
+        location,
+        organizer,
+        attendees
       );
     }
   });

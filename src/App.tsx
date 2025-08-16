@@ -1,17 +1,21 @@
 import { useState, useEffect } from 'react'
-import { ConfigProvider, Layout, App as AntApp } from 'antd'
-import CalendarView from './components/CalendarView'
+import { ConfigProvider, Layout, App as AntApp, Tabs, Grid } from 'antd'
+import { SettingOutlined, DatabaseOutlined } from '@ant-design/icons'
+import CalendarViewer from './components/CalendarViewer'
 import AppSetup from './components/AppSetup'
 import Login from './components/Login'
 import TitleBar from './components/TitleBar'
 import LoadingScreen from './components/LoadingScreen'
 import SideNavigation from './components/SideNavigation'
+import DataManagement from './components/DataManagement'
+import TimezoneSettings from './components/TimezoneSettings'
 import { ThemeProvider, useTheme } from './contexts/ThemeContext'
 import { storageService } from './services/storage'
 import { authService } from './services/auth'
 import './App.css'
 
 const { Content } = Layout
+const { useBreakpoint } = Grid
 
 type AppState = 'loading' | 'setup' | 'login' | 'dashboard'
 
@@ -19,6 +23,20 @@ function AppContent() {
   const [appState, setAppState] = useState<AppState>('loading')
   const [sideNavCollapsed, setSideNavCollapsed] = useState(false)
   const [selectedNavKey, setSelectedNavKey] = useState('home')
+  const screens = useBreakpoint()
+
+  // Use mobile navigation on small screens (sm and below)
+  const isMobile = !screens.md // md breakpoint is 768px, so this covers screens < 768px
+  const showSideNav = !isMobile
+  
+  // Auto-collapse sidebar on medium screens
+  useEffect(() => {
+    if (!isMobile && screens.md && !screens.lg) {
+      setSideNavCollapsed(true)
+    } else if (!isMobile && screens.lg) {
+      setSideNavCollapsed(false)
+    }
+  }, [screens, isMobile])
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -95,16 +113,29 @@ function AppContent() {
           </div>
         )
       case 'calendar':
-        return <CalendarView />
+        return <CalendarViewer />
       case 'settings':
         return (
-          <div className="side-nav-content">
-            <h2>Settings</h2>
-            <p>Settings panel coming soon...</p>
+          <div style={{ padding: '24px' }}>
+            <Tabs
+              defaultActiveKey="general"
+              items={[
+                {
+                  key: 'general',
+                  label: 'General',
+                  children: <TimezoneSettings />,
+                },
+                {
+                  key: 'data',
+                  label: 'Data Management',
+                  children: <DataManagement />,
+                },
+              ]}
+            />
           </div>
         )
       default:
-        return <CalendarView />
+        return <CalendarViewer />
     }
   }
 
@@ -132,22 +163,27 @@ function AppContent() {
             <TitleBar 
               showUserMenu={true} 
               onLogout={handleLogout}
-              showMenuToggle={true}
+              showMenuToggle={showSideNav}
               onMenuToggle={handleMenuToggle}
               sideNavCollapsed={sideNavCollapsed}
+              isMobile={isMobile}
+              selectedNavKey={selectedNavKey}
+              onNavSelect={handleNavMenuSelect}
             />
             <Layout style={{ 
               display: 'flex',
               flexDirection: 'row',
               height: 'calc(100vh - 32px)'
             }}>
-              <SideNavigation
-                collapsed={sideNavCollapsed}
-                selectedKey={selectedNavKey}
-                onMenuSelect={handleNavMenuSelect}
-              />
+              {showSideNav && (
+                <SideNavigation
+                  collapsed={sideNavCollapsed}
+                  selectedKey={selectedNavKey}
+                  onMenuSelect={handleNavMenuSelect}
+                />
+              )}
               <Layout style={{ 
-                marginLeft: sideNavCollapsed ? 50 : 200,
+                marginLeft: showSideNav ? (sideNavCollapsed ? 50 : 200) : 0,
                 transition: 'margin-left 0.2s',
                 display: 'flex',
                 flexDirection: 'column',

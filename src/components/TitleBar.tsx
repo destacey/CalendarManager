@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Space } from 'antd';
-import { MinusOutlined, BorderOutlined, CloseOutlined, BlockOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
+import { Button, Space, Tooltip, Dropdown, MenuProps } from 'antd';
+import { MinusOutlined, BorderOutlined, CloseOutlined, BlockOutlined, MenuFoldOutlined, MenuUnfoldOutlined, SyncOutlined, MenuOutlined, HomeOutlined, CalendarOutlined, SettingOutlined } from '@ant-design/icons';
 import UserMenu from './UserMenu';
+import SyncProgress from './SyncProgress';
+import SyncModal from './SyncModal';
 import { useTheme } from '../contexts/ThemeContext';
+import { calendarService, SyncProgress as SyncProgressType } from '../services/calendar';
 
 interface TitleBarProps {
   showUserMenu?: boolean;
@@ -10,6 +13,9 @@ interface TitleBarProps {
   showMenuToggle?: boolean;
   onMenuToggle?: () => void;
   sideNavCollapsed?: boolean;
+  isMobile?: boolean;
+  selectedNavKey?: string;
+  onNavSelect?: (key: string) => void;
 }
 
 const TitleBar: React.FC<TitleBarProps> = ({ 
@@ -17,9 +23,15 @@ const TitleBar: React.FC<TitleBarProps> = ({
   onLogout, 
   showMenuToggle = false, 
   onMenuToggle,
-  sideNavCollapsed = false 
+  sideNavCollapsed = false,
+  isMobile = false,
+  selectedNavKey = 'home',
+  onNavSelect
 }) => {
   const [isMaximized, setIsMaximized] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<SyncProgressType | null>(null);
+  const [syncModalVisible, setSyncModalVisible] = useState(false);
+  const [modalKey, setModalKey] = useState(Date.now());
   const { themeMode } = useTheme();
 
   useEffect(() => {
@@ -46,10 +58,18 @@ const TitleBar: React.FC<TitleBarProps> = ({
       window.electronAPI.onWindowStateChange(handleWindowStateChange);
     }
 
+    // Set up sync progress tracking
+    calendarService.setSyncCallbacks(
+      (progress) => setSyncProgress(progress),
+      () => setSyncProgress(null)
+    );
+
     return () => {
       if (window.electronAPI?.removeAllListeners) {
         window.electronAPI.removeAllListeners('window-state-change');
       }
+      // Clean up sync callbacks
+      calendarService.setSyncCallbacks();
     };
   }, []);
 
@@ -73,11 +93,48 @@ const TitleBar: React.FC<TitleBarProps> = ({
     }
   };
 
+  const handleCancelSync = () => {
+    calendarService.cancelSync();
+    setSyncProgress(null);
+  };
+
+  const handleSyncButtonClick = () => {
+    setModalKey(Date.now()); // Force re-render with new key
+    setSyncModalVisible(true);
+  };
+
+  const handleProgressClick = () => {
+    setModalKey(Date.now()); // Force re-render with new key
+    setSyncModalVisible(true);
+  };
+
   const titleBarColors = {
     background: themeMode === 'dark' ? '#141414' : '#f5f5f5',
     border: themeMode === 'dark' ? '#434343' : '#d9d9d9',
     text: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.85)' : '#666',
     buttonText: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.65)' : '#666'
+  };
+
+  const mobileMenuItems: MenuProps['items'] = [
+    {
+      key: 'home',
+      label: 'Home',
+      icon: <HomeOutlined />,
+    },
+    {
+      key: 'calendar',
+      label: 'Calendar',
+      icon: <CalendarOutlined />,
+    },
+    {
+      key: 'settings',
+      label: 'Settings',
+      icon: <SettingOutlined />,
+    },
+  ];
+
+  const handleMobileMenuClick = ({ key }: { key: string }) => {
+    onNavSelect?.(key);
   };
 
   return (
@@ -95,7 +152,29 @@ const TitleBar: React.FC<TitleBarProps> = ({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        {showMenuToggle && (
+        {isMobile ? (
+          <Dropdown
+            menu={{
+              items: mobileMenuItems,
+              onClick: handleMobileMenuClick,
+              selectedKeys: [selectedNavKey]
+            }}
+            trigger={['click']}
+            placement="bottomLeft"
+          >
+            <Button
+              type="text"
+              size="small"
+              icon={<MenuOutlined style={{ fontSize: '14px' }} />}
+              style={{ 
+                WebkitAppRegion: 'no-drag',
+                color: titleBarColors.buttonText,
+                border: 'none'
+              }}
+              title="Navigation menu"
+            />
+          </Dropdown>
+        ) : showMenuToggle && (
           <Button
             type="text"
             size="small"
@@ -113,14 +192,51 @@ const TitleBar: React.FC<TitleBarProps> = ({
           />
         )}
         <div style={{ fontSize: '14px', fontWeight: 500, color: titleBarColors.text }}>
-          Calendar Manager
+          {isMobile ? 'CM' : 'Calendar Manager'}
         </div>
+        
       </div>
+      
+      {/* Sync section in the middle */}
+      <div style={{ 
+        flex: 1, 
+        display: 'flex', 
+        justifyContent: 'center',
+        alignItems: 'center',
+        WebkitAppRegion: 'no-drag',
+        maxWidth: '300px'
+      }}>
+        {syncProgress ? (
+          <div 
+            onClick={handleProgressClick}
+            style={{ cursor: 'pointer', width: '100%' }}
+          >
+            <SyncProgress 
+              progress={syncProgress} 
+              onCancel={handleCancelSync}
+              compact={true}
+            />
+          </div>
+        ) : (
+          <Tooltip title="Open sync options">
+            <Button
+              type="text"
+              icon={<SyncOutlined />}
+              onClick={handleSyncButtonClick}
+              style={{
+                color: titleBarColors.buttonText,
+                border: 'none'
+              }}
+            />
+          </Tooltip>
+        )}
+      </div>
+      
       <div style={{ display: 'flex', alignItems: 'center', WebkitAppRegion: 'no-drag' }}>
         <Space size={8}>
           {showUserMenu && onLogout && (
             <div style={{ marginRight: '8px' }}>
-              <UserMenu onLogout={onLogout} />
+              <UserMenu onLogout={onLogout} showName={!isMobile} />
             </div>
           )}
           <Space size={0}>
@@ -175,6 +291,13 @@ const TitleBar: React.FC<TitleBarProps> = ({
           </Space>
         </Space>
       </div>
+      
+      {/* Sync Modal */}
+      <SyncModal
+        key={modalKey}
+        visible={syncModalVisible}
+        onClose={() => setSyncModalVisible(false)}
+      />
     </div>
   );
 };

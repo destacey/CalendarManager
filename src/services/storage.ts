@@ -1,5 +1,10 @@
+import { SyncConfig, SyncMetadata } from './calendar';
+
 interface AppConfig {
   appRegistrationId: string | null;
+  syncConfig?: SyncConfig;
+  syncMetadata?: SyncMetadata;
+  timezone?: string;
 }
 
 class StorageService {
@@ -25,6 +30,65 @@ class StorageService {
     }
   }
 
+  getSyncConfig(): SyncConfig {
+    try {
+      const config = this.getConfig();
+      return config.syncConfig || { 
+        startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        endDate: new Date().toISOString().split('T')[0]
+      };
+    } catch (error) {
+      console.error('Error getting sync config:', error);
+      return { 
+        startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        endDate: new Date().toISOString().split('T')[0]
+      };
+    }
+  }
+
+  setSyncConfig(syncConfig: SyncConfig): void {
+    try {
+      const config = this.getConfig();
+      config.syncConfig = syncConfig;
+      this.setConfig(config);
+    } catch (error) {
+      console.error('Error setting sync config:', error);
+    }
+  }
+
+  getSyncMetadata(): SyncMetadata | null {
+    try {
+      const config = this.getConfig();
+      return config.syncMetadata || null;
+    } catch (error) {
+      console.error('Error getting sync metadata:', error);
+      return null;
+    }
+  }
+
+  setSyncMetadata(syncMetadata: SyncMetadata): void {
+    try {
+      const config = this.getConfig();
+      
+      // Clean up undefined values to avoid JSON serialization issues
+      const cleanMetadata: SyncMetadata = {};
+      if (syncMetadata.lastSyncTime !== undefined && syncMetadata.lastSyncTime !== null) {
+        cleanMetadata.lastSyncTime = syncMetadata.lastSyncTime;
+      }
+      if (syncMetadata.deltaToken !== undefined) {
+        cleanMetadata.deltaToken = syncMetadata.deltaToken;
+      }
+      if (syncMetadata.lastEventModified !== undefined) {
+        cleanMetadata.lastEventModified = syncMetadata.lastEventModified;
+      }
+      
+      config.syncMetadata = cleanMetadata;
+      this.setConfig(config);
+    } catch (error) {
+      console.error('Error setting sync metadata:', error);
+    }
+  }
+
   private getConfig(): AppConfig {
     try {
       const configJson = localStorage.getItem(this.APP_CONFIG_KEY);
@@ -40,6 +104,26 @@ class StorageService {
 
   private setConfig(config: AppConfig): void {
     localStorage.setItem(this.APP_CONFIG_KEY, JSON.stringify(config));
+  }
+
+  getTimezone(): string {
+    try {
+      const config = this.getConfig();
+      return config.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch (error) {
+      console.error('Error getting timezone:', error);
+      return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    }
+  }
+
+  setTimezone(timezone: string): void {
+    try {
+      const config = this.getConfig();
+      config.timezone = timezone;
+      this.setConfig(config);
+    } catch (error) {
+      console.error('Error setting timezone:', error);
+    }
   }
 
   clearConfig(): void {

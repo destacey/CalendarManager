@@ -26,163 +26,11 @@ html, body, #root {
   overflow: hidden;
 }
 
-.calendar-container {
-  background: var(--bg-color);
-  border-radius: 8px;
-  padding: 24px;
-  box-shadow: var(--shadow);
-}
-
-.ant-calendar-cell {
-  border-radius: 4px;
-}
-
-.ant-calendar .ant-calendar-selected-date .ant-calendar-date {
-  background: #1890ff;
-  color: #fff;
-}
-
-.event-item {
-  background: #e6f7ff;
-  border: 1px solid #91d5ff;
-  border-radius: 4px;
-  padding: 2px 6px;
-  margin: 2px 0;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.event-item:hover {
-  background: #bae7ff;
-  border-color: #40a9ff;
-}
-
-/* Make Ant Design Calendar responsive */
-.ant-picker-calendar {
-  background: var(--bg-color) !important;
-  border-radius: 8px !important;
-  box-shadow: var(--shadow) !important;
-}
-
-.ant-picker-calendar .ant-picker-panel {
-  background: transparent !important;
-}
-
-.ant-picker-calendar .ant-picker-calendar-header {
-  padding: 8px 0 !important;
-}
-
-.ant-picker-calendar .ant-picker-content {
-  height: 100% !important;
-}
-
-.ant-picker-calendar-full .ant-picker-panel .ant-picker-calendar-date-content {
-  height: auto !important;
-  min-height: 80px !important;
-}
-
-/* Ensure calendar table maintains minimum width */
-.ant-picker-calendar .ant-picker-body table {
-  min-width: 100% !important;
-  width: 100% !important;
-}
-
-.ant-picker-calendar .ant-picker-body th,
-.ant-picker-calendar .ant-picker-body td {
-  min-width: 100px !important;
-}
-
 /* Calendar container responsive behavior */
 .calendar-container-responsive {
   display: flex;
   flex-direction: column;
   height: 100%;
-}
-
-/* Content area responsive behavior */
-@media (max-width: 1199px) {
-  .app-content {
-    overflow: auto !important;
-  }
-  
-  .calendar-container-responsive {
-    height: auto !important;
-    min-height: 100% !important;
-    min-width: 800px !important;
-  }
-  
-  .calendar-container-responsive .ant-picker-calendar {
-    height: auto !important;
-    min-height: 600px !important;
-    min-width: 800px !important;
-  }
-}
-
-@media (min-width: 1200px) {
-  .app-content {
-    overflow: hidden !important;
-  }
-  
-  .calendar-container-responsive {
-    height: 100% !important;
-    overflow: hidden !important;
-  }
-  
-  .calendar-container-responsive .ant-picker-calendar {
-    height: 100% !important;
-    flex: 1 !important;
-  }
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .ant-picker-calendar-full .ant-picker-panel .ant-picker-calendar-date-content {
-    min-height: 60px !important;
-  }
-  
-  .event-item {
-    font-size: 10px !important;
-    padding: 1px 4px !important;
-  }
-  
-  .calendar-container-responsive {
-    min-width: 600px !important;
-  }
-  
-  .calendar-container-responsive .ant-picker-calendar {
-    min-width: 600px !important;
-  }
-}
-
-@media (min-width: 769px) and (max-width: 1199px) {
-  .ant-picker-calendar-full .ant-picker-panel .ant-picker-calendar-date-content {
-    min-height: 80px !important;
-  }
-}
-
-@media (min-width: 1200px) {
-  .ant-picker-calendar-full .ant-picker-panel .ant-picker-calendar-date-content {
-    min-height: 120px !important;
-  }
-  
-  /* Optimize calendar layout for large screens */
-  .ant-picker-calendar .ant-picker-panel {
-    height: 100% !important;
-  }
-  
-  .ant-picker-calendar .ant-picker-body {
-    height: calc(100% - 70px) !important;
-  }
-  
-  .ant-picker-calendar-full .ant-picker-panel .ant-picker-date-panel {
-    height: 100% !important;
-  }
-  
-  .ant-picker-calendar-full .ant-picker-panel .ant-picker-calendar-date {
-    height: calc((100vh - 200px) / 6) !important;
-    min-height: 100px !important;
-  }
 }
 
 /* Side navigation specific styles */
@@ -212,23 +60,7 @@ html, body, #root {
   margin-left: 50px;
 }
 
-/* Responsive adjustments for sidebar */
-@media (max-width: 768px) {
-  .main-layout-with-sidebar {
-    margin-left: 0 !important;
-  }
-  
-  .ant-layout-sider {
-    transform: translateX(-100%);
-    transition: transform 0.3s;
-    top: 32px !important;
-    height: calc(100vh - 32px) !important;
-  }
-  
-  .ant-layout-sider.ant-layout-sider-collapsed {
-    transform: translateX(-100%);
-  }
-}
+/* Responsive layout handled by JavaScript using Ant Design breakpoints */
 
 /* Ensure title bar spans full width */
 .ant-layout-header {

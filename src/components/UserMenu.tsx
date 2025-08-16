@@ -9,6 +9,7 @@ const { Text } = Typography;
 
 interface UserMenuProps {
   onLogout: () => void;
+  showName?: boolean;
 }
 
 interface UserInfo {
@@ -18,7 +19,7 @@ interface UserInfo {
   surname: string;
 }
 
-const UserMenu: React.FC<UserMenuProps> = ({ onLogout }) => {
+const UserMenu: React.FC<UserMenuProps> = ({ onLogout, showName = true }) => {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const { themeMode, toggleTheme } = useTheme();
@@ -145,9 +146,11 @@ const UserMenu: React.FC<UserMenuProps> = ({ onLogout }) => {
           >
             {userInfo?.displayName ? getInitials(userInfo.displayName) : <UserOutlined />}
           </Avatar>
-          <Text style={{ color: '#666', fontSize: '12px' }}>
-            {userInfo?.givenName || userInfo?.displayName || 'User'}
-          </Text>
+          {showName && (
+            <Text style={{ color: '#666', fontSize: '12px' }}>
+              {userInfo?.givenName || userInfo?.displayName || 'User'}
+            </Text>
+          )}
         </Space>
       </Button>
     </Dropdown>
