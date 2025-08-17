@@ -46,18 +46,13 @@ export const useCalendarEvents = () => {
   useEffect(() => {
     const handleSyncComplete = async (result: any) => {
       if (result.success) {
-        // Reload events after successful sync
         await loadEvents()
       }
     }
 
-    // Add completion callback for calendar refresh
     calendarService.addSyncCallbacks(undefined, handleSyncComplete)
-
-    return () => {
-      calendarService.removeSyncCallbacks(undefined, handleSyncComplete)
-    }
-  }, [])
+    return () => calendarService.removeSyncCallbacks(undefined, handleSyncComplete)
+  }, [loadEvents])
 
   // Initial load
   useEffect(() => {
@@ -68,17 +63,25 @@ export const useCalendarEvents = () => {
   const eventsByDate = useMemo(() => {
     const dateMap = new Map<string, Event[]>()
     
-    // Only process events if we have them
     if (events.length === 0) return dateMap
     
     events.forEach(event => {
       try {
-        // Assume stored date is in UTC and convert to user timezone
-        const eventDate = dayjs.utc(event.start_date).tz(userTimezone).format('YYYY-MM-DD')
-        if (!dateMap.has(eventDate)) {
-          dateMap.set(eventDate, [])
+        const startDate = dayjs.utc(event.start_date).tz(userTimezone)
+        const endDate = event.end_date ? dayjs.utc(event.end_date).tz(userTimezone) : startDate
+        
+        // For multi-day events, add to every date they span
+        let currentDate = startDate.startOf('day')
+        const finalDate = endDate.startOf('day')
+        
+        while (currentDate.isSame(finalDate, 'day') || currentDate.isBefore(finalDate, 'day')) {
+          const dateStr = currentDate.format('YYYY-MM-DD')
+          if (!dateMap.has(dateStr)) {
+            dateMap.set(dateStr, [])
+          }
+          dateMap.get(dateStr)!.push(event)
+          currentDate = currentDate.add(1, 'day')
         }
-        dateMap.get(eventDate)!.push(event)
       } catch (error) {
         console.warn('Error processing event date:', event.start_date, error)
       }

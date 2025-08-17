@@ -169,20 +169,23 @@ const TimezoneSettings: React.FC<TimezoneSettingsProps> = ({ searchTerm = '' }) 
       try {
         const now = dayjs().tz(tz)
         const offset = now.format('Z')
+        const offsetMinutes = now.utcOffset() // Get offset in minutes for sorting
         const city = tz.split('/').pop()?.replace(/_/g, ' ')
         return {
           label: `${city} (${offset}) - ${tz}`,
           value: tz,
-          search: `${city} ${tz} ${offset}`.toLowerCase()
+          search: `${city} ${tz} ${offset}`.toLowerCase(),
+          offsetMinutes
         }
       } catch (error) {
         return {
           label: tz,
           value: tz,
-          search: tz.toLowerCase()
+          search: tz.toLowerCase(),
+          offsetMinutes: 0
         }
       }
-    }).sort((a, b) => a.label.localeCompare(b.label))
+    }).sort((a, b) => b.offsetMinutes - a.offsetMinutes)
   }
 
   const hasUnsavedChanges = selectedTimezone !== storedTimezone

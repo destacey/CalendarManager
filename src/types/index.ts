@@ -57,6 +57,14 @@ export interface Event {
   synced_at?: string
 }
 
+// Enhanced event with multi-day rendering metadata
+export interface CalendarEvent extends Event {
+  _isStart?: boolean    // Is this the start day of a multi-day event?
+  _isEnd?: boolean      // Is this the end day of a multi-day event?
+  _isMiddle?: boolean   // Is this a middle day of a multi-day event?
+  _spanDays?: number    // How many days does this event span?
+}
+
 export interface Category {
   id?: number
   name: string
