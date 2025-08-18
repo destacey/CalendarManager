@@ -46,14 +46,30 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
       )
       
       // Initialize form with current sync config
-      const currentConfig = calendarService.getCurrentSyncConfig()
-      if (form) {
-        form.setFieldsValue({
-          startDate: dayjs(currentConfig.startDate),
-          endDate: dayjs(currentConfig.endDate)
-        })
+      const initializeForm = async () => {
+        try {
+          const currentConfig = await calendarService.getCurrentSyncConfig()
+          if (form) {
+            form.setFieldsValue({
+              startDate: dayjs(currentConfig.startDate),
+              endDate: dayjs(currentConfig.endDate)
+            })
+          }
+          setCustomSyncConfig(currentConfig)
+        } catch (error) {
+          console.error('Error loading sync config:', error)
+          // Use defaults if there's an error
+          const defaultConfig = calendarService.getDefaultSyncConfig()
+          if (form) {
+            form.setFieldsValue({
+              startDate: dayjs(defaultConfig.startDate),
+              endDate: dayjs(defaultConfig.endDate)
+            })
+          }
+          setCustomSyncConfig(defaultConfig)
+        }
       }
-      setCustomSyncConfig(currentConfig)
+      initializeForm()
     }
 
     return () => {
@@ -76,7 +92,7 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
     // Save custom sync config if it has been modified
     if (customSyncConfig) {
       try {
-        calendarService.setSyncConfig(customSyncConfig)
+        await calendarService.setSyncConfig(customSyncConfig)
       } catch (error) {
         console.error('Invalid sync config:', error)
         return
@@ -100,7 +116,9 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
       processedFields.endDate = changedFields.endDate.format('YYYY-MM-DD')
     }
     
-    const newConfig = { ...customSyncConfig, ...processedFields }
+    // Start with default config if customSyncConfig is null, then merge changes
+    const currentConfig = customSyncConfig || calendarService.getDefaultSyncConfig()
+    const newConfig = { ...currentConfig, ...processedFields }
     setCustomSyncConfig(newConfig)
   }
 
@@ -165,7 +183,6 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
                   <DatePicker
                     style={{ width: '100%' }}
                     format="YYYY-MM-DD"
-                    value={customSyncConfig?.startDate ? dayjs(customSyncConfig.startDate) : null}
                   />
                 </Form.Item>
               </Col>
@@ -180,7 +197,6 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
                   <DatePicker
                     style={{ width: '100%' }}
                     format="YYYY-MM-DD"
-                    value={customSyncConfig?.endDate ? dayjs(customSyncConfig.endDate) : null}
                   />
                 </Form.Item>
               </Col>

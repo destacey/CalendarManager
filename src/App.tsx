@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ConfigProvider, Layout, App as AntApp, Modal, Grid } from 'antd'
-import CalendarViewer from './components/CalendarViewer'
+import CalendarViewer from './components/calendar/CalendarViewer'
 import AppSetup from './components/AppSetup'
 import Login from './components/Login'
 import TitleBar from './components/TitleBar'

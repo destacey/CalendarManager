@@ -4,9 +4,13 @@ import { GraphEvent, Event } from '../types'
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
+import isBetween from 'dayjs/plugin/isBetween'
+import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
+dayjs.extend(isBetween)
+dayjs.extend(isSameOrBefore)
 
 export interface SyncConfig {
   startDate: string
@@ -666,7 +670,10 @@ class CalendarService {
 
   async getCurrentSyncConfig(): Promise<SyncConfig> {
     const stored = await storageService.getSyncConfig()
-    // Always use current defaults to ensure dates are relative to today
+    if (stored && stored.startDate && stored.endDate) {
+      return stored
+    }
+    // Use defaults if no stored config exists
     return this.getDefaultSyncConfig()
   }
 
@@ -691,7 +698,7 @@ class CalendarService {
       typeof config.endDate === 'string' &&
       startDate.isValid() &&
       endDate.isValid() &&
-      startDate.isBefore(endDate) &&
+      startDate.isSameOrBefore(endDate) &&
       endDate.diff(startDate, 'days') <= 365 // Max 365 day range
     )
   }
