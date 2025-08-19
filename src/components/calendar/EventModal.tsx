@@ -26,19 +26,26 @@ const EventModal: React.FC<EventModalProps> = ({
   userTimezone
 }) => {
   const formatEventDateTime = (startDate: string, endDate?: string, isAllDay?: boolean) => {
-    // Use userTimezone from hook, fallback to browser timezone if not available
-    const timezone = userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone
-    // Assume the stored date is in UTC and convert to user timezone
-    const start = dayjs.utc(startDate).tz(timezone)
-    const end = endDate ? dayjs.utc(endDate).tz(timezone) : start
+    let start: dayjs.Dayjs
+    let end: dayjs.Dayjs
     
     if (isAllDay) {
+      // For all-day events, treat as calendar dates without timezone conversion
+      start = dayjs(startDate)
+      // For all-day events, Microsoft Graph sets end date to the day after, so subtract 1 day for proper display
+      end = endDate ? dayjs(endDate).subtract(1, 'day') : start
+      
       if (start.isSame(end, 'day')) {
         return start.format('MMMM D, YYYY')
       } else {
         return `${start.format('MMMM D')} - ${end.format('MMMM D, YYYY')}`
       }
     } else {
+      // For timed events, apply timezone conversion
+      const timezone = userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone
+      start = dayjs.utc(startDate).tz(timezone)
+      end = endDate ? dayjs.utc(endDate).tz(timezone) : start
+      
       if (start.isSame(end, 'day')) {
         return `${start.format('MMMM D, YYYY')} ${start.format('h:mm A')} - ${end.format('h:mm A')} (${userTimezone})`
       } else {

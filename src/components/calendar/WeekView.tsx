@@ -1,5 +1,5 @@
 import React, { useMemo, useTransition } from 'react'
-import { Typography, theme, Radio, Space, Spin } from 'antd'
+import { Typography, theme, Radio, Space, Spin, Button, DatePicker } from 'antd'
 import { LeftOutlined, RightOutlined } from '@ant-design/icons'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
@@ -88,11 +88,30 @@ const WeekView: React.FC<WeekViewProps> = ({
   const sevenAmIndex = timeSlots.findIndex(slot => slot.time === '7:00')
 
   return (
-    <div>
+    <div style={{ 
+      backgroundColor: token.colorBgContainer
+    }}>
       {/* Week Header */}
-      <div className="ant-picker-calendar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 12px', marginBottom: 16 }}>
+      <div className="ant-picker-calendar-header" style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        padding: '8px 12px',
+        backgroundColor: token.colorBgContainer,
+        borderBottom: `1px solid ${token.colorBorder}`
+      }}>
         <div className="ant-picker-calendar-header-value">
           <Space>
+            <Button
+              onClick={() => {
+                startTransition(() => {
+                  setCurrentWeek(dayjs())
+                })
+              }}
+              title="Go to today"
+            >
+              Today
+            </Button>
             <LeftOutlined 
               onClick={() => {
                 startTransition(() => {
@@ -100,9 +119,19 @@ const WeekView: React.FC<WeekViewProps> = ({
                 })
               }}
             />
-            <Typography.Text strong>
-              {startOfWeek.format('MMM D')} - {startOfWeek.add(6, 'day').format('MMM D, YYYY')}
-            </Typography.Text>
+            <DatePicker 
+              value={currentWeek}
+              onChange={(date) => {
+                if (date) {
+                  startTransition(() => {
+                    setCurrentWeek(date)
+                  })
+                }
+              }}
+              picker="week"
+              allowClear={false}
+              format="MMM D - MMM D, YYYY"
+            />
             <RightOutlined 
               onClick={() => {
                 startTransition(() => {
@@ -144,8 +173,8 @@ const WeekView: React.FC<WeekViewProps> = ({
       <div style={{ 
         flex: 1,
         height: 'calc(100vh - 200px)',
-        overflow: 'auto',
-        border: `1px solid ${token.colorBorder}`,
+        overflowY: 'auto',
+        overflowX: 'hidden',
         backgroundColor: token.colorBgContainer,
         position: 'relative'
       }}>
@@ -170,7 +199,8 @@ const WeekView: React.FC<WeekViewProps> = ({
             width: '100%',
             borderCollapse: 'separate',
             borderSpacing: '0',
-            tableLayout: 'fixed'
+            tableLayout: 'fixed',
+            borderBottom: `1px solid ${token.colorBorder}`
           }}
           ref={(el) => {
             if (el && sevenAmIndex > 0) {
@@ -222,8 +252,10 @@ const WeekView: React.FC<WeekViewProps> = ({
               days.forEach(day => {
                 const dayEvents = getEventsForDate(day).filter(event => event.is_all_day)
                 dayEvents.forEach(event => {
-                  const eventStart = dayjs.utc(event.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-                  const eventEnd = event.end_date ? dayjs.utc(event.end_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone) : eventStart
+                  // For all-day events, treat as calendar dates without timezone conversion
+                  const eventStart = dayjs(event.start_date)
+                  // For all-day events, Microsoft Graph sets end date to the day after, so subtract 1 day for proper display
+                  const eventEnd = event.end_date ? dayjs(event.end_date).subtract(1, 'day') : eventStart
                   
                   // Check if this event is already in our list (to avoid duplicates for multi-day events)
                   if (!allDayEvents.find(e => e.id === event.id)) {

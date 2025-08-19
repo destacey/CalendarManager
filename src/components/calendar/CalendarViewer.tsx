@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react'
-import { Calendar, Flex, Space, Grid, Spin, Button, Card, Select, Radio, Typography } from 'antd'
+import { Calendar, Flex, Space, Grid, Spin, Button, Radio, DatePicker } from 'antd'
 import { LeftOutlined, RightOutlined } from '@ant-design/icons'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
@@ -7,6 +7,7 @@ import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { Event } from '../../types'
 import { useCalendarEvents } from '../../hooks/useCalendarEvents'
+import { useCalendarState } from '../../hooks/useCalendarState'
 import WeekView from './WeekView'
 import EventModal from './EventModal'
 
@@ -18,15 +19,23 @@ const { useBreakpoint } = Grid
 const CalendarViewer: React.FC = () => {
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
-  const [viewMode, setViewMode] = useState<'month' | 'week'>('month')
-  const [calendarType, setCalendarType] = useState<'month' | 'year'>('month')
-  const [currentWeek, setCurrentWeek] = useState(dayjs())
   const screens = useBreakpoint()
+
+  // Use persistent calendar state
+  const {
+    viewMode,
+    calendarType,
+    currentWeek,
+    currentDate,
+    setViewMode,
+    setCalendarType,
+    setCurrentWeek,
+    setCurrentDate
+  } = useCalendarState()
   
   const isLargeScreen = screens.xl // xl breakpoint is 1200px
 
   const {
-    events,
     loading,
     getEventsForDate,
     getEventColor,
@@ -35,7 +44,7 @@ const CalendarViewer: React.FC = () => {
   } = useCalendarEvents()
 
 
-  const formatEventTime = (startDate: string, endDate?: string, isAllDay?: boolean) => {
+  const formatEventTime = (startDate: string, isAllDay?: boolean) => {
     if (isAllDay) return ''
     
     const timezone = userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -55,7 +64,7 @@ const CalendarViewer: React.FC = () => {
     }
   }
 
-  const cellRender = useCallback((current: Dayjs, info: any) => {
+  const cellRender = useCallback((current: Dayjs) => {
     const dayEvents = getEventsForDate(current)
     
     if (dayEvents.length === 0) return null
@@ -99,7 +108,7 @@ const CalendarViewer: React.FC = () => {
     return (
       <Space direction="vertical" size={1} style={{ width: '100%' }}>
         {dayEvents.slice(0, eventsToShow).map((event, index) => {
-          const eventTime = formatEventTime(event.start_date, event.end_date, event.is_all_day)
+          const eventTime = formatEventTime(event.start_date, event.is_all_day)
           const displayText = eventTime ? `${eventTime} ${event.title}` : event.title
           
           return (
@@ -159,7 +168,7 @@ const CalendarViewer: React.FC = () => {
         )}
       </Space>
     )
-  }, [getEventsForDate, isLargeScreen, formatEventTime, getShowAsDisplay, getEventBackgroundColor])
+  }, [getEventsForDate, isLargeScreen, getShowAsDisplay, getEventBackgroundColor, formatEventTime, userTimezone])
 
   const monthCellRender = useCallback((value: Dayjs) => {
     const startOfMonth = value.startOf('month')
@@ -232,9 +241,18 @@ const CalendarViewer: React.FC = () => {
       <Flex flex={1} style={{ overflow: 'hidden', width: '100%' }}>
         {viewMode === 'month' ? (
           <Calendar
+            value={currentDate}
+            mode={calendarType}
+            onChange={(date) => setCurrentDate(date)}
+            onPanelChange={(date, mode) => {
+              setCurrentDate(date)
+              if (mode === 'month' || mode === 'year') {
+                setCalendarType(mode)
+              }
+            }}
             cellRender={(current, info) => {
               if (calendarType === 'month') {
-                return cellRender(current, info)
+                return cellRender(current)
               } else if (calendarType === 'year' && info.type === 'month') {
                 return monthCellRender(current)
               }
@@ -247,12 +265,16 @@ const CalendarViewer: React.FC = () => {
               const end = 12
               const monthOptions = []
               
-              const current = value.clone()
-              const localeData = value.localeData()
+              // Determine current view for Radio button selection
+              const currentRadioValue = (() => {
+                if ((viewMode as string) === 'week') return 'Week'
+                if ((calendarType as string) === 'month') return 'Month'
+                return 'Year'
+              })()
+              
               const months = []
               for (let i = 0; i < 12; i++) {
-                current.month(i)
-                months.push(localeData.monthsShort(current))
+                months.push(dayjs().month(i).format('MMM'))
               }
               
               for (let i = start; i < end; i++) {
@@ -262,6 +284,7 @@ const CalendarViewer: React.FC = () => {
                     onClick={() => {
                       const newValue = value.clone().month(i)
                       onChange(newValue)
+                      setCurrentDate(newValue)
                     }}
                     type={value.month() === i ? 'primary' : 'default'}
                   >
@@ -279,6 +302,7 @@ const CalendarViewer: React.FC = () => {
                     onClick={() => {
                       const newValue = value.clone().year(i)
                       onChange(newValue)
+                      setCurrentDate(newValue)
                     }}
                     type={value.year() === i ? 'primary' : 'default'}
                   >
@@ -291,49 +315,61 @@ const CalendarViewer: React.FC = () => {
                 <div className="ant-picker-calendar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 12px' }}>
                   <div className="ant-picker-calendar-header-value">
                     <Space>
+                      <Button
+                        onClick={() => {
+                          const today = dayjs()
+                          onChange(today)
+                          setCurrentDate(today)
+                          if (viewMode === 'week') {
+                            setCurrentWeek(today)
+                          }
+                        }}
+                        title="Go to today"
+                      >
+                        Today
+                      </Button>
                       <LeftOutlined 
-                        onClick={() => onChange(value.clone().subtract(1, type === 'month' ? 'month' : 'year'))}
+                        onClick={() => {
+                          const newValue = value.clone().subtract(1, type === 'month' ? 'month' : 'year')
+                          onChange(newValue)
+                          setCurrentDate(newValue)
+                        }}
                       />
                       {type === 'month' ? (
                         <Space>
-                          <Select
-                            value={value.month()}
-                            onChange={(month) => onChange(value.clone().month(month))}
-                            size="middle"
-                          >
-                            {Array.from({ length: 12 }, (_, i) => (
-                              <Select.Option key={i} value={i}>
-                                {dayjs().month(i).format('MMM')}
-                              </Select.Option>
-                            ))}
-                          </Select>
-                          <Select
-                            value={value.year()}
-                            onChange={(year) => onChange(value.clone().year(year))}
-                            size="middle"
-                          >
-                            {Array.from({ length: 20 }, (_, i) => value.year() - 10 + i).map((year) => (
-                              <Select.Option key={year} value={year}>
-                                {year}
-                              </Select.Option>
-                            ))}
-                          </Select>
+                          <DatePicker 
+                            value={value}
+                            onChange={(date) => {
+                              if (date) {
+                                onChange(date)
+                                setCurrentDate(date)
+                              }
+                            }}
+                            picker="month"
+                            allowClear={false}
+                            format="MMM YYYY"
+                          />
                         </Space>
                       ) : (
-                        <Select
-                          value={value.year()}
-                          onChange={(year) => onChange(value.clone().year(year))}
-                          size="middle"
-                        >
-                          {Array.from({ length: 20 }, (_, i) => value.year() - 10 + i).map((year) => (
-                            <Select.Option key={year} value={year}>
-                              {year}
-                            </Select.Option>
-                          ))}
-                        </Select>
+                        <DatePicker 
+                          value={value}
+                          onChange={(date) => {
+                            if (date) {
+                              onChange(date)
+                              setCurrentDate(date)
+                            }
+                          }}
+                          picker="year"
+                          allowClear={false}
+                          format="YYYY"
+                        />
                       )}
                       <RightOutlined 
-                        onClick={() => onChange(value.clone().add(1, type === 'month' ? 'month' : 'year'))}
+                        onClick={() => {
+                          const newValue = value.clone().add(1, type === 'month' ? 'month' : 'year')
+                          onChange(newValue)
+                          setCurrentDate(newValue)
+                        }}
                       />
                     </Space>
                   </div>
@@ -360,7 +396,7 @@ const CalendarViewer: React.FC = () => {
                         { label: 'Month', value: 'Month' },
                         { label: 'Year', value: 'Year' }
                       ]} 
-                      defaultValue="Month" 
+                      value={currentRadioValue} 
                       optionType="button"
                     />
                   </div>

@@ -67,8 +67,19 @@ export const useCalendarEvents = () => {
     
     events.forEach(event => {
       try {
-        const startDate = dayjs.utc(event.start_date).tz(userTimezone)
-        const endDate = event.end_date ? dayjs.utc(event.end_date).tz(userTimezone) : startDate
+        let startDate: dayjs.Dayjs
+        let endDate: dayjs.Dayjs
+        
+        if (event.is_all_day) {
+          // For all-day events, treat as calendar dates without timezone conversion
+          startDate = dayjs(event.start_date)
+          // For all-day events, Microsoft Graph sets end date to the day after, so subtract 1 day for proper display
+          endDate = event.end_date ? dayjs(event.end_date).subtract(1, 'day') : startDate
+        } else {
+          // For timed events, apply timezone conversion
+          startDate = dayjs.utc(event.start_date).tz(userTimezone)
+          endDate = event.end_date ? dayjs.utc(event.end_date).tz(userTimezone) : startDate
+        }
         
         // For multi-day events, add to every date they span
         let currentDate = startDate.startOf('day')
@@ -93,7 +104,10 @@ export const useCalendarEvents = () => {
         if (a.is_all_day && !b.is_all_day) return -1
         if (!a.is_all_day && b.is_all_day) return 1
         try {
-          return dayjs.utc(a.start_date).tz(userTimezone).isBefore(dayjs.utc(b.start_date).tz(userTimezone)) ? -1 : 1
+          // Handle timezone conversion differently for all-day vs timed events
+          const aStartDate = a.is_all_day ? dayjs(a.start_date) : dayjs.utc(a.start_date).tz(userTimezone)
+          const bStartDate = b.is_all_day ? dayjs(b.start_date) : dayjs.utc(b.start_date).tz(userTimezone)
+          return aStartDate.isBefore(bStartDate) ? -1 : 1
         } catch (error) {
           return 0
         }
