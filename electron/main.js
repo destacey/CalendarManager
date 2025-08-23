@@ -183,6 +183,31 @@ ipcMain.handle('db:getEvents', () => {
   return stmt.all();
 });
 
+// Optimized handler for getting events within a date range
+ipcMain.handle('db:getEventsInRange', (event, startDate, endDate) => {
+  try {
+    console.log('Database query: getEventsInRange', startDate, 'to', endDate);
+    const stmt = db.prepare(`
+      SELECT * FROM events 
+      WHERE (
+        -- Event starts within range
+        (start_date >= ? AND start_date <= ?) OR
+        -- Event ends within range  
+        (end_date >= ? AND end_date <= ?) OR
+        -- Event spans the entire range
+        (start_date <= ? AND end_date >= ?)
+      )
+      ORDER BY start_date
+    `);
+    const results = stmt.all(startDate, endDate, startDate, endDate, startDate, endDate);
+    console.log('Database query returned', results.length, 'events');
+    return results;
+  } catch (error) {
+    console.error('Database query error:', error);
+    return [];
+  }
+});
+
 ipcMain.handle('db:createEvent', (event, eventData) => {
   const stmt = db.prepare(`
     INSERT INTO events (graph_id, title, description, start_date, end_date, is_all_day, show_as, categories)

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Dropdown, Avatar, Typography, Space, Button, Switch } from 'antd';
+import { Dropdown, Avatar, Typography, Space, Button, Switch, Flex } from 'antd';
 import { UserOutlined, LogoutOutlined, LoadingOutlined, MoonOutlined, SunOutlined, DatabaseOutlined } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { authService } from '../services/auth';
@@ -84,7 +84,7 @@ const UserMenu: React.FC<UserMenuProps> = ({ onLogout, showName = true, onDataMa
     {
       key: 'theme',
       label: (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: '200px' }}>
+        <Flex justify="space-between" align="center" style={{ minWidth: '200px' }}>
           <Space>
             {themeMode === 'dark' ? <MoonOutlined /> : <SunOutlined />}
             Dark Mode
@@ -94,7 +94,7 @@ const UserMenu: React.FC<UserMenuProps> = ({ onLogout, showName = true, onDataMa
             onChange={toggleTheme}
             size="small"
           />
-        </div>
+        </Flex>
       ),
       onClick: (e) => {
         e.domEvent.stopPropagation();

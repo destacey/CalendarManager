@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   // Database operations
   getEvents: () => ipcRenderer.invoke('db:getEvents'),
+  getEventsInRange: (startDate, endDate) => ipcRenderer.invoke('db:getEventsInRange', startDate, endDate),
   createEvent: (eventData) => ipcRenderer.invoke('db:createEvent', eventData),
   updateEvent: (id, eventData) => ipcRenderer.invoke('db:updateEvent', id, eventData),
   deleteEvent: (id) => ipcRenderer.invoke('db:deleteEvent', id),

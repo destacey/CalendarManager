@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { ConfigProvider, Layout, App as AntApp, Modal, Grid } from 'antd'
-import CalendarViewer from './components/calendar/CalendarViewer'
+import { ConfigProvider, Layout, App as AntApp, Modal, Grid, Typography } from 'antd'
+import CalendarView from './components/calendar/CalendarView'
 import AppSetup from './components/AppSetup'
 import Login from './components/Login'
 import TitleBar from './components/TitleBar'
@@ -15,6 +15,7 @@ import './App.css'
 
 const { Content } = Layout
 const { useBreakpoint } = Grid
+const { Title, Paragraph } = Typography
 
 type AppState = 'loading' | 'setup' | 'login' | 'dashboard'
 
@@ -108,21 +109,32 @@ function AppContent() {
   }
 
   const renderMainContent = () => {
-    switch (selectedNavKey) {
-      case 'home':
-        return (
-          <div className="side-nav-content">
-            <h1>Welcome to Calendar Manager</h1>
-            <p>Select Calendar from the sidebar to view your events, or Settings to configure the application.</p>
-          </div>
-        )
-      case 'calendar':
-        return <CalendarViewer />
-      case 'settings':
-        return <Settings />
-      default:
-        return <CalendarViewer />
-    }
+    return (
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <div 
+          className="side-nav-content"
+          style={{ 
+            display: selectedNavKey === 'home' ? 'block' : 'none',
+            height: '100%'
+          }}
+        >
+          <Title>Welcome to Calendar Manager</Title>
+          <Paragraph>Select Calendar from the sidebar to view your events, or Settings to configure the application.</Paragraph>
+        </div>
+        <div style={{ 
+          display: selectedNavKey === 'calendar' ? 'block' : 'none',
+          height: '100%'
+        }}>
+          <CalendarView />
+        </div>
+        <div style={{ 
+          display: selectedNavKey === 'settings' ? 'block' : 'none',
+          height: '100%'
+        }}>
+          <Settings />
+        </div>
+      </div>
+    )
   }
 
   const renderContent = () => {

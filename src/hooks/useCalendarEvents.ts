@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, startTransition } from 'react'
 import { App } from 'antd'
 import dayjs, { Dayjs } from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
@@ -59,62 +59,81 @@ export const useCalendarEvents = () => {
     loadEvents()
   }, [])
 
-  // Memoized event date map for fast lookups
-  const eventsByDate = useMemo(() => {
-    const dateMap = new Map<string, Event[]>()
-    
-    if (events.length === 0) return dateMap
-    
-    events.forEach(event => {
-      try {
-        let startDate: dayjs.Dayjs
-        let endDate: dayjs.Dayjs
+  // Optimized event date map with deferred computation to prevent blocking
+  const [eventsByDate, setEventsByDate] = useState(new Map<string, Event[]>())
+
+  useEffect(() => {
+    // Use setTimeout to defer heavy computation and prevent UI blocking
+    const timeoutId = setTimeout(() => {
+      startTransition(() => {
+        const dateMap = new Map<string, Event[]>()
         
-        if (event.is_all_day) {
-          // For all-day events, treat as calendar dates without timezone conversion
-          startDate = dayjs(event.start_date)
-          // For all-day events, Microsoft Graph sets end date to the day after, so subtract 1 day for proper display
-          endDate = event.end_date ? dayjs(event.end_date).subtract(1, 'day') : startDate
-        } else {
-          // For timed events, apply timezone conversion
-          startDate = dayjs.utc(event.start_date).tz(userTimezone)
-          endDate = event.end_date ? dayjs.utc(event.end_date).tz(userTimezone) : startDate
+        if (events.length === 0) {
+          setEventsByDate(dateMap)
+          return
         }
         
-        // For multi-day events, add to every date they span
-        let currentDate = startDate.startOf('day')
-        const finalDate = endDate.startOf('day')
-        
-        while (currentDate.isSame(finalDate, 'day') || currentDate.isBefore(finalDate, 'day')) {
-          const dateStr = currentDate.format('YYYY-MM-DD')
-          if (!dateMap.has(dateStr)) {
-            dateMap.set(dateStr, [])
+        // Process events more efficiently
+        for (const event of events) {
+          try {
+            // Pre-compute and cache date objects to avoid repeated parsing
+            const startDate = event.is_all_day 
+              ? dayjs(event.start_date)
+              : dayjs.utc(event.start_date).tz(userTimezone)
+            
+            const endDate = event.end_date
+              ? (event.is_all_day 
+                  ? dayjs(event.end_date).subtract(1, 'day')
+                  : dayjs.utc(event.end_date).tz(userTimezone))
+              : startDate
+            
+            // For single-day events (most common), optimize the path
+            const startDateStr = startDate.format('YYYY-MM-DD')
+            const endDateStr = endDate.format('YYYY-MM-DD')
+            
+            if (startDateStr === endDateStr) {
+              // Single day event - most common case
+              if (!dateMap.has(startDateStr)) {
+                dateMap.set(startDateStr, [])
+              }
+              dateMap.get(startDateStr)!.push(event)
+            } else {
+              // Multi-day event - less common, handle separately
+              let currentDate = startDate.startOf('day')
+              const finalDate = endDate.startOf('day')
+              
+              while (currentDate.isSameOrBefore(finalDate, 'day')) {
+                const dateStr = currentDate.format('YYYY-MM-DD')
+                if (!dateMap.has(dateStr)) {
+                  dateMap.set(dateStr, [])
+                }
+                dateMap.get(dateStr)!.push(event)
+                currentDate = currentDate.add(1, 'day')
+              }
+            }
+          } catch (error) {
+            console.warn('Error processing event date:', event.start_date, error)
           }
-          dateMap.get(dateStr)!.push(event)
-          currentDate = currentDate.add(1, 'day')
         }
-      } catch (error) {
-        console.warn('Error processing event date:', event.start_date, error)
-      }
-    })
-    
-    // Sort events within each date by time
-    dateMap.forEach((dayEvents) => {
-      dayEvents.sort((a, b) => {
-        if (a.is_all_day && !b.is_all_day) return -1
-        if (!a.is_all_day && b.is_all_day) return 1
-        try {
-          // Handle timezone conversion differently for all-day vs timed events
-          const aStartDate = a.is_all_day ? dayjs(a.start_date) : dayjs.utc(a.start_date).tz(userTimezone)
-          const bStartDate = b.is_all_day ? dayjs(b.start_date) : dayjs.utc(b.start_date).tz(userTimezone)
-          return aStartDate.isBefore(bStartDate) ? -1 : 1
-        } catch (error) {
-          return 0
+        
+        // Sort events only once per date after all events are added
+        for (const dayEvents of dateMap.values()) {
+          dayEvents.sort((a, b) => {
+            if (a.is_all_day && !b.is_all_day) return -1
+            if (!a.is_all_day && b.is_all_day) return 1
+            
+            // Use cached start times for sorting to avoid repeated timezone conversion
+            const aStart = a.is_all_day ? a.start_date : a.start_date
+            const bStart = b.is_all_day ? b.start_date : b.start_date
+            return aStart < bStart ? -1 : aStart > bStart ? 1 : 0
+          })
         }
+        
+        setEventsByDate(dateMap)
       })
-    })
-    
-    return dateMap
+    }, 10) // Small delay to allow UI to render first
+
+    return () => clearTimeout(timeoutId)
   }, [events, userTimezone])
 
   const getEventsForDate = useCallback((date: Dayjs) => {

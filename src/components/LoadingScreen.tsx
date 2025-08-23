@@ -1,17 +1,16 @@
 import React from 'react';
-import { Spin, Typography, Space } from 'antd';
+import { Spin, Typography, Space, Flex } from 'antd';
 import { CalendarOutlined } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
 
 const LoadingScreen: React.FC = () => {
   return (
-    <div
+    <Flex
+      vertical
+      justify="center"
+      align="center"
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
         minHeight: '100vh',
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
         padding: '20px',
@@ -19,15 +18,14 @@ const LoadingScreen: React.FC = () => {
     >
       <Space direction="vertical" size="large" style={{ textAlign: 'center' }}>
         {/* Logo/Icon */}
-        <div
+        <Flex
+          justify="center"
+          align="center"
           style={{
             width: '80px',
             height: '80px',
             borderRadius: '50%',
             background: 'rgba(255, 255, 255, 0.1)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
             margin: '0 auto',
             backdropFilter: 'blur(10px)',
             border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -40,7 +38,7 @@ const LoadingScreen: React.FC = () => {
               animation: 'pulse 2s infinite'
             }} 
           />
-        </div>
+        </Flex>
 
         {/* App Title */}
         <Title 
@@ -92,7 +90,7 @@ const LoadingScreen: React.FC = () => {
           }
         }
       `}</style>
-    </div>
+    </Flex>
   );
 };
 

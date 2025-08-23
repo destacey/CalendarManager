@@ -668,6 +668,20 @@ class CalendarService {
     }
   }
 
+  // New optimized method for getting events in a specific date range
+  async getLocalEventsInRange(startDate: string, endDate: string): Promise<Event[]> {
+    try {
+      if (window.electronAPI) {
+        return await window.electronAPI.getEventsInRange(startDate, endDate)
+      } else {
+        throw new Error('Electron API not available')
+      }
+    } catch (error) {
+      console.error('Error fetching local events in range:', error)
+      return []
+    }
+  }
+
   async getCurrentSyncConfig(): Promise<SyncConfig> {
     const stored = await storageService.getSyncConfig()
     if (stored && stored.startDate && stored.endDate) {

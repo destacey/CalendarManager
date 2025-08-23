@@ -1,9 +1,42 @@
-import React, { useMemo, useTransition } from 'react'
+import React, { useMemo, useTransition, memo, useState } from 'react'
 import { Typography, theme, Radio, Space, Spin, Button, DatePicker } from 'antd'
 import { LeftOutlined, RightOutlined } from '@ant-design/icons'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import { Event } from '../../types'
+
+// Extended event type with pre-processed timezone data
+interface ProcessedEvent extends Event {
+  processedStart?: Dayjs
+  processedEnd?: Dayjs
+  startHour?: number
+  startMinute?: number
+}
+
+// Generate time slots more efficiently without dayjs in module scope
+const TIME_SLOTS = (() => {
+  const slots = []
+  for (let hour = 0; hour < 24; hour++) {
+    for (let minute = 0; minute < 60; minute += 5) {
+      const timeStr = `${hour}:${minute.toString().padStart(2, '0')}`
+      const display24 = hour === 0 ? '12' : hour > 12 ? (hour - 12).toString() : hour.toString()
+      const ampm = hour < 12 ? 'AM' : 'PM'
+      const displayMinute = minute === 0 ? '00' : minute.toString()
+      
+      slots.push({
+        time: timeStr,
+        display: `${display24}:${displayMinute} ${ampm}`,
+        showLabel: minute % 15 === 0
+      })
+    }
+  }
+  return slots
+})()
+
+// Pre-calculate the 7:00 AM index for scrolling  
+const SEVEN_AM_INDEX = TIME_SLOTS.findIndex(slot => slot.time === '7:00')
+
+const { Text } = Typography
 
 interface WeekViewProps {
   currentWeek: Dayjs
@@ -17,7 +50,7 @@ interface WeekViewProps {
   userTimezone: string
 }
 
-const WeekView: React.FC<WeekViewProps> = ({
+const WeekView: React.FC<WeekViewProps> = memo(({
   currentWeek,
   setCurrentWeek,
   setViewMode,
@@ -31,66 +64,106 @@ const WeekView: React.FC<WeekViewProps> = ({
   const { token } = theme.useToken()
   const [isPending, startTransition] = useTransition()
 
-  const startOfWeek = currentWeek.startOf('week')
-  const days = Array.from({ length: 7 }, (_, i) => startOfWeek.add(i, 'day'))
+  // Memoize days array to prevent unnecessary recalculations
+  const days = useMemo(() => {
+    const startOfWeek = currentWeek.startOf('week')
+    return Array.from({ length: 7 }, (_, i) => startOfWeek.add(i, 'day'))
+  }, [currentWeek])
 
-  // Memoize overlap calculations for performance
+  // Pre-process events for the week with memoization
+  const weekEvents = useMemo(() => {
+    const events = new Map()
+    const timeSlotMap = new Map()
+    
+    days.forEach(day => {
+      const dayKey = day.format('YYYY-MM-DD')
+      const dayEvents = getEventsForDate(day)
+      
+      // Separate all-day and timed events
+      const allDayEvents = dayEvents.filter(event => event.is_all_day)
+      const timedEvents = dayEvents.filter(event => !event.is_all_day)
+      
+      // Pre-convert all timed events to user timezone once
+      const processedTimedEvents = timedEvents.map(event => {
+        const eventStart = dayjs.utc(event.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
+        const eventEnd = event.end_date ? dayjs.utc(event.end_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone) : eventStart.add(1, 'hour')
+        
+        return {
+          ...event,
+          processedStart: eventStart,
+          processedEnd: eventEnd,
+          startHour: eventStart.hour(),
+          startMinute: Math.floor(eventStart.minute() / 5) * 5 // Round to 5-minute intervals
+        }
+      })
+      
+      events.set(dayKey, {
+        allDay: allDayEvents,
+        timed: processedTimedEvents
+      })
+      
+      // Create time slot lookup for fast access
+      const slotLookup = new Map()
+      processedTimedEvents.forEach(event => {
+        const slotKey = `${event.startHour}:${event.startMinute.toString().padStart(2, '0')}`
+        if (!slotLookup.has(slotKey)) {
+          slotLookup.set(slotKey, [])
+        }
+        slotLookup.get(slotKey).push(event)
+      })
+      
+      timeSlotMap.set(dayKey, slotLookup)
+    })
+    
+    return { events, timeSlotMap }
+  }, [days, getEventsForDate, userTimezone])
+
+  // Simple overlap map without complex calculations - just assign each event to its own group
   const dayOverlapMap = useMemo(() => {
     const map = new Map()
     
     days.forEach(day => {
-      const dayEvents = getEventsForDate(day).filter(event => !event.is_all_day)
-      const overlappingGroups = new Map()
+      const dayKey = day.format('YYYY-MM-DD')
+      const dayEvents = weekEvents.events.get(dayKey)?.timed || []
       
-      dayEvents.forEach(event => {
-        const eventStart = dayjs.utc(event.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-        const eventEnd = event.end_date ? dayjs.utc(event.end_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone) : eventStart.add(1, 'hour')
-        
-        // Find overlapping events
-        const overlapping = dayEvents.filter(otherEvent => {
-          if (otherEvent.id === event.id) return false
-          const otherStart = dayjs.utc(otherEvent.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-          const otherEnd = otherEvent.end_date ? dayjs.utc(otherEvent.end_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone) : otherStart.add(1, 'hour')
-          
-          return (eventStart.isBefore(otherEnd) && eventEnd.isAfter(otherStart))
-        })
-        
-        const groupKey = [event, ...overlapping].map(e => e.id).sort().join(',')
-        if (!overlappingGroups.has(groupKey)) {
-          overlappingGroups.set(groupKey, [event, ...overlapping].sort((a, b) => {
-            const aStart = dayjs.utc(a.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-            const bStart = dayjs.utc(b.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-            return aStart.isBefore(bStart) ? -1 : 1
-          }))
-        }
+      // Simple grouping - each event in its own group for now (no overlap calculation)
+      const eventsMap = new Map()
+      dayEvents.forEach((event: ProcessedEvent) => {
+        eventsMap.set(event.id, [event])
       })
       
-      map.set(day.format('YYYY-MM-DD'), overlappingGroups)
+      map.set(dayKey, eventsMap)
     })
     
     return map
-  }, [currentWeek, getEventsForDate, userTimezone, days])
+  }, [days, weekEvents])
 
-  // Generate time slots in 5-minute increments for full 24 hours
-  const timeSlots = []
-  for (let hour = 0; hour < 24; hour++) {
-    for (let minute = 0; minute < 60; minute += 5) {
-      const time = dayjs().hour(hour).minute(minute).second(0)
-      timeSlots.push({
-        time: time.format('H:mm'),
-        display: time.format('h:mm A'),
-        showLabel: minute % 15 === 0 // Only show time labels every 15 minutes
-      })
-    }
-  }
+  // Remove the useState and useEffect for calculating overlap
+  const [isCalculating] = useState(false)
 
-  // Find the index for 7:00 AM to scroll to
-  const sevenAmIndex = timeSlots.findIndex(slot => slot.time === '7:00')
 
   return (
     <div style={{ 
-      backgroundColor: token.colorBgContainer
+      backgroundColor: token.colorBgContainer,
+      position: 'relative'
     }}>
+      {/* Show loading overlay while calculating events */}
+      {(isPending || isCalculating) && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: token.colorBgMask,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <Spin size="large" />
+        </div>
+      )}
       {/* Week Header */}
       <div className="ant-picker-calendar-header" style={{ 
         display: 'flex', 
@@ -103,6 +176,7 @@ const WeekView: React.FC<WeekViewProps> = ({
         <div className="ant-picker-calendar-header-value">
           <Space>
             <Button
+              loading={isPending}
               onClick={() => {
                 startTransition(() => {
                   setCurrentWeek(dayjs())
@@ -112,12 +186,15 @@ const WeekView: React.FC<WeekViewProps> = ({
             >
               Today
             </Button>
-            <LeftOutlined 
+            <Button
+              icon={<LeftOutlined />}
+              loading={isPending}
               onClick={() => {
                 startTransition(() => {
                   setCurrentWeek(currentWeek.subtract(1, 'week'))
                 })
               }}
+              title="Previous week"
             />
             <DatePicker 
               value={currentWeek}
@@ -130,14 +207,21 @@ const WeekView: React.FC<WeekViewProps> = ({
               }}
               picker="week"
               allowClear={false}
-              format="MMM D - MMM D, YYYY"
+              format={(value) => {
+                const start = value.startOf('week')
+                const end = value.endOf('week')
+                return `${start.format('MMM D')} - ${end.format('MMM D, YYYY')}`
+              }}
             />
-            <RightOutlined 
+            <Button
+              icon={<RightOutlined />}
+              loading={isPending}
               onClick={() => {
                 startTransition(() => {
                   setCurrentWeek(currentWeek.add(1, 'week'))
                 })
               }}
+              title="Next week"
             />
           </Space>
         </div>
@@ -203,9 +287,9 @@ const WeekView: React.FC<WeekViewProps> = ({
             borderBottom: `1px solid ${token.colorBorder}`
           }}
           ref={(el) => {
-            if (el && sevenAmIndex > 0) {
+            if (el && SEVEN_AM_INDEX > 0) {
               // Scroll to 7 AM, accounting for sticky header (5-minute rows at 13.33px each)
-              const scrollTop = (sevenAmIndex * 13.33)
+              const scrollTop = (SEVEN_AM_INDEX * 13.33)
               el.parentElement?.scrollTo({ top: scrollTop, behavior: 'smooth' })
             }
           }}
@@ -247,11 +331,12 @@ const WeekView: React.FC<WeekViewProps> = ({
             
             {/* All-day events in header */}
             {(() => {
-              // Get all all-day events for the week
-              const allDayEvents = []
+              // Get all all-day events for the week from pre-processed data
+              const allDayEvents: Array<Event & { startDay: Dayjs; endDay: Dayjs }> = []
               days.forEach(day => {
-                const dayEvents = getEventsForDate(day).filter(event => event.is_all_day)
-                dayEvents.forEach(event => {
+                const dayKey = day.format('YYYY-MM-DD')
+                const dayEvents = weekEvents.events.get(dayKey)?.allDay || []
+                dayEvents.forEach((event: Event) => {
                   // For all-day events, treat as calendar dates without timezone conversion
                   const eventStart = dayjs(event.start_date)
                   // For all-day events, Microsoft Graph sets end date to the day after, so subtract 1 day for proper display
@@ -270,12 +355,13 @@ const WeekView: React.FC<WeekViewProps> = ({
               })
 
               // Group overlapping all-day events into rows
-              const eventRows = []
-              allDayEvents.forEach(event => {
+              type EventWithDays = Event & { startDay: Dayjs; endDay: Dayjs }
+              const eventRows: EventWithDays[][] = []
+              allDayEvents.forEach((event: EventWithDays) => {
                 let placed = false
                 for (let rowIndex = 0; rowIndex < eventRows.length; rowIndex++) {
                   const row = eventRows[rowIndex]
-                  const hasConflict = row.some(existingEvent => {
+                  const hasConflict = row.some((existingEvent: EventWithDays) => {
                     return (event.startDay.isBefore(existingEvent.endDay.add(1, 'day')) && 
                             event.endDay.add(1, 'day').isAfter(existingEvent.startDay))
                   })
@@ -315,7 +401,7 @@ const WeekView: React.FC<WeekViewProps> = ({
                   
                   {days.map((day, dayIndex) => {
                     // Find events that should render in this day column
-                    const eventsToRender = row.filter(event => {
+                    const eventsToRender = row.filter((event: EventWithDays) => {
                       const weekStart = days[0]
                       const weekEnd = days[6]
                       
@@ -349,7 +435,7 @@ const WeekView: React.FC<WeekViewProps> = ({
                           position: 'relative'
                         }}
                       >
-                        {eventsToRender.map(event => {
+                        {eventsToRender.map((event: EventWithDays) => {
                           // Calculate how many days this event spans within the current week
                           const weekStart = days[0]
                           const weekEnd = days[6]
@@ -409,7 +495,7 @@ const WeekView: React.FC<WeekViewProps> = ({
           
           {/* Time Grid */}
           <tbody>
-            {timeSlots.map((timeSlot) => (
+            {TIME_SLOTS.map((timeSlot) => (
               <tr key={timeSlot.time}>
                 {timeSlot.showLabel && (
                   <td 
@@ -431,16 +517,13 @@ const WeekView: React.FC<WeekViewProps> = ({
                 )}
                 
                 {days.map(day => {
-                  const dayEvents = getEventsForDate(day)
-                  const timeSlotEvents = dayEvents.filter(event => {
-                    if (event.is_all_day) return false
-                    const eventStart = dayjs.utc(event.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-                    const slotTime = day.hour(parseInt(timeSlot.time.split(':')[0])).minute(parseInt(timeSlot.time.split(':')[1]))
-                    return eventStart.hour() === slotTime.hour() && Math.floor(eventStart.minute() / 5) === Math.floor(slotTime.minute() / 5)
-                  })
+                  const dayKey = day.format('YYYY-MM-DD')
+                  // Use pre-processed time slot lookup for much faster access
+                  const timeSlotLookup = weekEvents.timeSlotMap.get(dayKey) || new Map()
+                  const timeSlotEvents = timeSlotLookup.get(timeSlot.time) || []
                   
                   // Get pre-calculated overlapping groups for this day
-                  const overlappingGroups = dayOverlapMap.get(day.format('YYYY-MM-DD')) || new Map()
+                  const overlappingGroups = dayOverlapMap.get(dayKey) || new Map()
                   
                   return (
                     <td 
@@ -457,9 +540,12 @@ const WeekView: React.FC<WeekViewProps> = ({
                         position: 'relative'
                       }}
                     >
-                      {timeSlotEvents.map((event, index) => {
-                        const eventStart = dayjs.utc(event.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-                        const eventEnd = event.end_date ? dayjs.utc(event.end_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone) : eventStart.add(1, 'hour')
+                      {timeSlotEvents.map((event: ProcessedEvent, index: number) => {
+                        // Use pre-processed timezone-converted dates
+                        const eventStart = event.processedStart
+                        const eventEnd = event.processedEnd
+                        
+                        if (!eventStart || !eventEnd) return null
                         
                         // Calculate duration in 5-minute slots
                         const durationMinutes = eventEnd.diff(eventStart, 'minute')
@@ -467,12 +553,12 @@ const WeekView: React.FC<WeekViewProps> = ({
                         const height = (slots * 13.33) - 2 // 13.33px per slot minus border/padding
                         
                         // Find this event's overlapping group (already sorted)
-                        let eventGroup = []
+                        let eventGroup: ProcessedEvent[] = []
                         let eventIndex = 0
-                        for (const [groupKey, group] of overlappingGroups) {
-                          if (group.find(e => e.id === event.id)) {
+                        for (const [, group] of overlappingGroups) {
+                          if (group.find((e: ProcessedEvent) => e.id === event.id)) {
                             eventGroup = group
-                            eventIndex = eventGroup.findIndex(e => e.id === event.id)
+                            eventIndex = eventGroup.findIndex((e: ProcessedEvent) => e.id === event.id)
                             break
                           }
                         }
@@ -507,12 +593,12 @@ const WeekView: React.FC<WeekViewProps> = ({
                             }}
                             title={`${event.title} (${eventStart.format('h:mm A')} - ${eventEnd.format('h:mm A')})`}
                           >
-                            <div style={{ fontWeight: 'bold', fontSize: '9px' }}>
+                            <Text style={{ fontWeight: 'bold', fontSize: '9px' }}>
                               {eventStart.format('h:mm A')}
-                            </div>
-                            <div style={{ marginTop: '1px' }}>
+                            </Text>
+                            <Text style={{ marginTop: '1px' }}>
                               {event.title}
-                            </div>
+                            </Text>
                           </div>
                         )
                       })}
@@ -526,6 +612,8 @@ const WeekView: React.FC<WeekViewProps> = ({
       </div>
     </div>
   )
-}
+})
+
+WeekView.displayName = 'WeekView'
 
 export default WeekView

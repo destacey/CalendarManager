@@ -1,5 +1,5 @@
 import React from 'react'
-import { Progress, Tooltip, Button, Space } from 'antd'
+import { Progress, Tooltip, Button, Space, Flex } from 'antd'
 import { LoadingOutlined, CloseOutlined } from '@ant-design/icons'
 import { SyncProgress as SyncProgressType } from '../services/calendar'
 
@@ -50,19 +50,18 @@ const SyncProgress: React.FC<SyncProgressProps> = ({
 
   if (compact) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        gap: '8px',
-        minWidth: '200px'
-      }}>
+      <Flex 
+        align="center" 
+        gap={8}
+        style={{ minWidth: '200px' }}
+      >
         <Tooltip title={progress.message}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Flex align="center" gap={4}>
             {getStageIcon(progress.stage)}
             <span style={{ fontSize: '12px', color: '#666' }}>
               {progress.total > 0 ? `${progress.completed}/${progress.total}` : 'Syncing...'}
             </span>
-          </div>
+          </Flex>
         </Tooltip>
         
         {progress.total > 0 && (
@@ -85,18 +84,17 @@ const SyncProgress: React.FC<SyncProgressProps> = ({
             title="Cancel sync"
           />
         )}
-      </div>
+      </Flex>
     )
   }
 
   return (
     <div style={{ width: '100%', maxWidth: '400px' }}>
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        marginBottom: '8px'
-      }}>
+      <Flex 
+        justify="space-between" 
+        align="center"
+        style={{ marginBottom: '8px' }}
+      >
         <Space>
           {getStageIcon(progress.stage)}
           <span style={{ fontWeight: 500 }}>
@@ -115,7 +113,7 @@ const SyncProgress: React.FC<SyncProgressProps> = ({
             Cancel
           </Button>
         )}
-      </div>
+      </Flex>
       
       {progress.total > 0 && (
         <>
@@ -124,16 +122,17 @@ const SyncProgress: React.FC<SyncProgressProps> = ({
             strokeColor={getStageColor(progress.stage)}
             format={(percent) => `${progress.completed} of ${progress.total}`}
           />
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between',
-            fontSize: '12px',
-            color: '#666',
-            marginTop: '4px'
-          }}>
+          <Flex 
+            justify="space-between"
+            style={{ 
+              fontSize: '12px',
+              color: '#666',
+              marginTop: '4px'
+            }}
+          >
             <span>Progress: {progressPercent}%</span>
             <span>Stage: {progress.stage}</span>
-          </div>
+          </Flex>
         </>
       )}
     </div>

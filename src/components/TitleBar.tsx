@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Space, Tooltip, Dropdown, MenuProps } from 'antd';
+import { Button, Space, Tooltip, Dropdown, MenuProps, Flex, Typography } from 'antd';
 import { MinusOutlined, BorderOutlined, CloseOutlined, BlockOutlined, MenuFoldOutlined, MenuUnfoldOutlined, CloudSyncOutlined, MenuOutlined, HomeOutlined, CalendarOutlined, SettingOutlined } from '@ant-design/icons';
 import UserMenu from './UserMenu';
 import SyncProgress from './SyncProgress';
@@ -18,6 +18,8 @@ interface TitleBarProps {
   onNavSelect?: (key: string) => void;
   onDataManagement?: () => void;
 }
+
+const { Text } = Typography
 
 const TitleBar: React.FC<TitleBarProps> = ({ 
   showUserMenu = false, 
@@ -140,20 +142,19 @@ const TitleBar: React.FC<TitleBarProps> = ({
   };
 
   return (
-    <div
+    <Flex
+      justify="space-between"
+      align="center"
       style={{
         height: '32px',
         background: titleBarColors.background,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
         padding: '0 12px',
         borderBottom: `1px solid ${titleBarColors.border}`,
         WebkitAppRegion: 'drag',
         userSelect: 'none',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <Flex align="center" gap={12}>
         {isMobile ? (
           <Dropdown
             menu={{
@@ -193,21 +194,22 @@ const TitleBar: React.FC<TitleBarProps> = ({
             title={sideNavCollapsed ? 'Expand menu' : 'Collapse menu'}
           />
         )}
-        <div style={{ fontSize: '14px', fontWeight: 500, color: titleBarColors.text }}>
+        <Text style={{ fontSize: '14px', fontWeight: 500, color: titleBarColors.text }}>
           {isMobile ? 'CM' : 'Calendar Manager'}
-        </div>
+        </Text>
         
-      </div>
+      </Flex>
       
       {/* Sync section in the middle */}
-      <div style={{ 
-        flex: 1, 
-        display: 'flex', 
-        justifyContent: 'center',
-        alignItems: 'center',
-        WebkitAppRegion: 'no-drag',
-        maxWidth: '300px'
-      }}>
+      <Flex 
+        justify="center"
+        align="center"
+        style={{ 
+          flex: 1, 
+          WebkitAppRegion: 'no-drag',
+          maxWidth: '300px'
+        }}
+      >
         {syncProgress ? (
           <div 
             onClick={handleProgressClick}
@@ -232,9 +234,9 @@ const TitleBar: React.FC<TitleBarProps> = ({
             />
           </Tooltip>
         )}
-      </div>
+      </Flex>
       
-      <div style={{ display: 'flex', alignItems: 'center', WebkitAppRegion: 'no-drag' }}>
+      <Flex align="center" style={{ WebkitAppRegion: 'no-drag' }}>
         <Space size={8}>
           {showUserMenu && onLogout && (
             <div style={{ marginRight: '8px' }}>
@@ -292,7 +294,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
             />
           </Space>
         </Space>
-      </div>
+      </Flex>
       
       {/* Sync Modal */}
       <SyncModal
@@ -300,7 +302,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
         visible={syncModalVisible}
         onClose={() => setSyncModalVisible(false)}
       />
-    </div>
+    </Flex>
   );
 };
 
