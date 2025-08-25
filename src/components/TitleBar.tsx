@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Space, Tooltip, Dropdown, MenuProps, Flex, Typography } from 'antd';
+import { Button, Space, Tooltip, Dropdown, MenuProps, Flex, Typography, theme } from 'antd';
 import { MinusOutlined, BorderOutlined, CloseOutlined, BlockOutlined, MenuFoldOutlined, MenuUnfoldOutlined, CloudSyncOutlined, MenuOutlined, HomeOutlined, CalendarOutlined, SettingOutlined } from '@ant-design/icons';
 import UserMenu from './UserMenu';
 import SyncProgress from './SyncProgress';
 import SyncModal from './SyncModal';
-import { useTheme } from '../contexts/ThemeContext';
 import { calendarService, SyncProgress as SyncProgressType } from '../services/calendar';
 
 interface TitleBarProps {
@@ -36,7 +35,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
   const [syncProgress, setSyncProgress] = useState<SyncProgressType | null>(null);
   const [syncModalVisible, setSyncModalVisible] = useState(false);
   const [modalKey, setModalKey] = useState(Date.now());
-  const { themeMode } = useTheme();
+  const { token } = theme.useToken();
 
   useEffect(() => {
     // Check initial window state
@@ -112,12 +111,6 @@ const TitleBar: React.FC<TitleBarProps> = ({
     setSyncModalVisible(true);
   };
 
-  const titleBarColors = {
-    background: themeMode === 'dark' ? '#141414' : '#f5f5f5',
-    border: themeMode === 'dark' ? '#434343' : '#d9d9d9',
-    text: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.85)' : '#666',
-    buttonText: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.65)' : '#666'
-  };
 
   const mobileMenuItems: MenuProps['items'] = [
     {
@@ -147,9 +140,9 @@ const TitleBar: React.FC<TitleBarProps> = ({
       align="center"
       style={{
         height: '32px',
-        background: titleBarColors.background,
+        background: token.colorBgContainer,
         padding: '0 12px',
-        borderBottom: `1px solid ${titleBarColors.border}`,
+        borderBottom: `1px solid ${token.colorBorder}`,
         WebkitAppRegion: 'drag',
         userSelect: 'none',
       }}
@@ -170,9 +163,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
               size="small"
               icon={<MenuOutlined style={{ fontSize: '14px' }} />}
               style={{ 
-                WebkitAppRegion: 'no-drag',
-                color: titleBarColors.buttonText,
-                border: 'none'
+                WebkitAppRegion: 'no-drag'
               }}
               title="Navigation menu"
             />
@@ -187,14 +178,12 @@ const TitleBar: React.FC<TitleBarProps> = ({
             }
             onClick={onMenuToggle}
             style={{ 
-              WebkitAppRegion: 'no-drag',
-              color: titleBarColors.buttonText,
-              border: 'none'
+              WebkitAppRegion: 'no-drag'
             }}
             title={sideNavCollapsed ? 'Expand menu' : 'Collapse menu'}
           />
         )}
-        <Text style={{ fontSize: '14px', fontWeight: 500, color: titleBarColors.text }}>
+        <Text style={{ fontSize: '14px', fontWeight: 500 }}>
           {isMobile ? 'CM' : 'Calendar Manager'}
         </Text>
         
@@ -227,10 +216,6 @@ const TitleBar: React.FC<TitleBarProps> = ({
               type="text"
               icon={<CloudSyncOutlined />}
               onClick={handleSyncButtonClick}
-              style={{
-                color: titleBarColors.buttonText,
-                border: 'none'
-              }}
             />
           </Tooltip>
         )}
@@ -251,9 +236,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
               onClick={handleMinimize}
               style={{ 
                 width: '32px', 
-                height: '32px',
-                border: 'none',
-                color: titleBarColors.buttonText
+                height: '32px'
               }}
             />
             <Button
@@ -267,9 +250,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
               title={isMaximized ? 'Restore' : 'Maximize'}
               style={{ 
                 width: '32px', 
-                height: '32px',
-                border: 'none',
-                color: titleBarColors.buttonText
+                height: '32px'
               }}
             />
             <Button
@@ -279,17 +260,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
               onClick={handleClose}
               style={{ 
                 width: '32px', 
-                height: '32px',
-                border: 'none',
-                color: titleBarColors.buttonText
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#ff4d4f';
-                e.currentTarget.style.color = '#fff';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.color = titleBarColors.buttonText;
+                height: '32px'
               }}
             />
           </Space>

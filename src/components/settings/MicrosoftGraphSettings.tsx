@@ -94,17 +94,16 @@ const MicrosoftGraphSettings: React.FC<MicrosoftGraphSettingsProps> = ({ searchT
           </div>
 
           {hasUnsavedChanges && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button
-                type="primary"
-                icon={saved ? <CheckOutlined /> : undefined}
-                onClick={handleSave}
-                disabled={saved || !clientId.trim()}
-                size="small"
-              >
-                {saved ? 'Saved!' : 'Save Changes'}
-              </Button>
-            </div>
+            <Button
+              type="primary"
+              icon={saved ? <CheckOutlined /> : undefined}
+              onClick={handleSave}
+              disabled={saved || !clientId.trim()}
+              size="small"
+              style={{ alignSelf: 'flex-end' }}
+            >
+              {saved ? 'Saved!' : 'Save Changes'}
+            </Button>
           )}
 
           {saved && (
@@ -114,7 +113,6 @@ const MicrosoftGraphSettings: React.FC<MicrosoftGraphSettingsProps> = ({ searchT
               type="success"
               showIcon
               closable
-              size="small"
             />
           )}
         </Space>

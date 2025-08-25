@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
 import { Tabs, Typography, Input, Space } from 'antd'
-import { SettingOutlined, AppstoreOutlined, ClockCircleOutlined, SearchOutlined } from '@ant-design/icons'
-import MicrosoftGraphSettings from './settings/MicrosoftGraphSettings'
-import TimezoneSettings from './settings/TimezoneSettings'
+import { AppstoreOutlined, ClockCircleOutlined, SearchOutlined } from '@ant-design/icons'
+import MicrosoftGraphSettings from './MicrosoftGraphSettings'
+import TimezoneSettings from './TimezoneSettings'
 
 const { Title } = Typography
 const { Search } = Input
@@ -15,12 +15,7 @@ const Settings: React.FC<SettingsProps> = () => {
   const tabItems = [
     {
       key: 'general',
-      label: (
-        <span>
-          <SettingOutlined />
-          General
-        </span>
-      ),
+      label: 'General',
       children: (
         <div style={{ maxWidth: '800px' }}>
           <MicrosoftGraphSettings searchTerm={searchTerm} />

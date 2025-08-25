@@ -1,11 +1,10 @@
 import React, { memo } from 'react'
-import { Flex, Space } from 'antd'
+import { Flex, Space, Badge, theme } from 'antd'
 import type { Dayjs } from 'dayjs'
 import { Event } from '../../types'
 import { 
   formatEventTime, 
   getEventBackgroundColor, 
-  getEventCountStyles, 
   getEventItemStyles 
 } from '../../utils/eventUtils'
 
@@ -26,6 +25,8 @@ const CalendarEventCell: React.FC<CalendarEventCellProps> = memo(({
   onEventClick,
   getShowAsDisplay
 }) => {
+  const { token } = theme.useToken()
+  
   if (dayEvents.length === 0) return null
 
   // For small screens, show only event count
@@ -37,10 +38,14 @@ const CalendarEventCell: React.FC<CalendarEventCellProps> = memo(({
             e.stopPropagation()
             onEventClick(dayEvents[0])
           }}
-          style={getEventCountStyles.container}
+          style={{ cursor: 'pointer' }}
           title={`${dayEvents.length} event${dayEvents.length > 1 ? 's' : ''} on this day`}
         >
-          {dayEvents.length}
+          <Badge 
+            count={dayEvents.length} 
+            showZero={false}
+            color={token.colorTextPlaceholder}
+          />
         </div>
       </Flex>
     )

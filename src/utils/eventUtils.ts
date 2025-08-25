@@ -25,22 +25,6 @@ export const getEventBackgroundColor = (showAs: string): string => {
   }
 }
 
-export const getEventCountStyles = {
-  container: {
-    width: '20px',
-    height: '20px',
-    borderRadius: '50%',
-    backgroundColor: 'rgba(140, 140, 140, 0.9)',
-    color: '#fff',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '11px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.15)'
-  } as React.CSSProperties
-}
 
 export const getEventItemStyles = {
   base: {
@@ -74,24 +58,3 @@ export const getEventItemStyles = {
   } as React.CSSProperties
 }
 
-export const getMonthEventCountStyles = {
-  container: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-    width: '100%'
-  } as React.CSSProperties,
-  badge: {
-    backgroundColor: '#1890ff',
-    color: 'white',
-    borderRadius: '50%',
-    width: '24px',
-    height: '24px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '12px',
-    fontWeight: 'bold'
-  } as React.CSSProperties
-}

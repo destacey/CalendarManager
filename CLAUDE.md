@@ -10,6 +10,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run build` - Build the application for production
 - `npm run electron` - Run Electron with already built files
 
+**Testing:**
+- `npm test` - Run tests in watch mode with Vitest
+- `npm run test:run` - Run tests once and exit
+- `npm run test:ui` - Run tests with Vitest UI for visual test management
+
 **Build artifacts:**
 - `dist/` - Vite build output (React frontend)
 - `dist-electron/` - Electron build output
@@ -105,6 +110,27 @@ The app follows a 4-stage state machine in `App.tsx`:
 - Ant Design theme algorithm integration
 - CSS custom properties for consistent theming
 - Responsive breakpoints with `Grid.useBreakpoint()`
+
+## Testing Framework
+
+### Test Setup
+The application uses **Vitest** with React Testing Library for component and utility testing:
+
+- **Test Configuration**: `vitest.config.ts` - Configured for jsdom environment with React support
+- **Test Setup**: `src/test/setup.ts` - Global test setup with mocks for Electron API and dayjs plugins
+- **Test Utilities**: `src/test/utils.tsx` - Custom render function with providers and mock data
+- **Test Coverage**: Run `npm run test:run` to generate coverage reports
+
+### Testing Patterns
+- **Component Tests**: Test user-visible behavior, not implementation details
+- **Mock Electron API**: All `window.electronAPI` calls are mocked in test environment
+- **Provider Wrapping**: Use custom `render()` from test utils to wrap components with necessary providers
+- **Mock Data**: Use provided mock objects for consistent test data
+
+### Test File Organization
+- Place component tests next to components: `ComponentName.test.tsx`
+- Place utility tests next to utilities: `utilityName.test.ts`
+- Use descriptive test names and group related tests with `describe()` blocks
 
 ## Important Development Patterns
 

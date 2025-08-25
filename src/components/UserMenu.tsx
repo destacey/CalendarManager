@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Dropdown, Avatar, Typography, Space, Button, Switch, Flex } from 'antd';
+import { Dropdown, Avatar, Typography, Space, Button, Switch, Flex, theme } from 'antd';
 import { UserOutlined, LogoutOutlined, LoadingOutlined, MoonOutlined, SunOutlined, DatabaseOutlined } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { authService } from '../services/auth';
@@ -24,6 +24,7 @@ const UserMenu: React.FC<UserMenuProps> = ({ onLogout, showName = true, onDataMa
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const { themeMode, toggleTheme } = useTheme();
+  const { token } = theme.useToken();
 
   useEffect(() => {
     const fetchUserInfo = async () => {
@@ -156,12 +157,12 @@ const UserMenu: React.FC<UserMenuProps> = ({ onLogout, showName = true, onDataMa
           <Avatar 
             size={20} 
             icon={<UserOutlined />}
-            style={{ backgroundColor: '#1890ff', fontSize: '10px' }}
+            style={{ fontSize: '10px' }}
           >
             {userInfo?.displayName ? getInitials(userInfo.displayName) : <UserOutlined />}
           </Avatar>
           {showName && (
-            <Text style={{ color: '#666', fontSize: '12px' }}>
+            <Text style={{ fontSize: '12px' }}>
               {userInfo?.givenName || userInfo?.displayName || 'User'}
             </Text>
           )}

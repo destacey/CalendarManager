@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npm test:*)",
+      "Read(/E:\\e\\Dev/**)",
+      "Read(/E:\\e\\Dev/**)",
+      "Read(/E:\\e\\Dev/**)",
+      "Read(/E:\\e\\Dev/**)"
     ],
     "deny": [],
     "ask": []

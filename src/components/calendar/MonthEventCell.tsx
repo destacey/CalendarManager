@@ -1,7 +1,7 @@
 import React, { memo, useMemo } from 'react'
+import { Badge, theme } from 'antd'
 import type { Dayjs } from 'dayjs'
 import { Event } from '../../types'
-import { getMonthEventCountStyles } from '../../utils/eventUtils'
 
 interface MonthEventCellProps {
   value: Dayjs
@@ -9,6 +9,8 @@ interface MonthEventCellProps {
 }
 
 const MonthEventCell: React.FC<MonthEventCellProps> = memo(({ value, getEventsForDate }) => {
+  const { token } = theme.useToken()
+  
   const eventCount = useMemo(() => {
     const startOfMonth = value.startOf('month')
     const endOfMonth = value.endOf('month')
@@ -29,10 +31,18 @@ const MonthEventCell: React.FC<MonthEventCellProps> = memo(({ value, getEventsFo
   if (eventCount === 0) return null
   
   return (
-    <div style={getMonthEventCountStyles.container}>
-      <div style={getMonthEventCountStyles.badge}>
-        {eventCount}
-      </div>
+    <div style={{ 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      height: '100%', 
+      width: '100%' 
+    }}>
+      <Badge 
+        count={eventCount} 
+        showZero={false}
+        color={token.colorTextPlaceholder}
+      />
     </div>
   )
 })
