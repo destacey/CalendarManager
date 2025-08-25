@@ -27,6 +27,12 @@ export interface SyncProgress {
   completed: number
   stage: 'fetching' | 'processing' | 'saving' | 'cleaning'
   message: string
+  stats?: {
+    fetched: number
+    created: number
+    updated: number
+    deleted: number
+  }
 }
 
 export interface SyncResult {
@@ -43,7 +49,6 @@ export interface SyncResult {
 }
 
 export interface SyncMetadata {
-  lastSyncTime?: string | null
   deltaToken?: string
   lastEventModified?: string
 }
@@ -203,7 +208,13 @@ class CalendarService {
       total: 0,
       completed: 0,
       stage: 'fetching',
-      message: 'Fetching events for specified date range...'
+      message: 'Fetching events for specified date range...',
+      stats: {
+        fetched: 0,
+        created: 0,
+        updated: 0,
+        deleted: 0
+      }
     })
 
     // Fetch events from Graph API for the date range
@@ -213,7 +224,13 @@ class CalendarService {
       total: graphEvents.length,
       completed: 0,
       stage: 'processing',
-      message: `Processing ${graphEvents.length} events...`
+      message: `Processing ${graphEvents.length} events...`,
+      stats: {
+        fetched: graphEvents.length,
+        created: 0,
+        updated: 0,
+        deleted: 0
+      }
     })
 
     // Process events for the date range only
@@ -242,7 +259,6 @@ class CalendarService {
       
       // Update metadata with new delta token
       await this.setSyncMetadata({
-        lastSyncTime: new Date().toISOString(),
         deltaToken: deltaResult.deltaToken,
         lastEventModified: this.getLatestEventModified(deltaResult.events)
       })
@@ -274,7 +290,6 @@ class CalendarService {
 
     // Save new sync metadata with delta token for next differential sync
     await this.setSyncMetadata({
-      lastSyncTime: new Date().toISOString(),
       deltaToken: result.deltaToken,
       lastEventModified: this.getLatestEventModified(result.events)
     })
@@ -327,7 +342,13 @@ class CalendarService {
         total: 0, // We don't know total yet
         completed: allEvents.length,
         stage: 'fetching',
-        message: `Fetching events... (${allEvents.length} so far)`
+        message: `Fetching events... (${allEvents.length} so far)`,
+        stats: {
+          fetched: allEvents.length,
+          created: 0,
+          updated: 0,
+          deleted: 0
+        }
       })
 
       // Extract just the path and query from the nextLink (remove base URL)
@@ -401,7 +422,13 @@ class CalendarService {
         total: 0, // We don't know total yet
         completed: allEvents.length,
         stage: 'fetching',
-        message: `Fetching events... (${allEvents.length} so far)`
+        message: `Fetching events... (${allEvents.length} so far)`,
+        stats: {
+          fetched: allEvents.length,
+          created: 0,
+          updated: 0,
+          deleted: 0
+        }
       })
 
       // Extract just the path and query from the nextLink (remove base URL)
@@ -427,7 +454,13 @@ class CalendarService {
       total: graphEvents.length,
       completed: 0,
       stage: 'saving',
-      message: 'Saving events to database...'
+      message: 'Saving events to database...',
+      stats: {
+        fetched: graphEvents.length,
+        created: 0,
+        updated: 0,
+        deleted: 0
+      }
     })
 
     // Sync with database via Electron API
@@ -441,24 +474,25 @@ class CalendarService {
       total: graphEvents.length,
       completed: graphEvents.length,
       stage: 'cleaning',
-      message: 'Cleaning up outdated events in date range...'
+      message: 'Cleaning up outdated events in date range...',
+      stats: {
+        fetched: graphEvents.length,
+        created: syncResult.created || 0,
+        updated: syncResult.updated || 0,
+        deleted: 0
+      }
     })
     
     // Only delete events within the sync date range that are no longer in Graph
     const deletedCount = await this.cleanupEventsInDateRange(graphEvents, dateRange)
-
-    // If no breakdown is provided (likely first sync), assume all events are created
-    const hasBreakdown = (syncResult.created || 0) + (syncResult.updated || 0) > 0
-    const createdCount = hasBreakdown ? (syncResult.created || 0) : syncResult.synced
-    const updatedCount = hasBreakdown ? (syncResult.updated || 0) : 0
 
     this.completeSync({
       success: true,
       message: `Successfully synced ${syncResult.synced} events for the specified date range.`,
       mode: 'full',
       stats: {
-        created: createdCount,
-        updated: updatedCount,
+        created: syncResult.created || 0,
+        updated: syncResult.updated || 0,
         deleted: deletedCount,
         total: syncResult.synced
       }
@@ -719,16 +753,10 @@ class CalendarService {
 
   async getSyncStatus(): Promise<{
     isActive: boolean
-    lastSync?: string
     canSync: boolean
   }> {
-    const metadata = await this.getSyncMetadata()
-    const lastSync = metadata?.lastSyncTime && 
-                     metadata.lastSyncTime !== null && 
-                     metadata.lastSyncTime.trim() !== '' ? metadata.lastSyncTime : undefined
     return {
       isActive: this.syncInProgress,
-      lastSync,
       canSync: this.isOnline() && !this.syncInProgress
     }
   }

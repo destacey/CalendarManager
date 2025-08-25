@@ -1,6 +1,5 @@
-import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '../../test/utils'
+import { render, screen, fireEvent } from '../../test/utils'
 import { createSettingsProps } from '../../test/utils'
 import Settings from './Settings'
 

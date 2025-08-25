@@ -27,7 +27,6 @@ function initStore() {
     syncMetadata: {
       type: 'object',
       properties: {
-        lastSyncTime: { type: 'string' },
         deltaToken: { type: 'string' },
         lastEventModified: { type: 'string' }
       },
@@ -253,10 +252,19 @@ ipcMain.handle('db:deleteEvent', (event, id) => {
 
 // Microsoft Graph sync functionality
 ipcMain.handle('db:syncGraphEvents', (event, graphEvents) => {
+  const checkExistingStmt = db.prepare('SELECT id FROM events WHERE graph_id = ?');
   const insertStmt = db.prepare(`
-    INSERT OR REPLACE INTO events (graph_id, title, description, start_date, end_date, is_all_day, show_as, categories, location, organizer, attendees, synced_at)
+    INSERT INTO events (graph_id, title, description, start_date, end_date, is_all_day, show_as, categories, location, organizer, attendees, synced_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `);
+  const updateStmt = db.prepare(`
+    UPDATE events 
+    SET title = ?, description = ?, start_date = ?, end_date = ?, is_all_day = ?, show_as = ?, categories = ?, location = ?, organizer = ?, attendees = ?, synced_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE graph_id = ?
+  `);
+
+  let createdCount = 0;
+  let updatedCount = 0;
 
   const transaction = db.transaction((events) => {
     for (const graphEvent of events) {
@@ -275,24 +283,52 @@ ipcMain.handle('db:syncGraphEvents', (event, graphEvents) => {
         }))
       ) : '';
       
-      insertStmt.run(
-        graphEvent.id,
-        graphEvent.subject || 'Untitled Event',
-        description,
-        graphEvent.start?.dateTime || new Date().toISOString(),
-        graphEvent.end?.dateTime || new Date().toISOString(),
-        graphEvent.isAllDay ? 1 : 0,
-        graphEvent.showAs || 'busy',
-        categories,
-        location,
-        organizer,
-        attendees
-      );
+      // Check if event already exists
+      const existingEvent = checkExistingStmt.get(graphEvent.id);
+      
+      if (existingEvent) {
+        // Update existing event
+        updateStmt.run(
+          graphEvent.subject || 'Untitled Event',
+          description,
+          graphEvent.start?.dateTime || new Date().toISOString(),
+          graphEvent.end?.dateTime || new Date().toISOString(),
+          graphEvent.isAllDay ? 1 : 0,
+          graphEvent.showAs || 'busy',
+          categories,
+          location,
+          organizer,
+          attendees,
+          graphEvent.id
+        );
+        updatedCount++;
+      } else {
+        // Insert new event
+        insertStmt.run(
+          graphEvent.id,
+          graphEvent.subject || 'Untitled Event',
+          description,
+          graphEvent.start?.dateTime || new Date().toISOString(),
+          graphEvent.end?.dateTime || new Date().toISOString(),
+          graphEvent.isAllDay ? 1 : 0,
+          graphEvent.showAs || 'busy',
+          categories,
+          location,
+          organizer,
+          attendees
+        );
+        createdCount++;
+      }
     }
   });
 
   transaction(graphEvents);
-  return { synced: graphEvents.length };
+  
+  return { 
+    synced: graphEvents.length,
+    created: createdCount,
+    updated: updatedCount
+  };
 });
 
 // Categories management

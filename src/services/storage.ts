@@ -103,9 +103,6 @@ class StorageService {
     try {
       // Clean up undefined values to avoid JSON serialization issues
       const cleanMetadata: SyncMetadata = {};
-      if (syncMetadata.lastSyncTime !== undefined && syncMetadata.lastSyncTime !== null) {
-        cleanMetadata.lastSyncTime = syncMetadata.lastSyncTime;
-      }
       if (syncMetadata.deltaToken !== undefined) {
         cleanMetadata.deltaToken = syncMetadata.deltaToken;
       }

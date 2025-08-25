@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Input, Button, Typography, Form, Alert, Space } from 'antd';
+import { Card, Input, Button, Typography, Form, Alert, Space, Flex } from 'antd';
 import { KeyOutlined } from '@ant-design/icons';
 
 const { Title, Paragraph } = Typography;
@@ -27,13 +27,11 @@ const AppSetup: React.FC<AppSetupProps> = ({ onSetupComplete }) => {
   };
 
   return (
-    <div style={{ 
-      display: 'flex', 
-      justifyContent: 'center', 
-      alignItems: 'center', 
-      minHeight: '100vh',
-      padding: '24px'
-    }}>
+    <Flex 
+      justify="center" 
+      align="center" 
+      style={{ minHeight: '100vh', padding: '24px' }}
+    >
       <Card style={{ maxWidth: 500, width: '100%' }}>
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           <div style={{ textAlign: 'center' }}>
@@ -89,7 +87,7 @@ const AppSetup: React.FC<AppSetupProps> = ({ onSetupComplete }) => {
           </Form>
         </Space>
       </Card>
-    </div>
+    </Flex>
   );
 };
 

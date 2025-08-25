@@ -133,17 +133,11 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
         {/* Status Information */}
         <Card size="small" style={{ marginBottom: 16 }}>
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={24}>
               <Statistic 
                 title="Connection" 
                 value={isOnline ? 'Online' : 'Offline'} 
                 valueStyle={{ color: isOnline ? '#3f8600' : '#cf1322' }}
-              />
-            </Col>
-            <Col span={12}>
-              <Statistic 
-                title="Last Sync" 
-                value={syncStatus.lastSync ? dayjs(syncStatus.lastSync).format('MMM D, HH:mm') : 'Never'} 
               />
             </Col>
           </Row>
@@ -210,39 +204,18 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
 
         {/* Sync Options */}
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          {/* Show Quick Sync only if user has synced before */}
-          {syncStatus.lastSync && (
-            <div>
-              <Button
-                type="primary"
-                size="large"
-                onClick={() => handleSync(false)}
-                disabled={!isOnline}
-                block
-              >
-                Quick Sync (Changes Only)
-              </Button>
-              <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: '4px', textAlign: 'center' }}>
-                Syncs only events that have changed since your last sync. Fast and efficient.
-              </Text>
-            </div>
-          )}
-
           <div>
             <Button
-              type={syncStatus.lastSync ? undefined : "primary"}
+              type="primary"
               size="large"
               onClick={() => handleSync(true)}
               disabled={!isOnline}
               block
             >
-              {syncStatus.lastSync ? "Full Sync (All Events)" : "Sync Calendar"}
+              Sync Calendar
             </Button>
             <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: '4px', textAlign: 'center' }}>
-              {syncStatus.lastSync 
-                ? "Downloads all events in your configured date range. Use if you're having sync issues."
-                : "Download your calendar events from Microsoft Graph for the first time."
-              }
+              Downloads all events in your configured date range from Microsoft Graph.
             </Text>
           </div>
         </Space>

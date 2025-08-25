@@ -596,7 +596,7 @@ const WeekView: React.FC<WeekViewProps> = memo(({
                             <Text style={{ fontWeight: 'bold', fontSize: '9px' }}>
                               {eventStart.format('h:mm A')}
                             </Text>
-                            <Text style={{ marginTop: '1px' }}>
+                            <Text style={{ marginTop: '2px', display: 'block' }}>
                               {event.title}
                             </Text>
                           </div>

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Progress, Tooltip, Button, Space, Flex } from 'antd'
+import { Progress, Tooltip, Button, Space, Flex, Row, Col, Statistic, theme } from 'antd'
 import { LoadingOutlined, CloseOutlined } from '@ant-design/icons'
 import { SyncProgress as SyncProgressType } from '../services/calendar'
 
@@ -14,6 +14,7 @@ const SyncProgress: React.FC<SyncProgressProps> = ({
   onCancel, 
   compact = false 
 }) => {
+  const { token } = theme.useToken()
   const getStageIcon = (stage: string) => {
     switch (stage) {
       case 'fetching':
@@ -55,11 +56,25 @@ const SyncProgress: React.FC<SyncProgressProps> = ({
         gap={8}
         style={{ minWidth: '200px' }}
       >
-        <Tooltip title={progress.message}>
+        <Tooltip 
+          title={
+            <div>
+              <div>{progress.message}</div>
+              {progress.stats && (
+                <div style={{ marginTop: '4px', fontSize: '11px' }}>
+                  Fetched: {progress.stats.fetched} | Created: {progress.stats.created} | Updated: {progress.stats.updated} | Deleted: {progress.stats.deleted}
+                </div>
+              )}
+            </div>
+          }
+        >
           <Flex align="center" gap={4}>
             {getStageIcon(progress.stage)}
-            <span style={{ fontSize: '12px', color: '#666' }}>
-              {progress.total > 0 ? `${progress.completed}/${progress.total}` : 'Syncing...'}
+            <span style={{ fontSize: '12px', color: token.colorTextSecondary }}>
+              {progress.total > 0 
+                ? `${progress.completed}/${progress.total}` 
+                : (progress.stats ? `${progress.stats.fetched} fetched` : 'Syncing...')
+              }
             </span>
           </Flex>
         </Tooltip>
@@ -89,7 +104,7 @@ const SyncProgress: React.FC<SyncProgressProps> = ({
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '400px' }}>
+    <div style={{ width: '100%', maxWidth: '500px' }}>
       <Flex 
         justify="space-between" 
         align="center"
@@ -126,7 +141,7 @@ const SyncProgress: React.FC<SyncProgressProps> = ({
             justify="space-between"
             style={{ 
               fontSize: '12px',
-              color: '#666',
+              color: token.colorTextSecondary,
               marginTop: '4px'
             }}
           >
@@ -134,6 +149,41 @@ const SyncProgress: React.FC<SyncProgressProps> = ({
             <span>Stage: {progress.stage}</span>
           </Flex>
         </>
+      )}
+
+      {progress.stats && (
+        <div style={{ marginTop: '12px', padding: '8px', backgroundColor: token.colorBgContainer, borderRadius: '6px', border: `1px solid ${token.colorBorderSecondary}` }}>
+          <Row gutter={16}>
+            <Col span={6}>
+              <Statistic 
+                title="Fetched" 
+                value={progress.stats.fetched} 
+                valueStyle={{ fontSize: '14px' }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic 
+                title="Created" 
+                value={progress.stats.created} 
+                valueStyle={{ fontSize: '14px', color: token.colorSuccess }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic 
+                title="Updated" 
+                value={progress.stats.updated} 
+                valueStyle={{ fontSize: '14px', color: token.colorPrimary }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic 
+                title="Deleted" 
+                value={progress.stats.deleted} 
+                valueStyle={{ fontSize: '14px', color: token.colorError }}
+              />
+            </Col>
+          </Row>
+        </div>
       )}
     </div>
   )

@@ -4,12 +4,12 @@ import { DeleteOutlined, ExclamationCircleOutlined, ReloadOutlined, DatabaseOutl
 import { calendarService } from '../services/calendar'
 import { storageService } from '../services/storage'
 import { useTheme } from '../contexts/ThemeContext'
-import dayjs from 'dayjs'
 
 const { Title, Text, Paragraph } = Typography
 
 const DataManagement: React.FC = () => {
   const [eventCount, setEventCount] = useState<number>(0)
+  const [syncStatus, setSyncStatus] = useState<{ hasMetadata: boolean }>({ hasMetadata: false })
   const [loading, setLoading] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [clearDataModalVisible, setClearDataModalVisible] = useState(false)
@@ -19,6 +19,7 @@ const DataManagement: React.FC = () => {
 
   useEffect(() => {
     loadEventCount()
+    loadSyncStatus()
   }, [])
 
   const loadEventCount = async () => {
@@ -31,6 +32,15 @@ const DataManagement: React.FC = () => {
       message.error('Failed to load event count')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadSyncStatus = async () => {
+    try {
+      const status = await getSyncStatus()
+      setSyncStatus(status)
+    } catch (error) {
+      console.error('Error loading sync status:', error)
     }
   }
 
@@ -63,13 +73,13 @@ const DataManagement: React.FC = () => {
       
       // Clear sync metadata since data is no longer in sync
       storageService.setSyncMetadata({
-        lastSyncTime: null,
         deltaToken: undefined,
         lastEventModified: undefined
       })
       
       message.success(`Successfully deleted ${deletedCount} calendar events and reset sync data`)
       await loadEventCount() // Refresh count
+      await loadSyncStatus() // Refresh sync status
       
     } catch (error) {
       console.error('Error clearing calendar data:', error)
@@ -89,12 +99,12 @@ const DataManagement: React.FC = () => {
       
       // Clear sync metadata
       storageService.setSyncMetadata({
-        lastSyncTime: null,
         deltaToken: undefined,
         lastEventModified: undefined
       })
       
       message.success('Sync metadata cleared successfully')
+      await loadSyncStatus() // Refresh sync status
       
     } catch (error) {
       console.error('Error clearing sync data:', error)
@@ -102,15 +112,12 @@ const DataManagement: React.FC = () => {
     }
   }
 
-  const getSyncStatus = () => {
-    const syncStatus = calendarService.getSyncStatus()
+  const getSyncStatus = async () => {
+    const metadata = await storageService.getSyncMetadata()
     return {
-      lastSync: syncStatus.lastSync,
-      hasMetadata: !!syncStatus.lastSync
+      hasMetadata: !!(metadata?.deltaToken || metadata?.lastEventModified)
     }
   }
-
-  const syncStatus = getSyncStatus()
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -121,7 +128,7 @@ const DataManagement: React.FC = () => {
         </Title>
         
         <Row gutter={24}>
-          <Col span={8}>
+          <Col span={12}>
             <Statistic 
               title="Calendar Events" 
               value={eventCount} 
@@ -129,13 +136,7 @@ const DataManagement: React.FC = () => {
               suffix="events"
             />
           </Col>
-          <Col span={8}>
-            <Statistic 
-              title="Last Sync" 
-              value={syncStatus.lastSync ? dayjs(syncStatus.lastSync).format('MMM D, YYYY') : 'Never'} 
-            />
-          </Col>
-          <Col span={8}>
+          <Col span={12}>
             <Statistic 
               title="Sync Status" 
               value={syncStatus.hasMetadata ? 'Configured' : 'Not Set Up'} 
@@ -146,7 +147,7 @@ const DataManagement: React.FC = () => {
 
         <Button 
           icon={<ReloadOutlined />} 
-          onClick={loadEventCount}
+          onClick={() => { loadEventCount(); loadSyncStatus(); }}
           loading={loading}
           style={{ marginTop: 16 }}
         >
