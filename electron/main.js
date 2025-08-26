@@ -80,6 +80,7 @@ function initDatabase() {
       location TEXT,
       organizer TEXT,
       attendees TEXT,
+      is_meeting BOOLEAN DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       synced_at DATETIME
@@ -116,6 +117,14 @@ function initDatabase() {
   try {
     db.exec(`
       ALTER TABLE events ADD COLUMN attendees TEXT;
+    `);
+  } catch (e) {
+    // Column already exists, ignore error
+  }
+  
+  try {
+    db.exec(`
+      ALTER TABLE events ADD COLUMN is_meeting BOOLEAN DEFAULT 0;
     `);
   } catch (e) {
     // Column already exists, ignore error
@@ -254,12 +263,12 @@ ipcMain.handle('db:deleteEvent', (event, id) => {
 ipcMain.handle('db:syncGraphEvents', (event, graphEvents) => {
   const checkExistingStmt = db.prepare('SELECT id FROM events WHERE graph_id = ?');
   const insertStmt = db.prepare(`
-    INSERT INTO events (graph_id, title, description, start_date, end_date, is_all_day, show_as, categories, location, organizer, attendees, synced_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO events (graph_id, title, description, start_date, end_date, is_all_day, show_as, categories, location, organizer, attendees, is_meeting, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `);
   const updateStmt = db.prepare(`
     UPDATE events 
-    SET title = ?, description = ?, start_date = ?, end_date = ?, is_all_day = ?, show_as = ?, categories = ?, location = ?, organizer = ?, attendees = ?, synced_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    SET title = ?, description = ?, start_date = ?, end_date = ?, is_all_day = ?, show_as = ?, categories = ?, location = ?, organizer = ?, attendees = ?, is_meeting = ?, synced_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
     WHERE graph_id = ?
   `);
 
@@ -282,6 +291,7 @@ ipcMain.handle('db:syncGraphEvents', (event, graphEvents) => {
           response: att.status.response
         }))
       ) : '';
+      const isMeeting = graphEvent.attendees && graphEvent.attendees.length > 0 ? 1 : 0;
       
       // Check if event already exists
       const existingEvent = checkExistingStmt.get(graphEvent.id);
@@ -299,6 +309,7 @@ ipcMain.handle('db:syncGraphEvents', (event, graphEvents) => {
           location,
           organizer,
           attendees,
+          isMeeting,
           graphEvent.id
         );
         updatedCount++;
@@ -315,7 +326,8 @@ ipcMain.handle('db:syncGraphEvents', (event, graphEvents) => {
           categories,
           location,
           organizer,
-          attendees
+          attendees,
+          isMeeting
         );
         createdCount++;
       }

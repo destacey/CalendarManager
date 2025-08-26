@@ -52,6 +52,7 @@ export interface Event {
   location?: string
   organizer?: string // JSON string containing organizer info
   attendees?: string // JSON string containing attendees array
+  is_meeting?: boolean
   created_at?: string
   updated_at?: string
   synced_at?: string

@@ -666,6 +666,7 @@ class CalendarService {
       is_all_day: graphEvent.isAllDay || false,
       show_as: graphEvent.showAs || 'busy',
       categories: graphEvent.categories?.join(',') || '',
+      is_meeting: graphEvent.attendees && graphEvent.attendees.length > 0,
       synced_at: new Date().toISOString()
     }
   }
