@@ -61,3 +61,6 @@ release/
 tmp/
 temp/
 nul
+
+# Claude Code local settings
+.claude/settings.local.json
