@@ -15,6 +15,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getCategories: () => ipcRenderer.invoke('db:getCategories'),
   createCategory: (categoryData) => ipcRenderer.invoke('db:createCategory', categoryData),
   
+  // Event type management
+  getEventTypes: () => ipcRenderer.invoke('db:getEventTypes'),
+  createEventType: (eventTypeData) => ipcRenderer.invoke('db:createEventType', eventTypeData),
+  updateEventType: (id, eventTypeData) => ipcRenderer.invoke('db:updateEventType', id, eventTypeData),
+  deleteEventType: (id) => ipcRenderer.invoke('db:deleteEventType', id),
+  
+  // Event type rule management
+  getEventTypeRules: () => ipcRenderer.invoke('db:getEventTypeRules'),
+  createEventTypeRule: (ruleData) => ipcRenderer.invoke('db:createEventTypeRule', ruleData),
+  updateEventTypeRule: (id, ruleData) => ipcRenderer.invoke('db:updateEventTypeRule', id, ruleData),
+  deleteEventTypeRule: (id) => ipcRenderer.invoke('db:deleteEventTypeRule', id),
+  updateRulePriorities: (ruleIds) => ipcRenderer.invoke('db:updateRulePriorities', ruleIds),
+  
+  // Event type assignment
+  evaluateEventType: (eventData) => ipcRenderer.invoke('db:evaluateEventType', eventData),
+  setEventTypeManually: (eventId, typeId) => ipcRenderer.invoke('db:setEventTypeManually', eventId, typeId),
+  reprocessEventTypes: () => ipcRenderer.invoke('db:reprocessEventTypes'),
+  
   // File operations
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
   saveFile: (content) => ipcRenderer.invoke('dialog:saveFile', content),

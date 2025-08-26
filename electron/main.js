@@ -129,6 +129,58 @@ function initDatabase() {
   } catch (e) {
     // Column already exists, ignore error
   }
+  
+  // Add event types table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS event_types (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      color TEXT DEFAULT '#1890ff',
+      is_default BOOLEAN DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  
+  // Add event type rules table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS event_type_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      priority INTEGER NOT NULL,
+      field_name TEXT NOT NULL,
+      operator TEXT NOT NULL,
+      value TEXT,
+      target_type_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(target_type_id) REFERENCES event_types(id)
+    );
+  `);
+  
+  // Add event type columns to events table
+  try {
+    db.exec(`
+      ALTER TABLE events ADD COLUMN type_id INTEGER REFERENCES event_types(id);
+    `);
+  } catch (e) {
+    // Column already exists, ignore error
+  }
+  
+  try {
+    db.exec(`
+      ALTER TABLE events ADD COLUMN type_manually_set BOOLEAN DEFAULT 0;
+    `);
+  } catch (e) {
+    // Column already exists, ignore error
+  }
+  
+  // Create default "Work" event type if none exist
+  const existingTypes = db.prepare('SELECT COUNT(*) as count FROM event_types').get();
+  if (existingTypes.count === 0) {
+    db.prepare(`
+      INSERT INTO event_types (name, color, is_default)
+      VALUES (?, ?, ?)
+    `).run('Work', '#52c41a', 1);
+  }
 }
 
 function createWindow() {
@@ -188,13 +240,19 @@ app.on('activate', () => {
 // IPC handlers for database operations
 ipcMain.handle('db:getEvents', () => {
   const stmt = db.prepare('SELECT * FROM events ORDER BY start_date');
-  return stmt.all();
+  const events = stmt.all();
+  // Convert SQLite integers to booleans for boolean fields
+  return events.map(event => ({
+    ...event,
+    is_all_day: Boolean(event.is_all_day),
+    is_meeting: Boolean(event.is_meeting),
+    type_manually_set: Boolean(event.type_manually_set)
+  }));
 });
 
 // Optimized handler for getting events within a date range
 ipcMain.handle('db:getEventsInRange', (event, startDate, endDate) => {
   try {
-    console.log('Database query: getEventsInRange', startDate, 'to', endDate);
     const stmt = db.prepare(`
       SELECT * FROM events 
       WHERE (
@@ -208,8 +266,13 @@ ipcMain.handle('db:getEventsInRange', (event, startDate, endDate) => {
       ORDER BY start_date
     `);
     const results = stmt.all(startDate, endDate, startDate, endDate, startDate, endDate);
-    console.log('Database query returned', results.length, 'events');
-    return results;
+    // Convert SQLite integers to booleans for boolean fields
+    return results.map(event => ({
+      ...event,
+      is_all_day: Boolean(event.is_all_day),
+      is_meeting: Boolean(event.is_meeting),
+      type_manually_set: Boolean(event.type_manually_set)
+    }));
   } catch (error) {
     console.error('Database query error:', error);
     return [];
@@ -261,12 +324,17 @@ ipcMain.handle('db:deleteEvent', (event, id) => {
 
 // Microsoft Graph sync functionality
 ipcMain.handle('db:syncGraphEvents', (event, graphEvents) => {
-  const checkExistingStmt = db.prepare('SELECT id FROM events WHERE graph_id = ?');
+  const checkExistingStmt = db.prepare('SELECT id, type_manually_set FROM events WHERE graph_id = ?');
   const insertStmt = db.prepare(`
-    INSERT INTO events (graph_id, title, description, start_date, end_date, is_all_day, show_as, categories, location, organizer, attendees, is_meeting, synced_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO events (graph_id, title, description, start_date, end_date, is_all_day, show_as, categories, location, organizer, attendees, is_meeting, type_id, type_manually_set, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `);
   const updateStmt = db.prepare(`
+    UPDATE events 
+    SET title = ?, description = ?, start_date = ?, end_date = ?, is_all_day = ?, show_as = ?, categories = ?, location = ?, organizer = ?, attendees = ?, is_meeting = ?, type_id = ?, synced_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE graph_id = ?
+  `);
+  const updateStmtWithoutType = db.prepare(`
     UPDATE events 
     SET title = ?, description = ?, start_date = ?, end_date = ?, is_all_day = ?, show_as = ?, categories = ?, location = ?, organizer = ?, attendees = ?, is_meeting = ?, synced_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
     WHERE graph_id = ?
@@ -293,28 +361,58 @@ ipcMain.handle('db:syncGraphEvents', (event, graphEvents) => {
       ) : '';
       const isMeeting = graphEvent.attendees && graphEvent.attendees.length > 0 ? 1 : 0;
       
+      // Create event data for type evaluation
+      const eventData = {
+        title: graphEvent.subject || 'Untitled Event',
+        is_all_day: graphEvent.isAllDay || false,
+        show_as: graphEvent.showAs || 'busy',
+        categories: categories
+      };
+      
       // Check if event already exists
       const existingEvent = checkExistingStmt.get(graphEvent.id);
       
       if (existingEvent) {
-        // Update existing event
-        updateStmt.run(
-          graphEvent.subject || 'Untitled Event',
-          description,
-          graphEvent.start?.dateTime || new Date().toISOString(),
-          graphEvent.end?.dateTime || new Date().toISOString(),
-          graphEvent.isAllDay ? 1 : 0,
-          graphEvent.showAs || 'busy',
-          categories,
-          location,
-          organizer,
-          attendees,
-          isMeeting,
-          graphEvent.id
-        );
+        // Update existing event - only update type if not manually set
+        if (existingEvent.type_manually_set) {
+          // Use the update statement without type change
+          updateStmtWithoutType.run(
+            graphEvent.subject || 'Untitled Event',
+            description,
+            graphEvent.start?.dateTime || new Date().toISOString(),
+            graphEvent.end?.dateTime || new Date().toISOString(),
+            graphEvent.isAllDay ? 1 : 0,
+            graphEvent.showAs || 'busy',
+            categories,
+            location,
+            organizer,
+            attendees,
+            isMeeting,
+            graphEvent.id
+          );
+        } else {
+          // Evaluate type and update
+          const evaluatedTypeId = evaluateEventTypeSync(eventData);
+          updateStmt.run(
+            graphEvent.subject || 'Untitled Event',
+            description,
+            graphEvent.start?.dateTime || new Date().toISOString(),
+            graphEvent.end?.dateTime || new Date().toISOString(),
+            graphEvent.isAllDay ? 1 : 0,
+            graphEvent.showAs || 'busy',
+            categories,
+            location,
+            organizer,
+            attendees,
+            isMeeting,
+            evaluatedTypeId,
+            graphEvent.id
+          );
+        }
         updatedCount++;
       } else {
-        // Insert new event
+        // Insert new event with type evaluation
+        const evaluatedTypeId = evaluateEventTypeSync(eventData);
         insertStmt.run(
           graphEvent.id,
           graphEvent.subject || 'Untitled Event',
@@ -327,7 +425,9 @@ ipcMain.handle('db:syncGraphEvents', (event, graphEvents) => {
           location,
           organizer,
           attendees,
-          isMeeting
+          isMeeting,
+          evaluatedTypeId,
+          0 // type_manually_set = false for new events
         );
         createdCount++;
       }
@@ -357,6 +457,268 @@ ipcMain.handle('db:createCategory', (event, categoryData) => {
   const result = stmt.run(categoryData.name, categoryData.color);
   return { id: result.lastInsertRowid, ...categoryData };
 });
+
+// Event Types management
+ipcMain.handle('db:getEventTypes', () => {
+  const stmt = db.prepare('SELECT * FROM event_types ORDER BY name');
+  const types = stmt.all();
+  // Convert SQLite integers to booleans
+  return types.map(type => ({
+    ...type,
+    is_default: Boolean(type.is_default)
+  }));
+});
+
+ipcMain.handle('db:createEventType', (event, eventTypeData) => {
+  const stmt = db.prepare(`
+    INSERT INTO event_types (name, color, is_default)
+    VALUES (?, ?, ?)
+  `);
+  const result = stmt.run(
+    eventTypeData.name, 
+    eventTypeData.color, 
+    eventTypeData.is_default ? 1 : 0
+  );
+  return { 
+    id: result.lastInsertRowid, 
+    ...eventTypeData,
+    is_default: Boolean(eventTypeData.is_default)
+  };
+});
+
+ipcMain.handle('db:updateEventType', (event, id, eventTypeData) => {
+  const stmt = db.prepare(`
+    UPDATE event_types 
+    SET name = ?, color = ?, is_default = ?
+    WHERE id = ?
+  `);
+  const result = stmt.run(
+    eventTypeData.name, 
+    eventTypeData.color, 
+    eventTypeData.is_default ? 1 : 0, 
+    id
+  );
+  return result.changes > 0 ? { 
+    id, 
+    ...eventTypeData,
+    is_default: Boolean(eventTypeData.is_default)
+  } : null;
+});
+
+ipcMain.handle('db:deleteEventType', (event, id) => {
+  const stmt = db.prepare('DELETE FROM event_types WHERE id = ?');
+  const result = stmt.run(id);
+  return result.changes > 0;
+});
+
+// Event Type Rules management
+ipcMain.handle('db:getEventTypeRules', () => {
+  const stmt = db.prepare('SELECT * FROM event_type_rules ORDER BY priority ASC');
+  return stmt.all();
+});
+
+ipcMain.handle('db:createEventTypeRule', (event, ruleData) => {
+  const stmt = db.prepare(`
+    INSERT INTO event_type_rules (name, priority, field_name, operator, value, target_type_id)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  const result = stmt.run(
+    ruleData.name, 
+    ruleData.priority, 
+    ruleData.field_name, 
+    ruleData.operator, 
+    ruleData.value, 
+    ruleData.target_type_id
+  );
+  return { id: result.lastInsertRowid, ...ruleData };
+});
+
+ipcMain.handle('db:updateEventTypeRule', (event, id, ruleData) => {
+  const stmt = db.prepare(`
+    UPDATE event_type_rules 
+    SET name = ?, priority = ?, field_name = ?, operator = ?, value = ?, target_type_id = ?
+    WHERE id = ?
+  `);
+  const result = stmt.run(
+    ruleData.name, 
+    ruleData.priority, 
+    ruleData.field_name, 
+    ruleData.operator, 
+    ruleData.value, 
+    ruleData.target_type_id,
+    id
+  );
+  return result.changes > 0 ? { id, ...ruleData } : null;
+});
+
+ipcMain.handle('db:deleteEventTypeRule', (event, id) => {
+  const stmt = db.prepare('DELETE FROM event_type_rules WHERE id = ?');
+  const result = stmt.run(id);
+  return result.changes > 0;
+});
+
+ipcMain.handle('db:updateRulePriorities', (event, ruleIds) => {
+  const updateStmt = db.prepare('UPDATE event_type_rules SET priority = ? WHERE id = ?');
+  const transaction = db.transaction((ruleIds) => {
+    ruleIds.forEach((ruleId, index) => {
+      updateStmt.run(index + 1, ruleId);
+    });
+  });
+  try {
+    transaction(ruleIds);
+    return true;
+  } catch (error) {
+    console.error('Error updating rule priorities:', error);
+    return false;
+  }
+});
+
+// Event type assignment
+ipcMain.handle('db:evaluateEventType', (event, eventData) => {
+  // Get all rules ordered by priority
+  const rulesStmt = db.prepare('SELECT * FROM event_type_rules ORDER BY priority ASC');
+  const rules = rulesStmt.all();
+  
+  // Get default type
+  const defaultTypeStmt = db.prepare('SELECT id FROM event_types WHERE is_default = 1 LIMIT 1');
+  const defaultType = defaultTypeStmt.get();
+  
+  // Evaluate each rule in order
+  for (const rule of rules) {
+    if (evaluateRule(rule, eventData)) {
+      return rule.target_type_id;
+    }
+  }
+  
+  // Return default type if no rules match
+  return defaultType ? defaultType.id : null;
+});
+
+ipcMain.handle('db:setEventTypeManually', (event, eventId, typeId) => {
+  const stmt = db.prepare(`
+    UPDATE events 
+    SET type_id = ?, type_manually_set = 1, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+  const result = stmt.run(typeId, eventId);
+  return result.changes > 0;
+});
+
+ipcMain.handle('db:reprocessEventTypes', () => {
+  try {
+    // Get all events that are not manually set
+    const eventsStmt = db.prepare('SELECT * FROM events WHERE type_manually_set = 0 OR type_manually_set IS NULL');
+    const events = eventsStmt.all();
+    
+    // Update statement for events
+    const updateStmt = db.prepare(`
+      UPDATE events 
+      SET type_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `);
+    
+    let processedCount = 0;
+    let updatedCount = 0;
+    
+    const transaction = db.transaction((events) => {
+      for (const event of events) {
+        const eventData = {
+          title: event.title || '',
+          is_all_day: Boolean(event.is_all_day),
+          show_as: event.show_as || '',
+          categories: event.categories || ''
+        };
+        
+        const newTypeId = evaluateEventTypeSync(eventData);
+        processedCount++;
+        
+        // Only update if the type has actually changed
+        if (newTypeId !== event.type_id) {
+          updateStmt.run(newTypeId, event.id);
+          updatedCount++;
+        }
+      }
+    });
+    
+    transaction(events);
+    
+    return {
+      success: true,
+      processedCount,
+      updatedCount,
+      message: `Processed ${processedCount} events, updated ${updatedCount} event types`
+    };
+  } catch (error) {
+    console.error('Error reprocessing event types:', error);
+    return {
+      success: false,
+      error: error.message,
+      message: 'Failed to reprocess event types'
+    };
+  }
+});
+
+// Rule evaluation helper function
+function evaluateRule(rule, eventData) {
+  let fieldValue;
+  
+  switch (rule.field_name) {
+    case 'title':
+      fieldValue = eventData.title || '';
+      break;
+    case 'is_all_day':
+      fieldValue = eventData.is_all_day ? 'true' : 'false';
+      break;
+    case 'show_as':
+      fieldValue = eventData.show_as || '';
+      break;
+    case 'categories':
+      fieldValue = eventData.categories || '';
+      break;
+    default:
+      return false;
+  }
+  
+  switch (rule.operator) {
+    case 'equals':
+      return fieldValue === (rule.value || '');
+    case 'contains':
+      return fieldValue.toLowerCase().includes((rule.value || '').toLowerCase());
+    case 'is_empty':
+      return !fieldValue || fieldValue.trim() === '';
+    default:
+      return false;
+  }
+}
+
+// Synchronous version for use within transactions
+function evaluateEventTypeSync(eventData) {
+  try {
+    // Get all rules ordered by priority
+    const rulesStmt = db.prepare('SELECT * FROM event_type_rules ORDER BY priority ASC');
+    const rules = rulesStmt.all();
+    
+    // Get default type
+    const defaultTypeStmt = db.prepare('SELECT id FROM event_types WHERE is_default = 1 LIMIT 1');
+    const defaultType = defaultTypeStmt.get();
+    
+    // Evaluate each rule in order
+    for (const rule of rules) {
+      const matches = evaluateRule(rule, eventData);
+      
+      if (matches) {
+        return rule.target_type_id;
+      }
+    }
+    
+    // Return default type if no rules match
+    const defaultId = defaultType ? defaultType.id : null;
+    return defaultId;
+  } catch (error) {
+    console.warn('Failed to evaluate event type:', error);
+    return null;
+  }
+}
 
 // Window controls
 ipcMain.handle('window:minimize', () => {

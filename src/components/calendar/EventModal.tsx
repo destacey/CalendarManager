@@ -1,9 +1,10 @@
-import React from 'react'
-import { Modal, Descriptions, Tag, Space } from 'antd'
+import React, { useState, useEffect } from 'react'
+import { Modal, Descriptions, Tag, Space, Select, Button, message } from 'antd'
+import { LockOutlined, EditOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
-import { Event } from '../../types'
+import { Event, EventType } from '../../types'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -15,6 +16,7 @@ interface EventModalProps {
   getEventColor: (showAs: string) => string
   getShowAsDisplay: (showAs: string) => string
   userTimezone: string
+  onEventUpdated?: () => void
 }
 
 const EventModal: React.FC<EventModalProps> = ({
@@ -23,8 +25,79 @@ const EventModal: React.FC<EventModalProps> = ({
   event,
   getEventColor,
   getShowAsDisplay,
-  userTimezone
+  userTimezone,
+  onEventUpdated
 }) => {
+  const [eventTypes, setEventTypes] = useState<EventType[]>([])
+  const [selectedTypeId, setSelectedTypeId] = useState<number | undefined>()
+  const [isEditingType, setIsEditingType] = useState(false)
+
+  useEffect(() => {
+    if (isVisible && event) {
+      loadEventTypes()
+      setSelectedTypeId(event.type_id)
+      setIsEditingType(false)
+    }
+  }, [isVisible, event])
+
+  const loadEventTypes = async () => {
+    try {
+      if (window.electronAPI?.getEventTypes) {
+        const types = await window.electronAPI.getEventTypes()
+        setEventTypes(types)
+      }
+    } catch (error) {
+      console.error('Error loading event types:', error)
+    }
+  }
+
+  const handleTypeChange = (typeId: number) => {
+    setSelectedTypeId(typeId)
+  }
+
+  const handleSaveType = async () => {
+    if (!event || !event.id || !selectedTypeId) return
+    
+    try {
+      if (window.electronAPI?.setEventTypeManually) {
+        const success = await window.electronAPI.setEventTypeManually(event.id, selectedTypeId)
+        if (success) {
+          message.success('Event type updated')
+          setIsEditingType(false)
+          onEventUpdated?.()
+        } else {
+          message.error('Failed to update event type')
+        }
+      }
+    } catch (error) {
+      console.error('Error updating event type:', error)
+      message.error('Failed to update event type')
+    }
+  }
+
+  const handleResetToAutoAssign = async () => {
+    if (!event || !event.id) return
+    
+    try {
+      if (window.electronAPI?.evaluateEventType && window.electronAPI?.setEventTypeManually) {
+        const autoTypeId = await window.electronAPI.evaluateEventType(event)
+        if (autoTypeId) {
+          // Reset to auto-assigned type
+          await window.electronAPI.updateEvent(event.id, { 
+            ...event, 
+            type_id: autoTypeId, 
+            type_manually_set: false 
+          })
+          setSelectedTypeId(autoTypeId)
+          message.success('Event type reset to auto-assignment')
+          onEventUpdated?.()
+        }
+      }
+    } catch (error) {
+      console.error('Error resetting event type:', error)
+      message.error('Failed to reset event type')
+    }
+  }
   const formatEventDateTime = (startDate: string, endDate?: string, isAllDay?: boolean) => {
     let start: dayjs.Dayjs
     let end: dayjs.Dayjs
@@ -81,6 +154,80 @@ const EventModal: React.FC<EventModalProps> = ({
                        getEventColor(event.show_as) === 'error' ? 'red' : 'green'}>
               {getShowAsDisplay(event.show_as)}
             </Tag>
+          </Descriptions.Item>
+
+          <Descriptions.Item label="Type">
+            <Space>
+              {isEditingType ? (
+                <>
+                  <Select
+                    value={selectedTypeId}
+                    onChange={handleTypeChange}
+                    style={{ minWidth: 120 }}
+                    placeholder="Select type"
+                  >
+                    {eventTypes.map(type => (
+                      <Select.Option key={type.id} value={type.id}>
+                        <Space>
+                          <div 
+                            style={{ 
+                              width: 16, 
+                              height: 16, 
+                              borderRadius: 4, 
+                              backgroundColor: type.color,
+                              border: '1px solid #d9d9d9'
+                            }} 
+                          />
+                          {type.name}
+                        </Space>
+                      </Select.Option>
+                    ))}
+                  </Select>
+                  <Button type="primary" size="small" onClick={handleSaveType}>
+                    Save
+                  </Button>
+                  <Button size="small" onClick={() => setIsEditingType(false)}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {(() => {
+                    const eventType = eventTypes.find(t => t.id === event.type_id)
+                    return eventType ? (
+                      <Tag color={eventType.color} style={{ marginRight: 8 }}>
+                        {eventType.name}
+                      </Tag>
+                    ) : (
+                      <Tag color="default">No type</Tag>
+                    )
+                  })()}
+                  {event.type_manually_set && (
+                    <LockOutlined 
+                      style={{ color: '#999', fontSize: 12 }} 
+                      title="Manually set (won't change on sync)" 
+                    />
+                  )}
+                  <Button 
+                    type="link" 
+                    size="small" 
+                    icon={<EditOutlined />}
+                    onClick={() => setIsEditingType(true)}
+                  >
+                    Edit
+                  </Button>
+                  {event.type_manually_set && (
+                    <Button 
+                      type="link" 
+                      size="small"
+                      onClick={handleResetToAutoAssign}
+                    >
+                      Reset to Auto
+                    </Button>
+                  )}
+                </>
+              )}
+            </Space>
           </Descriptions.Item>
           
           {event.location && (

@@ -24,6 +24,7 @@ function AppContent() {
   const [sideNavCollapsed, setSideNavCollapsed] = useState(false)
   const [selectedNavKey, setSelectedNavKey] = useState('home')
   const [dataManagementVisible, setDataManagementVisible] = useState(false)
+  const [eventsRefreshKey, setEventsRefreshKey] = useState(0)
   const screens = useBreakpoint()
 
   // Use mobile navigation on small screens (sm and below)
@@ -125,13 +126,13 @@ function AppContent() {
           display: selectedNavKey === 'calendar' ? 'block' : 'none',
           height: '100%'
         }}>
-          <CalendarView />
+          <CalendarView key={eventsRefreshKey} />
         </div>
         <div style={{ 
           display: selectedNavKey === 'settings' ? 'block' : 'none',
           height: '100%'
         }}>
-          <Settings />
+          <Settings onEventsUpdated={() => setEventsRefreshKey(prev => prev + 1)} />
         </div>
       </div>
     )

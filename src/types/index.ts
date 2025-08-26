@@ -53,6 +53,8 @@ export interface Event {
   organizer?: string // JSON string containing organizer info
   attendees?: string // JSON string containing attendees array
   is_meeting?: boolean
+  type_id?: number
+  type_manually_set?: boolean
   created_at?: string
   updated_at?: string
   synced_at?: string
@@ -73,6 +75,25 @@ export interface Category {
   created_at?: string
 }
 
+export interface EventType {
+  id?: number
+  name: string
+  color: string
+  is_default?: boolean
+  created_at?: string
+}
+
+export interface EventTypeRule {
+  id?: number
+  name: string
+  priority: number
+  field_name: 'title' | 'is_all_day' | 'show_as' | 'categories'
+  operator: 'equals' | 'contains' | 'is_empty'
+  value?: string
+  target_type_id: number
+  created_at?: string
+}
+
 export interface ElectronAPI {
   // Database operations
   getEvents: () => Promise<Event[]>
@@ -84,6 +105,30 @@ export interface ElectronAPI {
   // Category management
   getCategories: () => Promise<Category[]>
   createCategory: (categoryData: Category) => Promise<Category>
+  
+  // Event type management
+  getEventTypes: () => Promise<EventType[]>
+  createEventType: (eventTypeData: EventType) => Promise<EventType>
+  updateEventType: (id: number, eventTypeData: EventType) => Promise<EventType>
+  deleteEventType: (id: number) => Promise<boolean>
+  
+  // Event type rule management
+  getEventTypeRules: () => Promise<EventTypeRule[]>
+  createEventTypeRule: (ruleData: EventTypeRule) => Promise<EventTypeRule>
+  updateEventTypeRule: (id: number, ruleData: EventTypeRule) => Promise<EventTypeRule>
+  deleteEventTypeRule: (id: number) => Promise<boolean>
+  updateRulePriorities: (ruleIds: number[]) => Promise<boolean>
+  
+  // Event type assignment
+  evaluateEventType: (eventData: Event) => Promise<number | null>
+  setEventTypeManually: (eventId: number, typeId: number) => Promise<boolean>
+  reprocessEventTypes: () => Promise<{
+    success: boolean
+    processedCount?: number
+    updatedCount?: number
+    message: string
+    error?: string
+  }>
   
   // Microsoft Graph sync
   syncGraphEvents: (events: GraphEvent[]) => Promise<{ synced: number }>

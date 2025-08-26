@@ -15,6 +15,7 @@ interface CalendarEventCellProps {
   userTimezone: string
   onEventClick: (event: Event) => void
   getShowAsDisplay: (showAs: string) => string
+  getEventDisplayColor?: (event: Event) => string
 }
 
 const CalendarEventCell: React.FC<CalendarEventCellProps> = memo(({
@@ -23,7 +24,8 @@ const CalendarEventCell: React.FC<CalendarEventCellProps> = memo(({
   isLargeScreen,
   userTimezone,
   onEventClick,
-  getShowAsDisplay
+  getShowAsDisplay,
+  getEventDisplayColor
 }) => {
   const { token } = theme.useToken()
   
@@ -71,7 +73,7 @@ const CalendarEventCell: React.FC<CalendarEventCellProps> = memo(({
             title={`${event.title} - ${getShowAsDisplay(event.show_as)}`}
             style={{
               ...getEventItemStyles.base,
-              backgroundColor: getEventBackgroundColor(event.show_as)
+              backgroundColor: getEventDisplayColor ? getEventDisplayColor(event) : getEventBackgroundColor(event.show_as)
             }}
           >
             {displayText}

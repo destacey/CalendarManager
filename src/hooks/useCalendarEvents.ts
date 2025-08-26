@@ -1,5 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, startTransition } from 'react'
-import { App } from 'antd'
+import { useState, useEffect, useMemo, useCallback, startTransition, useRef } from 'react'
 import dayjs, { Dayjs } from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
@@ -13,21 +12,23 @@ dayjs.extend(timezone)
 export const useCalendarEvents = () => {
   const [events, setEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [userTimezone, setUserTimezone] = useState<string>(Intl.DateTimeFormat().resolvedOptions().timeZone)
-  const { message } = App.useApp()
+  const hasInitiallyLoaded = useRef(false)
 
   const loadEvents = useCallback(async () => {
     try {
       setLoading(true)
+      setError(null)
       const eventsData = await calendarService.getLocalEvents()
       setEvents(eventsData)
     } catch (error) {
-      message.error('Failed to load events')
+      setError('Failed to load events')
       console.error('Error loading events:', error)
     } finally {
       setLoading(false)
     }
-  }, [message])
+  }, [])
 
   // Load user timezone
   useEffect(() => {
@@ -56,7 +57,10 @@ export const useCalendarEvents = () => {
 
   // Initial load
   useEffect(() => {
-    loadEvents()
+    if (!hasInitiallyLoaded.current) {
+      hasInitiallyLoaded.current = true
+      loadEvents()
+    }
   }, [])
 
   // Optimized event date map with deferred computation to prevent blocking
@@ -166,7 +170,9 @@ export const useCalendarEvents = () => {
   return {
     events,
     loading,
+    error,
     loadEvents,
+    refreshEvents: loadEvents,
     getEventsForDate,
     getEventColor,
     getShowAsDisplay,

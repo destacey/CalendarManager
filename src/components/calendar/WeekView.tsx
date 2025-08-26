@@ -45,6 +45,7 @@ interface WeekViewProps {
   setCalendarType: (type: 'month' | 'year') => void
   getEventsForDate: (date: Dayjs) => Event[]
   getEventBackgroundColor: (showAs: string) => string
+  getEventDisplayColor?: (event: Event) => string
   setSelectedEvent: (event: Event) => void
   setIsModalVisible: (visible: boolean) => void
   userTimezone: string
@@ -57,6 +58,7 @@ const WeekView: React.FC<WeekViewProps> = memo(({
   setCalendarType,
   getEventsForDate,
   getEventBackgroundColor,
+  getEventDisplayColor,
   setSelectedEvent,
   setIsModalVisible,
   userTimezone
@@ -467,7 +469,7 @@ const WeekView: React.FC<WeekViewProps> = memo(({
                                 fontSize: '11px',
                                 padding: '4px 6px',
                                 borderRadius: '3px',
-                                backgroundColor: getEventBackgroundColor(event.show_as),
+                                backgroundColor: getEventDisplayColor ? getEventDisplayColor(event) : getEventBackgroundColor(event.show_as),
                                 color: '#fff',
                                 cursor: 'pointer',
                                 overflow: 'hidden',
@@ -583,7 +585,7 @@ const WeekView: React.FC<WeekViewProps> = memo(({
                               fontSize: '10px',
                               padding: '2px 4px',
                               borderRadius: '2px',
-                              backgroundColor: getEventBackgroundColor(event.show_as),
+                              backgroundColor: getEventDisplayColor ? getEventDisplayColor(event) : getEventBackgroundColor(event.show_as),
                               color: '#fff',
                               cursor: 'pointer',
                               overflow: 'hidden',
