@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Typography, Space, Button, Table, Modal, Form, Input, Select, AutoComplete, message, Popconfirm, App } from 'antd'
-import { SettingOutlined, PlusOutlined, EditOutlined, DeleteOutlined, HolderOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Typography, Space, Button, Table, Modal, Form, Input, Select, AutoComplete, message, Popconfirm, App, Flex, theme } from 'antd'
+import { PlusOutlined, EditOutlined, DeleteOutlined, HolderOutlined, ReloadOutlined } from '@ant-design/icons'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { EventType, EventTypeRule } from '../../types'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 
 interface EventTypeRulesSettingsProps {
@@ -18,6 +18,7 @@ interface EventTypeRulesSettingsProps {
 interface SortableRowProps {
   children: React.ReactNode
   'data-row-key': string
+  [key: string]: any
 }
 
 const SortableRow: React.FC<SortableRowProps> = ({ children, ...props }) => {
@@ -40,28 +41,15 @@ const SortableRow: React.FC<SortableRowProps> = ({ children, ...props }) => {
   }
 
   return (
-    <tr {...props} ref={setNodeRef} style={style}>
-      {React.Children.map(children, (child, index) => {
-        if (index === 0) {
-          return React.cloneElement(child as React.ReactElement, {
-            children: (
-              <Space>
-                <span {...attributes} {...listeners} style={{ cursor: 'grab' }}>
-                  <HolderOutlined />
-                </span>
-                {(child as React.ReactElement).props.children}
-              </Space>
-            ),
-          })
-        }
-        return child
-      })}
+    <tr {...props} ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {children}
     </tr>
   )
 }
 
 const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchTerm = '', onEventsUpdated }) => {
   const { notification } = App.useApp()
+  const { token } = theme.useToken()
   const [rules, setRules] = useState<EventTypeRule[]>([])
   const [eventTypes, setEventTypes] = useState<EventType[]>([])
   const [existingCategories, setExistingCategories] = useState<string[]>([])
@@ -76,7 +64,11 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
   const operator = Form.useWatch('operator', form)
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -142,10 +134,20 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
 
   const handleDelete = async (rule: EventTypeRule) => {
     try {
-      if (!window.electronAPI?.deleteEventTypeRule) return
+      if (!window.electronAPI?.deleteEventTypeRule || !window.electronAPI?.updateRulePriorities) return
       
       const success = await window.electronAPI.deleteEventTypeRule(rule.id!)
       if (success) {
+        // After deletion, reorder priorities for remaining rules
+        const remainingRules = rules
+          .filter(r => r.id !== rule.id)
+          .sort((a, b) => a.priority - b.priority)
+        
+        if (remainingRules.length > 0) {
+          const ruleIds = remainingRules.map(r => r.id!)
+          await window.electronAPI.updateRulePriorities(ruleIds)
+        }
+        
         message.success('Rule deleted')
         loadData()
       } else {
@@ -195,12 +197,19 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
       const newIndex = rules.findIndex(rule => rule.id!.toString() === over.id)
       
       const newRules = arrayMove(rules, oldIndex, newIndex)
-      setRules(newRules)
+      
+      // Update priority values to match new order (1-based indexing)
+      const updatedRules = newRules.map((rule, index) => ({
+        ...rule,
+        priority: index + 1
+      }))
+      
+      setRules(updatedRules)
       
       // Update priorities in backend
       try {
         if (window.electronAPI?.updateRulePriorities) {
-          const ruleIds = newRules.map(rule => rule.id!)
+          const ruleIds = updatedRules.map(rule => rule.id!)
           await window.electronAPI.updateRulePriorities(ruleIds)
         }
       } catch (error) {
@@ -294,8 +303,8 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
       key: 'priority',
       width: 80,
       render: (text: number) => (
-        <Space>
-          <HolderOutlined style={{ color: '#999' }} />
+        <Space style={{ cursor: 'grab' }}>
+          <HolderOutlined style={{ color: token.colorTextTertiary }} />
           {text}
         </Space>
       ),
@@ -308,7 +317,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
     {
       title: 'Condition',
       key: 'condition',
-      render: (_, record: EventTypeRule) => {
+      render: (_: any, record: EventTypeRule) => {
         const fieldLabel = getFieldOptions().find(f => f.value === record.field_name)?.label
         const operatorLabel = getOperatorOptions(record.field_name).find(o => o.value === record.operator)?.label
         const valueDisplay = record.operator === 'is_empty' ? '' : ` "${record.value}"`
@@ -318,7 +327,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
     {
       title: 'Assigns Type',
       key: 'type',
-      render: (_, record: EventTypeRule) => {
+      render: (_: any, record: EventTypeRule) => {
         const type = eventTypes.find(t => t.id === record.target_type_id)
         return type ? (
           <Space>
@@ -328,7 +337,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
                 height: 16, 
                 borderRadius: 4, 
                 backgroundColor: type.color,
-                border: '1px solid #d9d9d9'
+                border: `1px solid ${token.colorBorder}`
               }} 
             />
             {type.name}
@@ -340,7 +349,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
       title: 'Actions',
       key: 'actions',
       width: 120,
-      render: (_, record: EventTypeRule) => (
+      render: (_: any, record: EventTypeRule) => (
         <Space>
           <Button
             icon={<EditOutlined />}
@@ -375,8 +384,8 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
   if (!shouldShow) return null
 
   return (
-    <div style={{ marginBottom: '16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+    <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }}>
+      <Flex justify="space-between" align="center">
         <Text strong>Rules</Text>
         <Space>
           <Popconfirm
@@ -402,11 +411,11 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
             Add Rule
           </Button>
         </Space>
-      </div>
-      <Space direction="vertical" style={{ width: '100%' }}>
-        <Text type="secondary">
-          Rules automatically assign event types based on event properties. Rules are evaluated in priority order (drag to reorder).
-        </Text>
+      </Flex>
+      
+      <Text type="secondary">
+        Rules automatically assign event types based on event properties. Rules are evaluated in priority order (drag to reorder).
+      </Text>
         
         <DndContext
           sensors={sensors}
@@ -421,7 +430,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
               columns={columns}
               dataSource={filteredRules}
               loading={loading}
-              rowKey="id"
+              rowKey={(record) => record.id!.toString()}
               pagination={false}
               size="small"
               components={{
@@ -517,8 +526,8 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
                     value: category,
                     label: category
                   }))}
-                  filterOption={(inputValue, option) =>
-                    option?.label?.toLowerCase().includes(inputValue.toLowerCase())
+                  filterOption={(inputValue: string, option) =>
+                    option?.label?.toLowerCase().includes(inputValue.toLowerCase()) ?? false
                   }
                   allowClear
                 />
@@ -546,7 +555,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
                           height: 16, 
                           borderRadius: 4, 
                           backgroundColor: type.color,
-                          border: '1px solid #d9d9d9'
+                          border: `1px solid ${token.colorBorder}`
                         }} 
                       />
                       {type.name}
@@ -557,8 +566,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
             </Form.Item>
           </Form>
         </Modal>
-      </Space>
-    </div>
+    </Space>
   )
 }
 
