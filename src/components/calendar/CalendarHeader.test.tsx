@@ -116,9 +116,9 @@ describe('CalendarHeader', () => {
     it('maintains correct component hierarchy', () => {
       const { container } = render(<CalendarHeader {...defaultProps} />)
       
-      // Should have Flex container at root
-      const flexContainer = container.firstChild
-      expect(flexContainer).toHaveClass('ant-flex')
+      // Should have Flex container inside App wrapper
+      const flexContainer = container.querySelector('.ant-flex')
+      expect(flexContainer).toBeInTheDocument()
       
       // Should have exactly 2 child components
       expect(flexContainer?.children).toHaveLength(2)

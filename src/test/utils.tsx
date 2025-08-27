@@ -1,6 +1,6 @@
 import React, { ReactElement } from 'react'
 import { render, RenderOptions } from '@testing-library/react'
-import { ConfigProvider } from 'antd'
+import { ConfigProvider, App } from 'antd'
 import { ThemeProvider } from '../contexts/ThemeContext'
 import dayjs from 'dayjs'
 
@@ -9,7 +9,9 @@ const AllTheProviders = ({ children }: { children: React.ReactNode }) => {
   return (
     <ThemeProvider>
       <ConfigProvider>
-        {children}
+        <App>
+          {children}
+        </App>
       </ConfigProvider>
     </ThemeProvider>
   )

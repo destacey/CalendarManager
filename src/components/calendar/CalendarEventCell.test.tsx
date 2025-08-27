@@ -59,7 +59,9 @@ describe('CalendarEventCell', () => {
       
       const { container } = render(<CalendarEventCell {...props} />)
       
-      expect(container.firstChild).toBeNull()
+      // Since we have App provider wrapper, check that the content div is empty
+      const appDiv = container.querySelector('.ant-app')
+      expect(appDiv?.children.length).toBe(0)
     })
 
     it('renders event count for small screens', () => {
@@ -437,7 +439,9 @@ describe('CalendarEventCell', () => {
       
       const { container } = render(<CalendarEventCell {...props} />)
       
-      expect(container.firstChild).toBeNull()
+      // Since we have App provider wrapper, check that the content div is empty
+      const appDiv = container.querySelector('.ant-app')
+      expect(appDiv?.children.length).toBe(0)
     })
 
     it('handles events with missing or invalid data', () => {

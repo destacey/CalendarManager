@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '../test/utils'
+import { render, screen, fireEvent, waitFor, act } from '../test/utils'
 import { createTitleBarProps } from '../test/utils'
 import TitleBar from './TitleBar'
 import { calendarService } from '../services/calendar'
@@ -65,8 +65,10 @@ describe('TitleBar', () => {
   })
 
   describe('Basic Rendering', () => {
-    it('renders title bar with basic elements', () => {
-      render(<TitleBar {...defaultProps} />)
+    it('renders title bar with basic elements', async () => {
+      await act(async () => {
+        render(<TitleBar {...defaultProps} />)
+      })
       
       // Should render title
       expect(screen.getByText('Calendar Manager')).toBeInTheDocument()
@@ -77,124 +79,152 @@ describe('TitleBar', () => {
       expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument()
     })
 
-    it('renders mobile title when isMobile is true', () => {
+    it('renders mobile title when isMobile is true', async () => {
       const props = createTitleBarProps({ isMobile: true })
-      render(<TitleBar {...props} />)
+      await act(async () => {
+        render(<TitleBar {...props} />)
+      })
       
       expect(screen.getByText('CM')).toBeInTheDocument()
       expect(screen.queryByText('Calendar Manager')).not.toBeInTheDocument()
     })
 
-    it('renders sync button by default', () => {
-      render(<TitleBar {...defaultProps} />)
+    it('renders sync button by default', async () => {
+      await act(async () => {
+        render(<TitleBar {...defaultProps} />)
+      })
       
       expect(screen.getByRole('button', { name: /cloud-sync/i })).toBeInTheDocument()
     })
   })
 
   describe('Menu Toggle Button', () => {
-    it('does not render menu toggle when showMenuToggle is false', () => {
+    it('does not render menu toggle when showMenuToggle is false', async () => {
       const props = createTitleBarProps({ showMenuToggle: false })
-      render(<TitleBar {...props} />)
+      await act(async () => {
+        render(<TitleBar {...props} />)
+      })
       
       expect(screen.queryByTitle('Expand menu')).not.toBeInTheDocument()
       expect(screen.queryByTitle('Collapse menu')).not.toBeInTheDocument()
     })
 
-    it('renders expand menu button when collapsed', () => {
+    it('renders expand menu button when collapsed', async () => {
       const props = createTitleBarProps({ 
         showMenuToggle: true, 
         sideNavCollapsed: true 
       })
-      render(<TitleBar {...props} />)
+      await act(async () => {
+        render(<TitleBar {...props} />)
+      })
       
       expect(screen.getByTitle('Expand menu')).toBeInTheDocument()
     })
 
-    it('renders collapse menu button when expanded', () => {
+    it('renders collapse menu button when expanded', async () => {
       const props = createTitleBarProps({ 
         showMenuToggle: true, 
         sideNavCollapsed: false 
       })
-      render(<TitleBar {...props} />)
+      await act(async () => {
+        render(<TitleBar {...props} />)
+      })
       
       expect(screen.getByTitle('Collapse menu')).toBeInTheDocument()
     })
 
-    it('calls onMenuToggle when menu toggle button is clicked', () => {
+    it('calls onMenuToggle when menu toggle button is clicked', async () => {
       const mockOnMenuToggle = vi.fn()
       const props = createTitleBarProps({ 
         showMenuToggle: true, 
         onMenuToggle: mockOnMenuToggle 
       })
-      render(<TitleBar {...props} />)
+      await act(async () => {
+        render(<TitleBar {...props} />)
+      })
       
-      fireEvent.click(screen.getByTitle('Collapse menu'))
+      await act(async () => {
+        fireEvent.click(screen.getByTitle('Collapse menu'))
+      })
       
       expect(mockOnMenuToggle).toHaveBeenCalledOnce()
     })
   })
 
   describe('Mobile Navigation Menu', () => {
-    it('renders mobile dropdown menu when isMobile is true', () => {
+    it('renders mobile dropdown menu when isMobile is true', async () => {
       const props = createTitleBarProps({ isMobile: true })
-      render(<TitleBar {...props} />)
+      await act(async () => {
+        render(<TitleBar {...props} />)
+      })
       
       expect(screen.getByTitle('Navigation menu')).toBeInTheDocument()
     })
 
-    it('does not render mobile menu when isMobile is false', () => {
+    it('does not render mobile menu when isMobile is false', async () => {
       const props = createTitleBarProps({ isMobile: false })
-      render(<TitleBar {...props} />)
+      await act(async () => {
+        render(<TitleBar {...props} />)
+      })
       
       expect(screen.queryByTitle('Navigation menu')).not.toBeInTheDocument()
     })
   })
 
   describe('User Menu', () => {
-    it('does not render user menu by default', () => {
-      render(<TitleBar {...defaultProps} />)
+    it('does not render user menu by default', async () => {
+      await act(async () => {
+        render(<TitleBar {...defaultProps} />)
+      })
       
       expect(screen.queryByTestId('user-menu')).not.toBeInTheDocument()
     })
 
-    it('renders user menu when showUserMenu and onLogout are provided', () => {
+    it('renders user menu when showUserMenu and onLogout are provided', async () => {
       const mockOnLogout = vi.fn()
       const props = createTitleBarProps({ 
         showUserMenu: true, 
         onLogout: mockOnLogout 
       })
-      render(<TitleBar {...props} />)
+      await act(async () => {
+        render(<TitleBar {...props} />)
+      })
       
       expect(screen.getByTestId('user-menu')).toBeInTheDocument()
     })
 
-    it('passes correct showName prop to UserMenu for desktop', () => {
+    it('passes correct showName prop to UserMenu for desktop', async () => {
       const props = createTitleBarProps({ 
         showUserMenu: true, 
         isMobile: false 
       })
-      render(<TitleBar {...props} />)
+      await act(async () => {
+        render(<TitleBar {...props} />)
+      })
       
       expect(screen.getByTestId('show-name')).toHaveTextContent('true')
     })
 
-    it('passes correct showName prop to UserMenu for mobile', () => {
+    it('passes correct showName prop to UserMenu for mobile', async () => {
       const props = createTitleBarProps({ 
         showUserMenu: true, 
         isMobile: true 
       })
-      render(<TitleBar {...props} />)
+      await act(async () => {
+        render(<TitleBar {...props} />)
+      })
       
       expect(screen.getByTestId('show-name')).toHaveTextContent('false')
     })
 
-    it('does not render user menu when showUserMenu is true but onLogout is not provided', () => {
+    it('does not render user menu when showUserMenu is true but onLogout is not provided', async () => {
       const props = createTitleBarProps({ 
         showUserMenu: true, 
         onLogout: undefined 
       })
-      render(<TitleBar {...props} />)
+      await act(async () => {
+        render(<TitleBar {...props} />)
+      })
       
       expect(screen.queryByTestId('user-menu')).not.toBeInTheDocument()
     })
@@ -202,25 +232,37 @@ describe('TitleBar', () => {
 
   describe('Window Controls', () => {
     it('calls minimizeWindow when minimize button is clicked', async () => {
-      render(<TitleBar {...defaultProps} />)
+      await act(async () => {
+        render(<TitleBar {...defaultProps} />)
+      })
       
-      fireEvent.click(screen.getByRole('button', { name: /minus/i }))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /minus/i }))
+      })
       
       expect(mockElectronAPI.minimizeWindow).toHaveBeenCalledOnce()
     })
 
     it('calls maximizeWindow when maximize button is clicked', async () => {
-      render(<TitleBar {...defaultProps} />)
+      await act(async () => {
+        render(<TitleBar {...defaultProps} />)
+      })
       
-      fireEvent.click(screen.getByRole('button', { name: /border/i }))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /border/i }))
+      })
       
       expect(mockElectronAPI.maximizeWindow).toHaveBeenCalledOnce()
     })
 
     it('calls closeWindow when close button is clicked', async () => {
-      render(<TitleBar {...defaultProps} />)
+      await act(async () => {
+        render(<TitleBar {...defaultProps} />)
+      })
       
-      fireEvent.click(screen.getByRole('button', { name: /close/i }))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /close/i }))
+      })
       
       expect(mockElectronAPI.closeWindow).toHaveBeenCalledOnce()
     })
@@ -228,7 +270,9 @@ describe('TitleBar', () => {
     it('shows correct maximize/restore button based on window state', async () => {
       mockElectronAPI.isWindowMaximized.mockResolvedValue(true)
       
-      render(<TitleBar {...defaultProps} />)
+      await act(async () => {
+        render(<TitleBar {...defaultProps} />)
+      })
       
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /block/i })).toBeInTheDocument()
@@ -236,19 +280,23 @@ describe('TitleBar', () => {
     })
 
     it('handles window state change events', async () => {
-      render(<TitleBar {...defaultProps} />)
+      await act(async () => {
+        render(<TitleBar {...defaultProps} />)
+      })
       
       expect(mockElectronAPI.onWindowStateChange).toHaveBeenCalledWith(expect.any(Function))
     })
 
-    it('handles missing electronAPI gracefully', () => {
+    it('handles missing electronAPI gracefully', async () => {
       // Temporarily remove electronAPI by setting to undefined
       const originalAPI = window.electronAPI
       ;(window as any).electronAPI = undefined
       
-      expect(() => {
-        render(<TitleBar {...defaultProps} />)
-      }).not.toThrow()
+      await act(async () => {
+        expect(() => {
+          render(<TitleBar {...defaultProps} />)
+        }).not.toThrow()
+      })
       
       // Restore electronAPI
       ;(window as any).electronAPI = originalAPI
@@ -256,28 +304,38 @@ describe('TitleBar', () => {
   })
 
   describe('Sync Functionality', () => {
-    it('opens sync modal when sync button is clicked', () => {
-      render(<TitleBar {...defaultProps} />)
+    it('opens sync modal when sync button is clicked', async () => {
+      await act(async () => {
+        render(<TitleBar {...defaultProps} />)
+      })
       
-      fireEvent.click(screen.getByRole('button', { name: /cloud-sync/i }))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /cloud-sync/i }))
+      })
       
       expect(screen.getByTestId('sync-modal')).toBeInTheDocument()
     })
 
-    it('closes sync modal when close button is clicked', () => {
-      render(<TitleBar {...defaultProps} />)
+    it('closes sync modal when close button is clicked', async () => {
+      await act(async () => {
+        render(<TitleBar {...defaultProps} />)
+      })
       
       // Open modal first
-      fireEvent.click(screen.getByRole('button', { name: /cloud-sync/i }))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /cloud-sync/i }))
+      })
       expect(screen.getByTestId('sync-modal')).toBeInTheDocument()
       
       // Close modal
-      fireEvent.click(screen.getByTestId('close-modal'))
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('close-modal'))
+      })
       
       expect(screen.queryByTestId('sync-modal')).not.toBeInTheDocument()
     })
 
-    it('renders sync progress when syncProgress is provided', () => {
+    it('renders sync progress when syncProgress is provided', async () => {
       // We need to simulate sync progress state change
       // This would typically happen through the sync callbacks in useEffect
       const mockProgress = { type: 'fetching', current: 1, total: 10 }
@@ -293,7 +351,9 @@ describe('TitleBar', () => {
         return <TitleBar {...defaultProps} />
       }
       
-      render(<TestComponent />)
+      await act(async () => {
+        render(<TestComponent />)
+      })
       
       // Since we can't easily test the internal state changes,
       // we'll test that the sync callbacks are properly set up
@@ -302,8 +362,10 @@ describe('TitleBar', () => {
   })
 
   describe('Component Lifecycle', () => {
-    it('sets up sync callbacks on mount', () => {
-      render(<TitleBar {...defaultProps} />)
+    it('sets up sync callbacks on mount', async () => {
+      await act(async () => {
+        render(<TitleBar {...defaultProps} />)
+      })
       
       expect(calendarService.setSyncCallbacks).toHaveBeenCalledWith(
         expect.any(Function),
@@ -311,8 +373,10 @@ describe('TitleBar', () => {
       )
     })
 
-    it('cleans up listeners on unmount', () => {
-      const { unmount } = render(<TitleBar {...defaultProps} />)
+    it('cleans up listeners on unmount', async () => {
+      const { unmount } = await act(async () => {
+        return render(<TitleBar {...defaultProps} />)
+      })
       
       unmount()
       
@@ -321,11 +385,13 @@ describe('TitleBar', () => {
       expect(calendarService.setSyncCallbacks).toHaveBeenCalledWith()
     })
 
-    it('handles missing removeAllListeners gracefully', () => {
+    it('handles missing removeAllListeners gracefully', async () => {
       const originalRemoveAllListeners = mockElectronAPI.removeAllListeners
       delete mockElectronAPI.removeAllListeners
       
-      const { unmount } = render(<TitleBar {...defaultProps} />)
+      const { unmount } = await act(async () => {
+        return render(<TitleBar {...defaultProps} />)
+      })
       
       expect(() => {
         unmount()
@@ -340,9 +406,11 @@ describe('TitleBar', () => {
       mockElectronAPI.isWindowMaximized.mockRejectedValue(new Error('Test error'))
       
       // Should not throw
-      expect(() => {
-        render(<TitleBar {...defaultProps} />)
-      }).not.toThrow()
+      await act(async () => {
+        expect(() => {
+          render(<TitleBar {...defaultProps} />)
+        }).not.toThrow()
+      })
       
       // Should log warning (we can't easily test console.warn in this setup)
     })

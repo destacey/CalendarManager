@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Typography, Space, Button, Table, Modal, Form, Input, ColorPicker, Switch, Popconfirm, App } from 'antd'
-import { TagOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { Typography, Space, Button, Table, Modal, Form, Input, ColorPicker, Switch, Popconfirm, App, theme, Flex } from 'antd'
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
 import { EventType } from '../../types'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 
 interface EventTypesSettingsProps {
   searchTerm?: string
@@ -11,6 +11,7 @@ interface EventTypesSettingsProps {
 
 const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = '' }) => {
   const { message } = App.useApp()
+  const { token } = theme.useToken()
   const [eventTypes, setEventTypes] = useState<EventType[]>([])
   const [loading, setLoading] = useState(true)
   const [modalVisible, setModalVisible] = useState(false)
@@ -41,7 +42,7 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
     form.resetFields()
     form.setFieldsValue({
       name: '',
-      color: '#1890ff',
+      color: token.colorPrimary,
       is_default: false
     })
     setModalVisible(true)
@@ -80,10 +81,10 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
       // Convert color value to string if it's an object
       let colorValue = values.color
       if (typeof colorValue === 'object' && colorValue !== null) {
-        colorValue = colorValue.toHexString?.() || '#1890ff'
+        colorValue = colorValue.toHexString?.() || token.colorPrimary
       }
       if (typeof colorValue !== 'string') {
-        colorValue = '#1890ff' // Default fallback color
+        colorValue = token.colorPrimary // Default fallback color
       }
       
       const processedValues = {
@@ -128,7 +129,7 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
               height: 16, 
               borderRadius: 4, 
               backgroundColor: record.color,
-              border: '1px solid #d9d9d9'
+              border: `1px solid ${token.colorBorder}`
             }} 
           />
           {text}
@@ -148,7 +149,7 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
             height: 24, 
             borderRadius: 4, 
             backgroundColor: color,
-            border: '1px solid #d9d9d9'
+            border: `1px solid ${token.colorBorder}`
           }} 
         />
       ),
@@ -157,7 +158,7 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
       title: 'Actions',
       key: 'actions',
       width: 120,
-      render: (_, record: EventType) => (
+      render: (_: any, record: EventType) => (
         <Space>
           <Button
             icon={<EditOutlined />}
@@ -193,8 +194,8 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
   if (!shouldShow) return null
 
   return (
-    <div style={{ marginBottom: '16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+    <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }}>
+      <Flex justify="space-between" align="center">
         <Text strong>Types</Text>
         <Button
           type="primary"
@@ -203,11 +204,11 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
         >
           Add Type
         </Button>
-      </div>
-      <Space direction="vertical" style={{ width: '100%' }}>
-        <Text type="secondary">
-          Define event types that can be automatically assigned based on rules or set manually.
-        </Text>
+      </Flex>
+      
+      <Text type="secondary">
+        Define event types that can be automatically assigned based on rules or set manually.
+      </Text>
         
         <Table
           columns={columns}
@@ -258,8 +259,7 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
             </Text>
           </Form>
         </Modal>
-      </Space>
-    </div>
+    </Space>
   )
 }
 

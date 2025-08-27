@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Modal, Descriptions, Tag, Space, Select, Button, message } from 'antd'
+import { Modal, Descriptions, Tag, Space, Select, Button, message, theme } from 'antd'
 import { LockOutlined, EditOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
@@ -28,6 +28,7 @@ const EventModal: React.FC<EventModalProps> = ({
   userTimezone,
   onEventUpdated
 }) => {
+  const { token } = theme.useToken()
   const [eventTypes, setEventTypes] = useState<EventType[]>([])
   const [selectedTypeId, setSelectedTypeId] = useState<number | undefined>()
   const [isEditingType, setIsEditingType] = useState(false)
@@ -175,7 +176,7 @@ const EventModal: React.FC<EventModalProps> = ({
                               height: 16, 
                               borderRadius: 4, 
                               backgroundColor: type.color,
-                              border: '1px solid #d9d9d9'
+                              border: `1px solid ${token.colorBorder}`
                             }} 
                           />
                           {type.name}
@@ -204,7 +205,7 @@ const EventModal: React.FC<EventModalProps> = ({
                   })()}
                   {event.type_manually_set && (
                     <LockOutlined 
-                      style={{ color: '#999', fontSize: 12 }} 
+                      style={{ color: token.colorTextTertiary, fontSize: 12 }} 
                       title="Manually set (won't change on sync)" 
                     />
                   )}

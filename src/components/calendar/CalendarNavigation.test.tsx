@@ -45,8 +45,8 @@ describe('CalendarNavigation', () => {
     it('has correct CSS class on container', () => {
       const { container } = render(<CalendarNavigation {...defaultProps} />)
       
-      const containerDiv = container.firstChild
-      expect(containerDiv).toHaveClass('ant-picker-calendar-header-value')
+      const containerDiv = container.querySelector('.ant-picker-calendar-header-value')
+      expect(containerDiv).toBeInTheDocument()
     })
   })
 

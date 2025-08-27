@@ -24,7 +24,9 @@ describe('MonthEventCell', () => {
     it('renders nothing when no events exist', () => {
       const { container } = render(<MonthEventCell {...defaultProps} />)
       
-      expect(container.firstChild).toBeNull()
+      // Since we have App provider wrapper, check that the content div is empty
+      const appDiv = container.querySelector('.ant-app')
+      expect(appDiv?.children.length).toBe(0)
     })
 
     it('renders event count badge when events exist', () => {
@@ -275,7 +277,9 @@ describe('MonthEventCell', () => {
       const { container } = render(<MonthEventCell {...props} />)
       
       // Should render nothing when all days have empty event arrays
-      expect(container.firstChild).toBeNull()
+      // Since we have App provider wrapper, check that the content div is empty
+      const appDiv = container.querySelector('.ant-app')
+      expect(appDiv?.children.length).toBe(0)
       expect(mockGetEventsForDate).toHaveBeenCalledTimes(31)
     })
   })
