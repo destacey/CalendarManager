@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react'
-import { Modal, Descriptions, Tag, Space, Select, Button, message, theme } from 'antd'
+import { Modal, Descriptions, Tag, Space, Select, Button, theme } from 'antd'
 import { LockOutlined, EditOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { Event, EventType } from '../../types'
+import { useMessage } from '../../contexts/MessageContext'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -29,6 +30,7 @@ const EventModal: React.FC<EventModalProps> = ({
   onEventUpdated
 }) => {
   const { token } = theme.useToken()
+  const messageApi = useMessage()
   const [eventTypes, setEventTypes] = useState<EventType[]>([])
   const [selectedTypeId, setSelectedTypeId] = useState<number | undefined>()
   const [isEditingType, setIsEditingType] = useState(false)
@@ -63,16 +65,16 @@ const EventModal: React.FC<EventModalProps> = ({
       if (window.electronAPI?.setEventTypeManually) {
         const success = await window.electronAPI.setEventTypeManually(event.id, selectedTypeId)
         if (success) {
-          message.success('Event type updated')
+          messageApi.success('Event type updated')
           setIsEditingType(false)
           onEventUpdated?.()
         } else {
-          message.error('Failed to update event type')
+          messageApi.error('Failed to update event type')
         }
       }
     } catch (error) {
       console.error('Error updating event type:', error)
-      message.error('Failed to update event type')
+      messageApi.error('Failed to update event type')
     }
   }
 
@@ -90,13 +92,13 @@ const EventModal: React.FC<EventModalProps> = ({
             type_manually_set: false 
           })
           setSelectedTypeId(autoTypeId)
-          message.success('Event type reset to auto-assignment')
+          messageApi.success('Event type reset to auto-assignment')
           onEventUpdated?.()
         }
       }
     } catch (error) {
       console.error('Error resetting event type:', error)
-      message.error('Failed to reset event type')
+      messageApi.error('Failed to reset event type')
     }
   }
   const formatEventDateTime = (startDate: string, endDate?: string, isAllDay?: boolean) => {

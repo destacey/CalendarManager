@@ -9,6 +9,7 @@ import SideNavigation from './components/SideNavigation'
 import DataManagement from './components/DataManagement'
 import Settings from './components/settings/Settings'
 import { ThemeProvider, useTheme } from './contexts/ThemeContext'
+import { MessageProvider } from './contexts/MessageContext'
 import { storageService } from './services/storage'
 import { authService } from './services/auth'
 import './App.css'
@@ -230,9 +231,11 @@ function ThemedAppContent() {
   
   return (
     <ConfigProvider theme={antdTheme}>
-      <AntApp>
-        <AppContent />
-      </AntApp>
+      <MessageProvider>
+        <AntApp>
+          <AppContent />
+        </AntApp>
+      </MessageProvider>
     </ConfigProvider>
   )
 }

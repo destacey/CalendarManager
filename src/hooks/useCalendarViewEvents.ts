@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { App } from 'antd'
 import dayjs, { Dayjs } from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { Event } from '../types'
 import { calendarService } from '../services/calendar'
 import { storageService } from '../services/storage'
+import { useMessage } from '../contexts/MessageContext'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -14,7 +14,7 @@ export const useCalendarViewEvents = (viewStart: Dayjs, viewEnd: Dayjs) => {
   const [events, setEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(false)
   const [userTimezone, setUserTimezone] = useState<string>(Intl.DateTimeFormat().resolvedOptions().timeZone)
-  const { message } = App.useApp()
+  const messageApi = useMessage()
 
   // Load user timezone
   useEffect(() => {
@@ -38,13 +38,13 @@ export const useCalendarViewEvents = (viewStart: Dayjs, viewEnd: Dayjs) => {
       console.log('Loaded', eventsData.length, 'events in range')
       setEvents(eventsData)
     } catch (error) {
-      message.error('Failed to load events')
+      messageApi.error('Failed to load events')
       console.error('Error loading events in range:', error)
       setEvents([]) // Set empty array on error to prevent infinite loading
     } finally {
       setLoading(false)
     }
-  }, [message])
+  }, [messageApi])
 
   // Reload events when view range changes
   useEffect(() => {

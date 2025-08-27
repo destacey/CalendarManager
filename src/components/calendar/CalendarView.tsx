@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react'
-import { Calendar, Flex, Grid, Spin, Typography, App, Button } from 'antd'
+import { Calendar, Flex, Grid, Spin, Typography, Button } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
@@ -15,6 +15,7 @@ import CalendarEventCell from './CalendarEventCell'
 import MonthEventCell from './MonthEventCell'
 import CalendarHeader from './CalendarHeader'
 import { getEventBackgroundColor } from '../../utils/eventUtils'
+import { useMessage } from '../../contexts/MessageContext'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -28,7 +29,7 @@ const CalendarView: React.FC = () => {
   const [eventTypes, setEventTypes] = useState<EventType[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const screens = useBreakpoint()
-  const { message } = App.useApp()
+  const messageApi = useMessage()
 
   // Use persistent calendar state
   const {
@@ -64,9 +65,9 @@ const CalendarView: React.FC = () => {
   // Show error messages when they occur
   useEffect(() => {
     if (error) {
-      message.error(error)
+      messageApi.error(error)
     }
-  }, [error, message])
+  }, [error, messageApi])
 
   const loadEventTypes = async () => {
     try {
@@ -87,10 +88,10 @@ const CalendarView: React.FC = () => {
         refreshEvents?.(),
         loadEventTypes()
       ])
-      message.success('Calendar data refreshed')
+      messageApi.success('Calendar data refreshed')
     } catch (error) {
       console.error('Error refreshing calendar:', error)
-      message.error('Failed to refresh calendar data')
+      messageApi.error('Failed to refresh calendar data')
     } finally {
       setRefreshing(false)
     }

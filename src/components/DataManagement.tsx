@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Button, Typography, Space, Statistic, Row, Col, Modal, Alert, Divider, App } from 'antd'
+import { Card, Button, Typography, Space, Statistic, Row, Col, Modal, Alert, Divider } from 'antd'
 import { DeleteOutlined, ExclamationCircleOutlined, ReloadOutlined, DatabaseOutlined } from '@ant-design/icons'
 import { calendarService } from '../services/calendar'
 import { storageService } from '../services/storage'
 import { useTheme } from '../contexts/ThemeContext'
+import { useMessage } from '../contexts/MessageContext'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -15,7 +16,7 @@ const DataManagement: React.FC = () => {
   const [clearDataModalVisible, setClearDataModalVisible] = useState(false)
   const [clearSyncModalVisible, setClearSyncModalVisible] = useState(false)
   const { antdTheme } = useTheme()
-  const { message } = App.useApp()
+  const messageApi = useMessage()
 
   useEffect(() => {
     loadEventCount()
@@ -29,7 +30,7 @@ const DataManagement: React.FC = () => {
       setEventCount(events.length)
     } catch (error) {
       console.error('Error loading event count:', error)
-      message.error('Failed to load event count')
+      messageApi.error('Failed to load event count')
     } finally {
       setLoading(false)
     }
@@ -77,13 +78,13 @@ const DataManagement: React.FC = () => {
         lastEventModified: undefined
       })
       
-      message.success(`Successfully deleted ${deletedCount} calendar events and reset sync data`)
+      messageApi.success(`Successfully deleted ${deletedCount} calendar events and reset sync data`)
       await loadEventCount() // Refresh count
       await loadSyncStatus() // Refresh sync status
       
     } catch (error) {
       console.error('Error clearing calendar data:', error)
-      message.error('Failed to clear calendar data')
+      messageApi.error('Failed to clear calendar data')
     } finally {
       setClearing(false)
     }
@@ -103,12 +104,12 @@ const DataManagement: React.FC = () => {
         lastEventModified: undefined
       })
       
-      message.success('Sync metadata cleared successfully')
+      messageApi.success('Sync metadata cleared successfully')
       await loadSyncStatus() // Refresh sync status
       
     } catch (error) {
       console.error('Error clearing sync data:', error)
-      message.error('Failed to clear sync data')
+      messageApi.error('Failed to clear sync data')
     }
   }
 

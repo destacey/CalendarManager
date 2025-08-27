@@ -2,6 +2,7 @@ import React, { ReactElement } from 'react'
 import { render, RenderOptions } from '@testing-library/react'
 import { ConfigProvider, App } from 'antd'
 import { ThemeProvider } from '../contexts/ThemeContext'
+import { MessageProvider } from '../contexts/MessageContext'
 import dayjs from 'dayjs'
 
 // Custom render function that includes providers
@@ -9,9 +10,11 @@ const AllTheProviders = ({ children }: { children: React.ReactNode }) => {
   return (
     <ThemeProvider>
       <ConfigProvider>
-        <App>
-          {children}
-        </App>
+        <MessageProvider>
+          <App>
+            {children}
+          </App>
+        </MessageProvider>
       </ConfigProvider>
     </ThemeProvider>
   )

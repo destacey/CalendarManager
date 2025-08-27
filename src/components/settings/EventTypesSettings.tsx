@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { Typography, Space, Button, Table, Modal, Form, Input, ColorPicker, Switch, Popconfirm, App, theme, Flex } from 'antd'
+import { Typography, Space, Button, Table, Modal, Form, Input, ColorPicker, Switch, Popconfirm, theme, Flex } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
 import { EventType } from '../../types'
+import { useMessage } from '../../contexts/MessageContext'
 
 const { Text } = Typography
 
@@ -10,7 +11,7 @@ interface EventTypesSettingsProps {
 }
 
 const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = '' }) => {
-  const { message } = App.useApp()
+  const messageApi = useMessage()
   const { token } = theme.useToken()
   const [eventTypes, setEventTypes] = useState<EventType[]>([])
   const [loading, setLoading] = useState(true)
@@ -31,7 +32,7 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
       }
     } catch (error) {
       console.error('Error loading event types:', error)
-      message.error('Failed to load event types')
+      messageApi.error('Failed to load event types')
     } finally {
       setLoading(false)
     }
@@ -63,14 +64,14 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
       
       const success = await window.electronAPI.deleteEventType(type.id!)
       if (success) {
-        message.success('Event type deleted')
+        messageApi.success('Event type deleted')
         loadEventTypes()
       } else {
-        message.error('Failed to delete event type')
+        messageApi.error('Failed to delete event type')
       }
     } catch (error) {
       console.error('Error deleting event type:', error)
-      message.error('Failed to delete event type')
+      messageApi.error('Failed to delete event type')
     }
   }
 
@@ -97,14 +98,14 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
         if (!window.electronAPI?.updateEventType) return
         const updated = await window.electronAPI.updateEventType(editingType.id!, processedValues)
         if (updated) {
-          message.success('Event type updated')
+          messageApi.success('Event type updated')
         }
       } else {
         // Create new type
         if (!window.electronAPI?.createEventType) return
         const created = await window.electronAPI.createEventType(processedValues)
         if (created) {
-          message.success('Event type created')
+          messageApi.success('Event type created')
         }
       }
       
@@ -112,7 +113,7 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
       loadEventTypes()
     } catch (error) {
       console.error('Error saving event type:', error)
-      message.error('Failed to save event type')
+      messageApi.error('Failed to save event type')
     }
   }
 

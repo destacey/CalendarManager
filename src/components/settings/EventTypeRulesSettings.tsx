@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import { Typography, Space, Button, Table, Modal, Form, Input, Select, AutoComplete, message, Popconfirm, App, Flex, theme } from 'antd'
+import { Typography, Space, Button, Table, Modal, Form, Input, Select, AutoComplete, Popconfirm, App, Flex, theme } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, HolderOutlined, ReloadOutlined } from '@ant-design/icons'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { EventType, EventTypeRule } from '../../types'
+import { useMessage } from '../../contexts/MessageContext'
 
 const { Text } = Typography
 const { Option } = Select
@@ -48,6 +49,7 @@ const SortableRow: React.FC<SortableRowProps> = ({ children, ...props }) => {
 }
 
 const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchTerm = '', onEventsUpdated }) => {
+  const messageApi = useMessage()
   const { notification } = App.useApp()
   const { token } = theme.useToken()
   const [rules, setRules] = useState<EventTypeRule[]>([])
@@ -107,7 +109,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
       }
     } catch (error) {
       console.error('Error loading rules:', error)
-      message.error('Failed to load rules')
+      messageApi.error('Failed to load rules')
     } finally {
       setLoading(false)
     }
@@ -148,14 +150,14 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
           await window.electronAPI.updateRulePriorities(ruleIds)
         }
         
-        message.success('Rule deleted')
+        messageApi.success('Rule deleted')
         loadData()
       } else {
-        message.error('Failed to delete rule')
+        messageApi.error('Failed to delete rule')
       }
     } catch (error) {
       console.error('Error deleting rule:', error)
-      message.error('Failed to delete rule')
+      messageApi.error('Failed to delete rule')
     }
   }
 
@@ -169,7 +171,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
         if (!window.electronAPI?.updateEventTypeRule) return
         const updated = await window.electronAPI.updateEventTypeRule(editingRule.id!, ruleData)
         if (updated) {
-          message.success('Rule updated')
+          messageApi.success('Rule updated')
         }
       } else {
         // Create new rule - assign next available priority (lowest priority)
@@ -177,7 +179,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
         if (!window.electronAPI?.createEventTypeRule) return
         const created = await window.electronAPI.createEventTypeRule(ruleData)
         if (created) {
-          message.success('Rule created')
+          messageApi.success('Rule created')
         }
       }
       
@@ -185,7 +187,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
       loadData()
     } catch (error) {
       console.error('Error saving rule:', error)
-      message.error('Failed to save rule')
+      messageApi.error('Failed to save rule')
     }
   }
 
@@ -214,7 +216,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
         }
       } catch (error) {
         console.error('Error updating rule priorities:', error)
-        message.error('Failed to update rule order')
+        messageApi.error('Failed to update rule order')
         // Revert the change
         loadData()
       }
