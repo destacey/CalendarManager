@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Typography, Space, Button, Table, Modal, Form, Input, ColorPicker, Switch, Popconfirm, theme, Flex } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, StarOutlined, StarFilled } from '@ant-design/icons'
 import { EventType } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
 
@@ -44,7 +44,7 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
     form.setFieldsValue({
       name: '',
       color: token.colorPrimary,
-      is_default: false
+      is_billable: false
     })
     setModalVisible(true)
   }
@@ -72,6 +72,23 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
     } catch (error) {
       console.error('Error deleting event type:', error)
       messageApi.error('Failed to delete event type')
+    }
+  }
+
+  const handleSetDefault = async (type: EventType) => {
+    try {
+      if (!window.electronAPI?.setDefaultEventType) return
+      
+      const success = await window.electronAPI.setDefaultEventType(type.id!)
+      if (success) {
+        messageApi.success(`"${type.name}" set as default type`)
+        loadEventTypes()
+      } else {
+        messageApi.error('Failed to set as default type')
+      }
+    } catch (error) {
+      console.error('Error setting default type:', error)
+      messageApi.error('Failed to set as default type')
     }
   }
 
@@ -142,7 +159,7 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
       title: 'Color',
       dataIndex: 'color',
       key: 'color',
-      width: 100,
+      width: 80,
       render: (color: string) => (
         <div 
           style={{ 
@@ -156,11 +173,30 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
       ),
     },
     {
+      title: 'Billable',
+      dataIndex: 'is_billable',
+      key: 'is_billable',
+      width: 80,
+      render: (is_billable: boolean) => (
+        <Text type={is_billable ? 'success' : 'secondary'}>
+          {is_billable ? 'Yes' : 'No'}
+        </Text>
+      ),
+    },
+    {
       title: 'Actions',
       key: 'actions',
-      width: 120,
+      width: 160,
       render: (_: any, record: EventType) => (
         <Space>
+          {!record.is_default && (
+            <Button
+              icon={<StarOutlined />}
+              size="small"
+              title="Set as Default"
+              onClick={() => handleSetDefault(record)}
+            />
+          )}
           <Button
             icon={<EditOutlined />}
             size="small"
@@ -249,14 +285,14 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
             </Form.Item>
             
             <Form.Item
-              label="Default Type"
-              name="is_default"
+              label="Billable Hours"
+              name="is_billable"
               valuePropName="checked"
             >
               <Switch />
             </Form.Item>
             <Text type="secondary" style={{ fontSize: '12px' }}>
-              The default type is assigned when no rules match an event.
+              Events of this type will count toward hours worked calculations.
             </Text>
           </Form>
         </Modal>

@@ -173,13 +173,22 @@ function initDatabase() {
     // Column already exists, ignore error
   }
   
+  // Add is_billable column to event_types table
+  try {
+    db.exec(`
+      ALTER TABLE event_types ADD COLUMN is_billable BOOLEAN DEFAULT 0;
+    `);
+  } catch (e) {
+    // Column already exists, ignore error
+  }
+  
   // Create default "Work" event type if none exist
   const existingTypes = db.prepare('SELECT COUNT(*) as count FROM event_types').get();
   if (existingTypes.count === 0) {
     db.prepare(`
-      INSERT INTO event_types (name, color, is_default)
-      VALUES (?, ?, ?)
-    `).run('Work', '#52c41a', 1);
+      INSERT INTO event_types (name, color, is_default, is_billable)
+      VALUES (?, ?, ?, ?)
+    `).run('Work', '#52c41a', 1, 1);
   }
 }
 
@@ -465,43 +474,48 @@ ipcMain.handle('db:getEventTypes', () => {
   // Convert SQLite integers to booleans
   return types.map(type => ({
     ...type,
-    is_default: Boolean(type.is_default)
+    is_default: Boolean(type.is_default),
+    is_billable: Boolean(type.is_billable)
   }));
 });
 
 ipcMain.handle('db:createEventType', (event, eventTypeData) => {
   const stmt = db.prepare(`
-    INSERT INTO event_types (name, color, is_default)
-    VALUES (?, ?, ?)
+    INSERT INTO event_types (name, color, is_default, is_billable)
+    VALUES (?, ?, ?, ?)
   `);
   const result = stmt.run(
     eventTypeData.name, 
     eventTypeData.color, 
-    eventTypeData.is_default ? 1 : 0
+    eventTypeData.is_default ? 1 : 0,
+    eventTypeData.is_billable ? 1 : 0
   );
   return { 
     id: result.lastInsertRowid, 
     ...eventTypeData,
-    is_default: Boolean(eventTypeData.is_default)
+    is_default: Boolean(eventTypeData.is_default),
+    is_billable: Boolean(eventTypeData.is_billable)
   };
 });
 
 ipcMain.handle('db:updateEventType', (event, id, eventTypeData) => {
   const stmt = db.prepare(`
     UPDATE event_types 
-    SET name = ?, color = ?, is_default = ?
+    SET name = ?, color = ?, is_default = ?, is_billable = ?
     WHERE id = ?
   `);
   const result = stmt.run(
     eventTypeData.name, 
     eventTypeData.color, 
-    eventTypeData.is_default ? 1 : 0, 
+    eventTypeData.is_default ? 1 : 0,
+    eventTypeData.is_billable ? 1 : 0,
     id
   );
   return result.changes > 0 ? { 
     id, 
     ...eventTypeData,
-    is_default: Boolean(eventTypeData.is_default)
+    is_default: Boolean(eventTypeData.is_default),
+    is_billable: Boolean(eventTypeData.is_billable)
   } : null;
 });
 
@@ -509,6 +523,27 @@ ipcMain.handle('db:deleteEventType', (event, id) => {
   const stmt = db.prepare('DELETE FROM event_types WHERE id = ?');
   const result = stmt.run(id);
   return result.changes > 0;
+});
+
+ipcMain.handle('db:setDefaultEventType', (event, id) => {
+  const transaction = db.transaction(() => {
+    // First, unset all default types
+    const unsetStmt = db.prepare('UPDATE event_types SET is_default = 0');
+    unsetStmt.run();
+    
+    // Then set the specified type as default
+    const setStmt = db.prepare('UPDATE event_types SET is_default = 1 WHERE id = ?');
+    const result = setStmt.run(id);
+    
+    return result.changes > 0;
+  });
+  
+  try {
+    return transaction();
+  } catch (error) {
+    console.error('Error setting default event type:', error);
+    return false;
+  }
 });
 
 // Event Type Rules management

@@ -80,6 +80,7 @@ export interface EventType {
   name: string
   color: string
   is_default?: boolean
+  is_billable: boolean
   created_at?: string
 }
 
@@ -111,6 +112,7 @@ export interface ElectronAPI {
   createEventType: (eventTypeData: EventType) => Promise<EventType>
   updateEventType: (id: number, eventTypeData: EventType) => Promise<EventType>
   deleteEventType: (id: number) => Promise<boolean>
+  setDefaultEventType: (id: number) => Promise<boolean>
   
   // Event type rule management
   getEventTypeRules: () => Promise<EventTypeRule[]>

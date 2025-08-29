@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   createEventType: (eventTypeData) => ipcRenderer.invoke('db:createEventType', eventTypeData),
   updateEventType: (id, eventTypeData) => ipcRenderer.invoke('db:updateEventType', id, eventTypeData),
   deleteEventType: (id) => ipcRenderer.invoke('db:deleteEventType', id),
+  setDefaultEventType: (id) => ipcRenderer.invoke('db:setDefaultEventType', id),
   
   // Event type rule management
   getEventTypeRules: () => ipcRenderer.invoke('db:getEventTypeRules'),
