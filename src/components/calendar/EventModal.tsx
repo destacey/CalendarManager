@@ -239,7 +239,7 @@ const EventModal: React.FC<EventModalProps> = ({
             </Descriptions.Item>
           )}
 
-          {event.organizer && (
+          {event.is_meeting && event.organizer && (
             <Descriptions.Item label="Organizer">
               {(() => {
                 try {
@@ -252,7 +252,7 @@ const EventModal: React.FC<EventModalProps> = ({
             </Descriptions.Item>
           )}
 
-          {event.attendees && (
+          {event.is_meeting && event.attendees && (
             <Descriptions.Item label="Attendees">
               {(() => {
                 try {

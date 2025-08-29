@@ -224,6 +224,7 @@ const CalendarView: React.FC = () => {
             setSelectedEvent={setSelectedEvent}
             setIsModalVisible={setIsModalVisible}
             userTimezone={userTimezone || ''}
+            eventTypes={eventTypes}
           />
         )}
       </Flex>

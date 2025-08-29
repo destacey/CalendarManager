@@ -329,6 +329,7 @@ describe('EventModal', () => {
     it('displays raw organizer string when JSON parsing fails', () => {
       const event = {
         ...mockEvent,
+        is_meeting: true,
         organizer: 'Invalid JSON String'
       }
       
@@ -392,6 +393,7 @@ describe('EventModal', () => {
     it('displays raw attendees string when JSON parsing fails', () => {
       const event = {
         ...mockEvent,
+        is_meeting: true,
         attendees: 'Invalid JSON String'
       }
       
@@ -610,6 +612,7 @@ describe('EventModal', () => {
     it('handles malformed JSON in organizer and attendees', () => {
       const event = {
         ...mockEvent,
+        is_meeting: true,
         organizer: '{"incomplete": json',
         attendees: '[{"incomplete": array'
       }

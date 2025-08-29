@@ -22,6 +22,10 @@ vi.mock('dayjs/plugin/utc', () => ({
   default: () => {}
 }))
 
+vi.mock('dayjs/plugin/minMax', () => ({
+  default: () => {}
+}))
+
 // Mock getComputedStyle to avoid jsdom warnings
 Object.defineProperty(window, 'getComputedStyle', {
   value: (element: Element) => ({

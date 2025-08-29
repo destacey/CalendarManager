@@ -3,7 +3,10 @@ import { Typography, theme, Radio, Space, Spin, Button, DatePicker } from 'antd'
 import { LeftOutlined, RightOutlined } from '@ant-design/icons'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
-import { Event } from '../../types'
+import minMax from 'dayjs/plugin/minMax'
+import { Event, EventType } from '../../types'
+
+dayjs.extend(minMax)
 
 // Extended event type with pre-processed timezone data
 interface ProcessedEvent extends Event {
@@ -49,6 +52,7 @@ interface WeekViewProps {
   setSelectedEvent: (event: Event) => void
   setIsModalVisible: (visible: boolean) => void
   userTimezone: string
+  eventTypes: EventType[]
 }
 
 const WeekView: React.FC<WeekViewProps> = memo(({
@@ -61,7 +65,8 @@ const WeekView: React.FC<WeekViewProps> = memo(({
   getEventDisplayColor,
   setSelectedEvent,
   setIsModalVisible,
-  userTimezone
+  userTimezone,
+  eventTypes
 }) => {
   const { token } = theme.useToken()
   const [isPending, startTransition] = useTransition()
@@ -107,11 +112,26 @@ const WeekView: React.FC<WeekViewProps> = memo(({
       // Create time slot lookup for fast access
       const slotLookup = new Map()
       processedTimedEvents.forEach(event => {
-        const slotKey = `${event.startHour}:${event.startMinute.toString().padStart(2, '0')}`
-        if (!slotLookup.has(slotKey)) {
-          slotLookup.set(slotKey, [])
+        // For cross-day events, calculate the effective start time for this specific day
+        const eventStart = event.processedStart!
+        const eventEnd = event.processedEnd!
+        const dayStart = day.startOf('day')
+        const dayEnd = day.endOf('day')
+        
+        // Calculate intersection start time for this day
+        const effectiveStart = eventStart.isAfter(dayStart) ? eventStart : dayStart
+        
+        // Only include if event intersects with this day
+        if (effectiveStart.isBefore(dayEnd) && eventEnd.isAfter(dayStart)) {
+          const effectiveHour = effectiveStart.hour()
+          const effectiveMinute = Math.floor(effectiveStart.minute() / 5) * 5
+          const slotKey = `${effectiveHour}:${effectiveMinute.toString().padStart(2, '0')}`
+          
+          if (!slotLookup.has(slotKey)) {
+            slotLookup.set(slotKey, [])
+          }
+          slotLookup.get(slotKey).push(event)
         }
-        slotLookup.get(slotKey).push(event)
       })
       
       timeSlotMap.set(dayKey, slotLookup)
@@ -142,6 +162,64 @@ const WeekView: React.FC<WeekViewProps> = memo(({
 
   // Remove the useState and useEffect for calculating overlap
   const [isCalculating] = useState(false)
+
+  // Calculate billable hours for each day
+  const dailyBillableHours = useMemo(() => {
+    const hoursMap = new Map()
+    
+    // Initialize all days with 0 hours
+    days.forEach(day => {
+      const dayKey = day.format('YYYY-MM-DD')
+      hoursMap.set(dayKey, { hours: 0, minutes: 0, totalMinutes: 0 })
+    })
+    
+    // Get all events for the entire week to ensure we catch cross-day events
+    const allWeekEvents = new Set()
+    days.forEach(day => {
+      const dayEvents = getEventsForDate(day)
+      dayEvents.forEach(event => allWeekEvents.add(event))
+    })
+    
+    // Process each unique event and calculate its contribution to each day
+    allWeekEvents.forEach(event => {
+      // Check if event has a billable type
+      if (event.type_id) {
+        const eventType = eventTypes.find(t => t.id === event.type_id)
+        if (eventType && eventType.is_billable && event.end_date && !event.is_all_day) {
+          const eventStart = dayjs.utc(event.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
+          const eventEnd = dayjs.utc(event.end_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
+          
+          // Check each day to see how much of the event falls within that day
+          days.forEach(day => {
+            const dayKey = day.format('YYYY-MM-DD')
+            const dayStart = day.startOf('day')
+            const dayEnd = day.endOf('day')
+            
+            // Calculate the intersection of the event with this specific day
+            const intersectionStart = dayjs.max(eventStart, dayStart)
+            const intersectionEnd = dayjs.min(eventEnd, dayEnd)
+            
+            // If there's a valid intersection (start before end), add the duration
+            if (intersectionStart.isBefore(intersectionEnd)) {
+              const intersectionMinutes = intersectionEnd.diff(intersectionStart, 'minute')
+              const currentDay = hoursMap.get(dayKey)
+              const newTotalMinutes = currentDay.totalMinutes + intersectionMinutes
+              const newHours = Math.floor(newTotalMinutes / 60)
+              const newMinutes = newTotalMinutes % 60
+              
+              hoursMap.set(dayKey, {
+                hours: newHours,
+                minutes: newMinutes,
+                totalMinutes: newTotalMinutes
+              })
+            }
+          })
+        }
+      }
+    })
+    
+    return hoursMap
+  }, [days, getEventsForDate, eventTypes, userTimezone])
 
 
   return (
@@ -549,10 +627,23 @@ const WeekView: React.FC<WeekViewProps> = memo(({
                         
                         if (!eventStart || !eventEnd) return null
                         
-                        // Calculate duration in 5-minute slots
-                        const durationMinutes = eventEnd.diff(eventStart, 'minute')
-                        const slots = Math.max(1, Math.ceil(durationMinutes / 5))
+                        // Calculate the intersection of the event with this specific day
+                        const dayStart = day.startOf('day')
+                        const dayEnd = day.endOf('day')
+                        const intersectionStart = eventStart.isAfter(dayStart) ? eventStart : dayStart
+                        const intersectionEnd = eventEnd.isBefore(dayEnd) ? eventEnd : dayEnd
+                        
+                        // Only render if there's a valid intersection with this day
+                        if (!intersectionStart.isBefore(intersectionEnd)) return null
+                        
+                        // Calculate duration for just the portion within this day
+                        const intersectionDurationMinutes = intersectionEnd.diff(intersectionStart, 'minute')
+                        const slots = Math.max(1, Math.ceil(intersectionDurationMinutes / 5))
                         const height = (slots * 13.33) - 2 // 13.33px per slot minus border/padding
+                        
+                        // Calculate the visual start time for this day's portion
+                        const visualStartTime = intersectionStart.format('h:mm A')
+                        const visualEndTime = intersectionEnd.format('h:mm A')
                         
                         // Find this event's overlapping group (already sorted)
                         let eventGroup: ProcessedEvent[] = []
@@ -593,10 +684,10 @@ const WeekView: React.FC<WeekViewProps> = memo(({
                               zIndex: 5,
                               border: '1px solid rgba(255,255,255,0.2)'
                             }}
-                            title={`${event.title} (${eventStart.format('h:mm A')} - ${eventEnd.format('h:mm A')})`}
+                            title={`${event.title} (${visualStartTime} - ${visualEndTime})`}
                           >
                             <Text style={{ fontWeight: 'bold', fontSize: '9px' }}>
-                              {eventStart.format('h:mm A')}
+                              {visualStartTime}
                             </Text>
                             <Text style={{ marginTop: '2px', display: 'block' }}>
                               {event.title}
@@ -610,6 +701,47 @@ const WeekView: React.FC<WeekViewProps> = memo(({
               </tr>
             ))}
           </tbody>
+          
+          {/* Billable Hours Footer */}
+          <tfoot style={{ position: 'sticky', bottom: 0, zIndex: 10, backgroundColor: token.colorBgContainer }}>
+            <tr>
+              <th style={{ 
+                width: '80px',
+                height: '40px',
+                padding: '8px', 
+                border: `1px solid ${token.colorBorder}`,
+                backgroundColor: token.colorFillAlter,
+                textAlign: 'center'
+              }}>
+                <Typography.Text strong style={{ fontSize: '12px' }}>Billable</Typography.Text>
+              </th>
+              {days.map(day => {
+                const dayKey = day.format('YYYY-MM-DD')
+                const billableTime = dailyBillableHours.get(dayKey) || { hours: 0, minutes: 0 }
+                const isToday = day.isSame(dayjs(), 'day')
+                
+                return (
+                  <th 
+                    key={`footer-${dayKey}`}
+                    style={{ 
+                      height: '40px',
+                      padding: '8px', 
+                      border: `1px solid ${token.colorBorder}`,
+                      backgroundColor: isToday ? token.colorPrimaryBg : token.colorFillAlter,
+                      textAlign: 'center'
+                    }}
+                  >
+                    <Typography.Text strong style={{ fontSize: '12px' }}>
+                      {billableTime.hours > 0 || billableTime.minutes > 0 
+                        ? `${billableTime.hours}h ${billableTime.minutes}m`
+                        : '-'
+                      }
+                    </Typography.Text>
+                  </th>
+                )
+              })}
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>

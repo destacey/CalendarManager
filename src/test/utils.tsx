@@ -89,6 +89,7 @@ export const createWeekViewProps = (overrides = {}) => ({
   setSelectedEvent: vi.fn(),
   setIsModalVisible: vi.fn(),
   userTimezone: 'America/New_York',
+  eventTypes: [],
   ...overrides
 })
 
@@ -113,6 +114,7 @@ export const createMonthEventCellProps = (overrides = {}) => ({
 export const mockCompleteEvent = {
   ...mockEvent,
   description: 'This is a test event description',
+  is_meeting: true,
   organizer: JSON.stringify({
     name: 'John Organizer',
     email: 'john.organizer@example.com'
