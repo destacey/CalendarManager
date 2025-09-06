@@ -1,5 +1,6 @@
 import React from 'react'
-import { Flex } from 'antd'
+import { Flex, Button } from 'antd'
+import { DownloadOutlined } from '@ant-design/icons'
 import type { Dayjs } from 'dayjs'
 import CalendarNavigation from './CalendarNavigation'
 import ViewModeToggle from './ViewModeToggle'
@@ -13,8 +14,9 @@ interface CalendarHeaderProps {
   onTypeChange: (type: 'month' | 'year') => void
   onCurrentDateChange: (date: Dayjs) => void
   onCurrentWeekChange: (date: Dayjs) => void
-  onViewModeChange: (mode: 'week' | 'month') => void
+  onViewModeChange: (mode: 'week' | 'month' | 'table') => void
   onCalendarTypeChange: (type: 'month' | 'year') => void
+  exportFunction?: (() => void) | null
 }
 
 const CalendarHeader: React.FC<CalendarHeaderProps> = ({
@@ -27,7 +29,8 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
   onCurrentDateChange,
   onCurrentWeekChange,
   onViewModeChange,
-  onCalendarTypeChange
+  onCalendarTypeChange,
+  exportFunction
 }) => {
   return (
     <Flex
@@ -43,13 +46,27 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
         onCurrentDateChange={onCurrentDateChange}
         onCurrentWeekChange={onCurrentWeekChange}
       />
-      <ViewModeToggle
-        viewMode={viewMode}
-        calendarType={calendarType}
-        onViewModeChange={onViewModeChange}
-        onCalendarTypeChange={onCalendarTypeChange}
-        onTypeChange={onTypeChange}
-      />
+      <Flex align="center" gap="small">
+        {viewMode === 'table' && exportFunction && (
+          <Button 
+            type="primary" 
+            icon={<DownloadOutlined />}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              exportFunction()
+            }}
+            size="small"
+          />
+        )}
+        <ViewModeToggle
+          viewMode={viewMode}
+          calendarType={calendarType}
+          onViewModeChange={onViewModeChange}
+          onCalendarTypeChange={onCalendarTypeChange}
+          onTypeChange={onTypeChange}
+        />
+      </Flex>
     </Flex>
   )
 }

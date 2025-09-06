@@ -26,6 +26,35 @@ export const getEventBackgroundColor = (showAs: string): string => {
 }
 
 
+export const calculateEventDuration = (startDate: string, endDate?: string, isAllDay?: boolean, userTimezone?: string): string => {
+  if (!endDate) {
+    return '-'
+  }
+
+  if (isAllDay) {
+    // For all-day events, calculate days between start and end
+    const start = dayjs(startDate)
+    const end = dayjs(endDate).subtract(1, 'day') // Microsoft Graph adds 1 day to end date for all-day events
+    const days = end.diff(start, 'day') + 1 // +1 to include both start and end days
+    return days === 1 ? '1 day' : `${days} days`
+  } else {
+    // For timed events, calculate hours and minutes
+    const timezone = userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone
+    const start = dayjs.utc(startDate).tz(timezone)
+    const end = dayjs.utc(endDate).tz(timezone)
+    
+    const durationMinutes = end.diff(start, 'minute')
+    const hours = Math.floor(durationMinutes / 60)
+    const minutes = durationMinutes % 60
+    
+    if (hours > 0) {
+      return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
+    } else {
+      return `${minutes}m`
+    }
+  }
+}
+
 export const getEventItemStyles = {
   base: {
     fontSize: '10px',

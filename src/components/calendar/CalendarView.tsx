@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react'
-import { Calendar, Flex, Grid, Spin, Typography, Button } from 'antd'
+import { Calendar, Flex, Grid, Spin, Typography, Button, Card } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
@@ -10,6 +10,7 @@ import { useCalendarEvents } from '../../hooks/useCalendarEvents'
 // import { useCalendarViewEvents } from '../../hooks/useCalendarViewEvents' // Disabled temporarily
 import { useCalendarState } from '../../hooks/useCalendarState'
 import WeekView from './WeekView'
+import EventTable from './EventTable'
 import EventModal from './EventModal'
 import CalendarEventCell from './CalendarEventCell'
 import MonthEventCell from './MonthEventCell'
@@ -28,6 +29,11 @@ const CalendarView: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
   const [eventTypes, setEventTypes] = useState<EventType[]>([])
   const [refreshing, setRefreshing] = useState(false)
+  const [exportFunction, setExportFunction] = useState<(() => void) | null>(null)
+  
+  const handleExportReady = useCallback((exportFn: () => void) => {
+    setExportFunction(() => exportFn)
+  }, [])
   const screens = useBreakpoint()
   const messageApi = useMessage()
 
@@ -175,7 +181,8 @@ const CalendarView: React.FC = () => {
         </Button>
       </Flex>
       
-      <Flex flex={1} style={{ overflow: 'hidden', width: '100%' }}>
+      <Card style={{ flex: 1, overflow: 'hidden', width: '100%' }} styles={{ body: { padding: 0, height: '100%' } }}>
+        <Flex flex={1} style={{ overflow: 'hidden', width: '100%', height: '100%' }}>
         {viewMode === 'month' ? (
           <Calendar
             value={currentDate}
@@ -212,7 +219,7 @@ const CalendarView: React.FC = () => {
               />
             )}
           />
-        ) : (
+        ) : viewMode === 'week' ? (
           <WeekView
             currentWeek={currentWeek}
             setCurrentWeek={setCurrentWeek}
@@ -226,8 +233,36 @@ const CalendarView: React.FC = () => {
             userTimezone={userTimezone || ''}
             eventTypes={eventTypes}
           />
+        ) : (
+          <Flex vertical style={{ width: '100%', height: '100%' }}>
+            <CalendarHeader
+              value={currentDate}
+              type="month"
+              viewMode={viewMode}
+              calendarType={calendarType}
+              onChange={setCurrentDate}
+              onTypeChange={() => {}} // Not used for table view
+              onCurrentDateChange={setCurrentDate}
+              onCurrentWeekChange={setCurrentWeek}
+              onViewModeChange={setViewMode}
+              onCalendarTypeChange={setCalendarType}
+              exportFunction={exportFunction}
+            />
+            <EventTable
+              currentDate={currentDate}
+              getEventsForDate={getEventsForDate}
+              getEventBackgroundColor={getEventBackgroundColor}
+              getEventDisplayColor={getEventDisplayColor}
+              setSelectedEvent={setSelectedEvent}
+              setIsModalVisible={setIsModalVisible}
+              userTimezone={userTimezone || ''}
+              eventTypes={eventTypes}
+              onExportReady={handleExportReady}
+            />
+          </Flex>
         )}
-      </Flex>
+        </Flex>
+      </Card>
 
       <EventModal
         isVisible={isModalVisible}

@@ -237,42 +237,6 @@ class CalendarService {
     await this.processSyncEventsForDateRange(graphEvents, dateRange)
   }
 
-  private async performDifferentialSyncWithFallback(): Promise<void> {
-    const metadata = await this.getSyncMetadata()
-    
-    if (!metadata || !metadata.deltaToken) {
-      // No previous sync data, perform full sync
-      await this.performFullSync()
-      return
-    }
-
-    try {
-      this.updateProgress({
-        total: 0,
-        completed: 0,
-        stage: 'fetching',
-        message: 'Checking for changes since last sync...'
-      })
-
-      const deltaResult = await this.fetchDeltaEvents(metadata.deltaToken)
-      await this.processSyncEvents(deltaResult.events, 'differential')
-      
-      // Update metadata with new delta token
-      await this.setSyncMetadata({
-        deltaToken: deltaResult.deltaToken,
-        lastEventModified: this.getLatestEventModified(deltaResult.events)
-      })
-
-    } catch (error) {
-      this.updateProgress({
-        total: 0,
-        completed: 0,
-        stage: 'fetching',
-        message: 'Differential sync failed, performing full sync...'
-      })
-      await this.performFullSync()
-    }
-  }
 
   private async performFullSync(): Promise<void> {
     const config = await storageService.getSyncConfig()
@@ -656,20 +620,6 @@ class CalendarService {
     }
   }
 
-  private transformGraphEventToLocal(graphEvent: GraphEvent): Event {
-    return {
-      graph_id: graphEvent.id,
-      title: graphEvent.subject || 'Untitled Event',
-      description: graphEvent.body?.content || '',
-      start_date: graphEvent.start?.dateTime || new Date().toISOString(),
-      end_date: graphEvent.end?.dateTime || new Date().toISOString(),
-      is_all_day: graphEvent.isAllDay || false,
-      show_as: graphEvent.showAs || 'busy',
-      categories: graphEvent.categories?.join(',') || '',
-      is_meeting: graphEvent.attendees && graphEvent.attendees.length > 0,
-      synced_at: new Date().toISOString()
-    }
-  }
 
   private extractDeltaToken(response: any): string | undefined {
     // Extract delta token from @odata.deltaLink

@@ -6,6 +6,7 @@ import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { Event, EventType } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
+import { calculateEventDuration } from '../../utils/eventUtils'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -130,6 +131,7 @@ const EventModal: React.FC<EventModalProps> = ({
     }
   }
 
+
   return (
     <Modal
       title="Event Details"
@@ -148,6 +150,15 @@ const EventModal: React.FC<EventModalProps> = ({
               event.start_date, 
               event.end_date, 
               event.is_all_day
+            )}
+          </Descriptions.Item>
+
+          <Descriptions.Item label="Duration">
+            {calculateEventDuration(
+              event.start_date,
+              event.end_date,
+              event.is_all_day,
+              userTimezone
             )}
           </Descriptions.Item>
           

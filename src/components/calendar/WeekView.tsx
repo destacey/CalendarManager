@@ -44,7 +44,7 @@ const { Text } = Typography
 interface WeekViewProps {
   currentWeek: Dayjs
   setCurrentWeek: (week: Dayjs) => void
-  setViewMode: (mode: 'month' | 'week') => void
+  setViewMode: (mode: 'month' | 'week' | 'table') => void
   setCalendarType: (type: 'month' | 'year') => void
   getEventsForDate: (date: Dayjs) => Event[]
   getEventBackgroundColor: (showAs: string) => string
@@ -140,7 +140,7 @@ const WeekView: React.FC<WeekViewProps> = memo(({
     return { events, timeSlotMap }
   }, [days, getEventsForDate, userTimezone])
 
-  // Simple overlap map without complex calculations - just assign each event to its own group
+  // Calculate overlap map with proper grouping of overlapping events
   const dayOverlapMap = useMemo(() => {
     const map = new Map()
     
@@ -148,17 +148,46 @@ const WeekView: React.FC<WeekViewProps> = memo(({
       const dayKey = day.format('YYYY-MM-DD')
       const dayEvents = weekEvents.events.get(dayKey)?.timed || []
       
-      // Simple grouping - each event in its own group for now (no overlap calculation)
+      // Group overlapping events together
       const eventsMap = new Map()
+      const processedEvents = new Set()
+      let groupId = 0
+      
       dayEvents.forEach((event: ProcessedEvent) => {
-        eventsMap.set(event.id, [event])
+        if (processedEvents.has(event.id)) return
+        
+        // Find all events that overlap with this event
+        const overlappingEvents = [event]
+        const eventStart = dayjs.utc(event.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
+        const eventEnd = dayjs.utc(event.end_date!).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
+        
+        dayEvents.forEach((otherEvent: ProcessedEvent) => {
+          if (otherEvent.id === event.id || processedEvents.has(otherEvent.id)) return
+          
+          const otherStart = dayjs.utc(otherEvent.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
+          const otherEnd = dayjs.utc(otherEvent.end_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
+          
+          // Check if events overlap
+          if (eventStart.isBefore(otherEnd) && eventEnd.isAfter(otherStart)) {
+            overlappingEvents.push(otherEvent)
+            processedEvents.add(otherEvent.id)
+          }
+        })
+        
+        // Sort overlapping events by start time for consistent positioning
+        overlappingEvents.sort((a, b) => 
+          dayjs.utc(a.start_date).valueOf() - dayjs.utc(b.start_date).valueOf()
+        )
+        
+        eventsMap.set(groupId++, overlappingEvents)
+        processedEvents.add(event.id)
       })
       
       map.set(dayKey, eventsMap)
     })
     
     return map
-  }, [days, weekEvents])
+  }, [days, weekEvents, userTimezone])
 
   // Remove the useState and useEffect for calculating overlap
   const [isCalculating] = useState(false)
@@ -185,35 +214,63 @@ const WeekView: React.FC<WeekViewProps> = memo(({
       // Check if event has a billable type
       if (event.type_id) {
         const eventType = eventTypes.find(t => t.id === event.type_id)
-        if (eventType && eventType.is_billable && event.end_date && !event.is_all_day) {
-          const eventStart = dayjs.utc(event.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-          const eventEnd = dayjs.utc(event.end_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-          
-          // Check each day to see how much of the event falls within that day
-          days.forEach(day => {
-            const dayKey = day.format('YYYY-MM-DD')
-            const dayStart = day.startOf('day')
-            const dayEnd = day.endOf('day')
+        if (eventType && eventType.is_billable && event.end_date) {
+          if (event.is_all_day) {
+            // Handle all-day events
+            const eventStart = dayjs(event.start_date)
+            const eventEnd = dayjs(event.end_date).subtract(1, 'day') // Microsoft Graph adds 1 day to end date for all-day events
             
-            // Calculate the intersection of the event with this specific day
-            const intersectionStart = dayjs.max(eventStart, dayStart)
-            const intersectionEnd = dayjs.min(eventEnd, dayEnd)
-            
-            // If there's a valid intersection (start before end), add the duration
-            if (intersectionStart.isBefore(intersectionEnd)) {
-              const intersectionMinutes = intersectionEnd.diff(intersectionStart, 'minute')
-              const currentDay = hoursMap.get(dayKey)
-              const newTotalMinutes = currentDay.totalMinutes + intersectionMinutes
-              const newHours = Math.floor(newTotalMinutes / 60)
-              const newMinutes = newTotalMinutes % 60
+            // Add 24 hours (1440 minutes) for each day the event spans
+            days.forEach(day => {
+              const dayKey = day.format('YYYY-MM-DD')
+              const dayStart = day.startOf('day')
               
-              hoursMap.set(dayKey, {
-                hours: newHours,
-                minutes: newMinutes,
-                totalMinutes: newTotalMinutes
-              })
-            }
-          })
+              // Check if this day falls within the all-day event span
+              if ((dayStart.isSame(eventStart, 'day') || dayStart.isAfter(eventStart, 'day')) && 
+                  (dayStart.isSame(eventEnd, 'day') || dayStart.isBefore(eventEnd, 'day'))) {
+                const currentDay = hoursMap.get(dayKey)
+                const newTotalMinutes = currentDay.totalMinutes + 1440 // Add 24 hours = 1440 minutes
+                const newHours = Math.floor(newTotalMinutes / 60)
+                const newMinutes = newTotalMinutes % 60
+                
+                hoursMap.set(dayKey, {
+                  hours: newHours,
+                  minutes: newMinutes,
+                  totalMinutes: newTotalMinutes
+                })
+              }
+            })
+          } else {
+            // Handle timed events (existing logic)
+            const eventStart = dayjs.utc(event.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
+            const eventEnd = dayjs.utc(event.end_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
+            
+            // Check each day to see how much of the event falls within that day
+            days.forEach(day => {
+              const dayKey = day.format('YYYY-MM-DD')
+              const dayStart = day.startOf('day')
+              const dayEnd = day.endOf('day')
+              
+              // Calculate the intersection of the event with this specific day
+              const intersectionStart = dayjs.max(eventStart, dayStart)
+              const intersectionEnd = dayjs.min(eventEnd, dayEnd)
+              
+              // If there's a valid intersection (start before end), add the duration
+              if (intersectionStart.isBefore(intersectionEnd)) {
+                const intersectionMinutes = intersectionEnd.diff(intersectionStart, 'minute')
+                const currentDay = hoursMap.get(dayKey)
+                const newTotalMinutes = currentDay.totalMinutes + intersectionMinutes
+                const newHours = Math.floor(newTotalMinutes / 60)
+                const newMinutes = newTotalMinutes % 60
+                
+                hoursMap.set(dayKey, {
+                  hours: newHours,
+                  minutes: newMinutes,
+                  totalMinutes: newTotalMinutes
+                })
+              }
+            })
+          }
         }
       }
     })
@@ -224,7 +281,6 @@ const WeekView: React.FC<WeekViewProps> = memo(({
 
   return (
     <div style={{ 
-      backgroundColor: token.colorBgContainer,
       position: 'relative'
     }}>
       {/* Show loading overlay while calculating events */}
@@ -249,7 +305,7 @@ const WeekView: React.FC<WeekViewProps> = memo(({
         display: 'flex', 
         justifyContent: 'space-between', 
         alignItems: 'center', 
-        padding: '8px 12px',
+        padding: '12px',
         backgroundColor: token.colorBgContainer,
         borderBottom: `1px solid ${token.colorBorder}`
       }}>
@@ -314,6 +370,8 @@ const WeekView: React.FC<WeekViewProps> = memo(({
               const selectedValue = e.target.value
               if (selectedValue === 'Week') {
                 setViewMode('week')
+              } else if (selectedValue === 'Table') {
+                setViewMode('table')
               } else if (selectedValue === 'Month') {
                 setViewMode('month')
                 setCalendarType('month')
@@ -325,7 +383,8 @@ const WeekView: React.FC<WeekViewProps> = memo(({
             options={[
               { label: 'Week', value: 'Week' },
               { label: 'Month', value: 'Month' },
-              { label: 'Year', value: 'Year' }
+              { label: 'Year', value: 'Year' },
+              { label: 'Table', value: 'Table' }
             ]} 
             defaultValue="Week" 
             optionType="button"

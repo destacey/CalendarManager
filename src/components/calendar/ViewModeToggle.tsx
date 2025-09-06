@@ -4,7 +4,7 @@ import { Radio } from 'antd'
 interface ViewModeToggleProps {
   viewMode: string
   calendarType: string
-  onViewModeChange: (mode: 'week' | 'month') => void
+  onViewModeChange: (mode: 'week' | 'month' | 'table') => void
   onCalendarTypeChange: (type: 'month' | 'year') => void
   onTypeChange: (type: 'month' | 'year') => void
 }
@@ -19,6 +19,7 @@ const ViewModeToggle: React.FC<ViewModeToggleProps> = ({
   // Determine current view for Radio button selection
   const currentRadioValue = (() => {
     if (viewMode === 'week') return 'Week'
+    if (viewMode === 'table') return 'Table'
     if (calendarType === 'month') return 'Month'
     return 'Year'
   })()
@@ -26,6 +27,8 @@ const ViewModeToggle: React.FC<ViewModeToggleProps> = ({
   const handleViewChange = (selectedValue: string) => {
     if (selectedValue === 'Week') {
       onViewModeChange('week')
+    } else if (selectedValue === 'Table') {
+      onViewModeChange('table')
     } else if (selectedValue === 'Month') {
       onViewModeChange('month')
       onCalendarTypeChange('month')
@@ -45,7 +48,8 @@ const ViewModeToggle: React.FC<ViewModeToggleProps> = ({
       options={[
         { label: 'Week', value: 'Week' },
         { label: 'Month', value: 'Month' },
-        { label: 'Year', value: 'Year' }
+        { label: 'Year', value: 'Year' },
+        { label: 'Table', value: 'Table' }
       ]} 
       value={currentRadioValue} 
       optionType="button"

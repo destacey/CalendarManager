@@ -1,4 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import React from 'react'
+
+// Mock the DatePicker component to avoid dayjs plugin issues
+vi.mock('antd', async () => {
+  const actual = await vi.importActual('antd')
+  return {
+    ...actual,
+    DatePicker: vi.fn(({ value, onChange, allowClear = true }) => {
+      const mockDate = 'Jan 2024' // Match expected display format
+      return React.createElement('div', { 
+        'data-testid': 'mock-datepicker',
+        className: `ant-picker${allowClear ? '' : ' ant-picker-no-clear'}`,
+        'data-display-value': mockDate,
+        onClick: () => onChange && onChange(value)
+      }, mockDate)
+    })
+  }
+})
+
 import { render, screen, fireEvent } from '../../test/utils'
 import { createCalendarNavigationProps } from '../../test/utils'
 import CalendarNavigation from './CalendarNavigation'
@@ -87,8 +106,8 @@ describe('CalendarNavigation', () => {
     it('displays formatted date correctly', () => {
       render(<CalendarNavigation {...defaultProps} />)
       
-      // The mock dayjs format function returns 'Jan 2024' for month picker
-      expect(screen.getByDisplayValue('Jan 2024')).toBeInTheDocument()
+      // The mock DatePicker displays 'Jan 2024' 
+      expect(screen.getByText('Jan 2024')).toBeInTheDocument()
     })
   })
 

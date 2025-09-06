@@ -3,6 +3,14 @@ import { render, screen, fireEvent } from '../../test/utils'
 import { createEventModalProps, mockEvent, mockAllDayEvent, mockCompleteEvent } from '../../test/utils'
 import EventModal from './EventModal'
 
+// Mock the calculateEventDuration function to avoid dayjs plugin issues
+vi.mock('../../utils/eventUtils', () => ({
+  calculateEventDuration: vi.fn((startDate: string, endDate?: string, isAllDay?: boolean) => {
+    if (isAllDay) return '1 day'
+    return '1 hour'
+  })
+}))
+
 // Mock dayjs entirely for the tests to avoid plugin issues
 vi.mock('dayjs', () => {
   const mockDayjs = (dateString?: string) => ({
@@ -15,6 +23,7 @@ vi.mock('dayjs', () => {
     }),
     isSame: vi.fn((other: any, unit: string) => unit === 'day'),
     subtract: vi.fn(() => mockDayjs()),
+    diff: vi.fn(() => 60), // Return 60 minutes duration
     isValid: vi.fn(() => true),
   })
   

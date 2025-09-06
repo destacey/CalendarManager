@@ -56,27 +56,59 @@ export const mockAllDayEvent = {
   is_all_day: true
 }
 
-// Mock dayjs object for consistent testing
-export const mockDayjs = {
-  format: vi.fn(() => '2024-01-01'),
-  startOf: vi.fn(() => mockDayjs),
-  endOf: vi.fn(() => mockDayjs),
-  add: vi.fn(() => mockDayjs),
-  subtract: vi.fn(() => mockDayjs),
-  isSame: vi.fn(() => false),
-  isBefore: vi.fn(() => false),
-  isAfter: vi.fn(() => false),
-  isSameOrBefore: vi.fn(() => true),
-  diff: vi.fn(() => 60), // 60 minutes default
-  hour: vi.fn(() => 9),
-  minute: vi.fn(() => 0),
-  date: vi.fn(() => 1),
-  tz: vi.fn(() => mockDayjs),
-  isValid: vi.fn(() => true),
-  valueOf: vi.fn(() => 1704067200000), // Mock timestamp
-  toDate: vi.fn(() => new Date('2024-01-01')),
-  clone: vi.fn(() => mockDayjs),
+// Create a simple mock dayjs object that prevents infinite loops but allows controlled iteration
+export const createMockDayjs = (initialDay = 15) => {
+  let callCount = 0
+  const mock = {
+    format: vi.fn((formatStr) => {
+      if (formatStr === 'YYYY-MM-DD') return `2024-01-${String(initialDay).padStart(2, '0')}`
+      return `2024-01-${String(initialDay).padStart(2, '0')}`
+    }),
+    startOf: vi.fn((unit) => {
+      if (unit === 'month') return createMockDayjs(1)
+      if (unit === 'week') return createMockDayjs(1) // Start of week at day 1
+      return mock
+    }),
+    endOf: vi.fn((unit) => {
+      if (unit === 'month') return createMockDayjs(31)
+      return mock  
+    }),
+    add: vi.fn((amount, unit) => {
+      if (unit === 'day') {
+        const newDay = initialDay + amount
+        return createMockDayjs(newDay > 31 ? 32 : newDay) // 32 will be > 31 to stop loop
+      }
+      return mock
+    }),
+    subtract: vi.fn(() => mock),
+    isSame: vi.fn(() => false),
+    isBefore: vi.fn(() => false), 
+    isAfter: vi.fn(() => false),
+    isSameOrBefore: vi.fn((other, unit) => {
+      if (unit === 'day') {
+        callCount++
+        // Allow up to 31 iterations then stop to prevent infinite loops
+        if (callCount > 31) return false
+        const otherDay = other && typeof other.date === 'function' ? other.date() : 31
+        return initialDay <= otherDay
+      }
+      return false
+    }),
+    diff: vi.fn(() => 60),
+    hour: vi.fn(() => 9),
+    minute: vi.fn(() => 0),
+    date: vi.fn(() => initialDay),
+    tz: vi.fn(() => mock),
+    isValid: vi.fn(() => true),
+    valueOf: vi.fn(() => 1704067200000 + (initialDay - 1) * 86400000),
+    toDate: vi.fn(() => new Date(2024, 0, initialDay)),
+    clone: vi.fn(() => createMockDayjs(initialDay)),
+  }
+  return mock
 }
+
+// Mock dayjs object for consistent testing
+export const mockDayjs = createMockDayjs()
 
 // WeekView test props factory
 export const createWeekViewProps = (overrides = {}) => ({
@@ -86,6 +118,7 @@ export const createWeekViewProps = (overrides = {}) => ({
   setCalendarType: vi.fn(),
   getEventsForDate: vi.fn(() => []),
   getEventBackgroundColor: vi.fn(() => '#1890ff'),
+  getEventDisplayColor: vi.fn(() => '#1890ff'),
   setSelectedEvent: vi.fn(),
   setIsModalVisible: vi.fn(),
   userTimezone: 'America/New_York',
@@ -210,6 +243,7 @@ export const createCalendarEventCellProps = (overrides = {}) => ({
       default: return 'Unknown'
     }
   }),
+  getEventDisplayColor: vi.fn(() => '#1890ff'),
   ...overrides
 })
 
@@ -251,3 +285,75 @@ export const createMicrosoftGraphSettingsProps = (overrides = {}) => ({
 export const createSettingsProps = (overrides = {}) => ({
   ...overrides
 })
+
+// EventTable test props factory
+export const createEventTableProps = (overrides = {}) => ({
+  currentDate: createMockDayjs(15),
+  getEventsForDate: vi.fn(() => []),
+  getEventDisplayColor: vi.fn(() => '#1890ff'),
+  getEventBackgroundColor: vi.fn(() => '#1890ff'),
+  setSelectedEvent: vi.fn(),
+  setIsModalVisible: vi.fn(),
+  userTimezone: 'America/New_York',
+  eventTypes: [],
+  onExportReady: vi.fn(),
+  ...overrides
+})
+
+// Extended mock events for EventTable testing
+export const mockBillableEventType = {
+  id: 1,
+  name: 'Work',
+  color: '#52c41a',
+  is_billable: true,
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z'
+}
+
+export const mockNonBillableEventType = {
+  id: 2,
+  name: 'Personal',
+  color: '#1890ff',
+  is_billable: false,
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z'
+}
+
+export const mockTimedEvent = {
+  ...mockEvent,
+  id: 1,
+  title: 'Team Meeting',
+  start_date: '2024-01-15T09:00:00Z',
+  end_date: '2024-01-15T10:00:00Z',
+  is_all_day: false,
+  is_meeting: true,
+  type_id: 1,
+  categories: 'work,meeting',
+  show_as: 'busy'
+}
+
+export const mockTimedEvent2 = {
+  ...mockEvent,
+  id: 2,
+  title: 'Lunch Break',
+  start_date: '2024-01-15T12:00:00Z',
+  end_date: '2024-01-15T13:00:00Z',
+  is_all_day: false,
+  is_meeting: false,
+  type_id: 2,
+  categories: 'personal',
+  show_as: 'free'
+}
+
+export const mockBillableEvent = {
+  ...mockEvent,
+  id: 3,
+  title: 'Client Work',
+  start_date: '2024-01-16T09:00:00Z',
+  end_date: '2024-01-16T17:00:00Z',
+  is_all_day: false,
+  is_meeting: false,
+  type_id: 1,
+  categories: 'work,client',
+  show_as: 'busy'
+}

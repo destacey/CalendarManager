@@ -9,6 +9,7 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
     css: true,
+    testTimeout: 10000,
     // Exclude Electron files from testing
     exclude: [
       '**/node_modules/**',

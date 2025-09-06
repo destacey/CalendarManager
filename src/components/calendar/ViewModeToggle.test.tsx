@@ -17,12 +17,13 @@ describe('ViewModeToggle', () => {
       expect(document.body).toBeInTheDocument()
     })
 
-    it('renders all three radio button options', () => {
+    it('renders all four radio button options', () => {
       render(<ViewModeToggle {...defaultProps} />)
       
       expect(screen.getByRole('radio', { name: 'Week' })).toBeInTheDocument()
       expect(screen.getByRole('radio', { name: 'Month' })).toBeInTheDocument()
       expect(screen.getByRole('radio', { name: 'Year' })).toBeInTheDocument()
+      expect(screen.getByRole('radio', { name: 'Table' })).toBeInTheDocument()
     })
 
     it('renders as a Radio.Group with button style', () => {
@@ -47,6 +48,7 @@ describe('ViewModeToggle', () => {
       expect(weekRadio).toBeChecked()
       expect(screen.getByRole('radio', { name: 'Month' })).not.toBeChecked()
       expect(screen.getByRole('radio', { name: 'Year' })).not.toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Table' })).not.toBeChecked()
     })
 
     it('displays Month as selected when viewMode is month and calendarType is month', () => {
@@ -61,6 +63,7 @@ describe('ViewModeToggle', () => {
       expect(monthRadio).toBeChecked()
       expect(screen.getByRole('radio', { name: 'Week' })).not.toBeChecked()
       expect(screen.getByRole('radio', { name: 'Year' })).not.toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Table' })).not.toBeChecked()
     })
 
     it('displays Year as selected when viewMode is month and calendarType is year', () => {
@@ -75,9 +78,25 @@ describe('ViewModeToggle', () => {
       expect(yearRadio).toBeChecked()
       expect(screen.getByRole('radio', { name: 'Week' })).not.toBeChecked()
       expect(screen.getByRole('radio', { name: 'Month' })).not.toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Table' })).not.toBeChecked()
     })
 
-    it('defaults to Year when viewMode is not week and calendarType is not month', () => {
+    it('displays Table as selected when viewMode is table', () => {
+      const props = createViewModeToggleProps({
+        viewMode: 'table',
+        calendarType: 'month'
+      })
+      
+      render(<ViewModeToggle {...props} />)
+      
+      const tableRadio = screen.getByRole('radio', { name: 'Table' })
+      expect(tableRadio).toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Week' })).not.toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Month' })).not.toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Year' })).not.toBeChecked()
+    })
+
+    it('defaults to Year when viewMode is not week/table and calendarType is not month', () => {
       const props = createViewModeToggleProps({
         viewMode: 'other',
         calendarType: 'other'
@@ -180,6 +199,47 @@ describe('ViewModeToggle', () => {
     })
   })
 
+  describe('Table Mode Selection', () => {
+    it('calls onViewModeChange with "table" when Table is selected', () => {
+      const mockOnViewModeChange = vi.fn()
+      const props = createViewModeToggleProps({
+        viewMode: 'month',
+        calendarType: 'month',
+        onViewModeChange: mockOnViewModeChange
+      })
+      
+      render(<ViewModeToggle {...props} />)
+      
+      const tableRadio = screen.getByRole('radio', { name: 'Table' })
+      fireEvent.click(tableRadio)
+      
+      expect(mockOnViewModeChange).toHaveBeenCalledWith('table')
+    })
+
+    it('only calls onViewModeChange when switching to Table', () => {
+      const mockOnViewModeChange = vi.fn()
+      const mockOnCalendarTypeChange = vi.fn()
+      const mockOnTypeChange = vi.fn()
+      
+      const props = createViewModeToggleProps({
+        viewMode: 'month',
+        calendarType: 'month',
+        onViewModeChange: mockOnViewModeChange,
+        onCalendarTypeChange: mockOnCalendarTypeChange,
+        onTypeChange: mockOnTypeChange
+      })
+      
+      render(<ViewModeToggle {...props} />)
+      
+      const tableRadio = screen.getByRole('radio', { name: 'Table' })
+      fireEvent.click(tableRadio)
+      
+      expect(mockOnViewModeChange).toHaveBeenCalledWith('table')
+      expect(mockOnCalendarTypeChange).not.toHaveBeenCalled()
+      expect(mockOnTypeChange).not.toHaveBeenCalled()
+    })
+  })
+
   describe('Year Mode Selection', () => {
     it('calls all three callbacks when Year is selected', () => {
       const mockOnViewModeChange = vi.fn()
@@ -245,23 +305,26 @@ describe('ViewModeToggle', () => {
       
       const weekRadio = screen.getByRole('radio', { name: 'Week' })
       const yearRadio = screen.getByRole('radio', { name: 'Year' })
+      const tableRadio = screen.getByRole('radio', { name: 'Table' })
       
       // Click different options (starting from Month)
       fireEvent.click(weekRadio)   // Month -> Week
       fireEvent.click(yearRadio)   // Week -> Year 
-      fireEvent.click(weekRadio)   // Year -> Week
+      fireEvent.click(tableRadio)  // Year -> Table
+      fireEvent.click(weekRadio)   // Table -> Week
       
-      expect(mockOnViewModeChange).toHaveBeenCalledTimes(3)
+      expect(mockOnViewModeChange).toHaveBeenCalledTimes(4)
       expect(mockOnViewModeChange).toHaveBeenNthCalledWith(1, 'week')
       expect(mockOnViewModeChange).toHaveBeenNthCalledWith(2, 'month')
-      expect(mockOnViewModeChange).toHaveBeenNthCalledWith(3, 'week')
+      expect(mockOnViewModeChange).toHaveBeenNthCalledWith(3, 'table')
+      expect(mockOnViewModeChange).toHaveBeenNthCalledWith(4, 'week')
     })
 
     it('maintains proper ARIA attributes', () => {
       render(<ViewModeToggle {...defaultProps} />)
       
       const radios = screen.getAllByRole('radio')
-      expect(radios).toHaveLength(3)
+      expect(radios).toHaveLength(4)
       
       radios.forEach(radio => {
         expect(radio).toHaveAttribute('type', 'radio')
@@ -291,7 +354,7 @@ describe('ViewModeToggle', () => {
       
       // Should render without crashing
       const radios = screen.getAllByRole('radio')
-      expect(radios).toHaveLength(3)
+      expect(radios).toHaveLength(4)
       
       // Should handle clicks properly
       fireEvent.click(screen.getByRole('radio', { name: 'Month' }))

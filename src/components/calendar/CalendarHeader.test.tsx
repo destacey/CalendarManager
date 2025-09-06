@@ -1,4 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import React from 'react'
+
+// Mock the DatePicker component to avoid dayjs plugin issues
+vi.mock('antd', async () => {
+  const actual = await vi.importActual('antd')
+  return {
+    ...actual,
+    DatePicker: vi.fn(({ value, onChange }) => {
+      const mockDate = '2024-01-01'
+      return React.createElement('div', { 
+        'data-testid': 'mock-datepicker',
+        onClick: () => onChange && onChange(value)
+      }, mockDate)
+    })
+  }
+})
+
 import { render, screen } from '../../test/utils'
 import { createCalendarHeaderProps } from '../../test/utils'
 import CalendarHeader from './CalendarHeader'
