@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom'
+import { vi } from 'vitest'
 
 // Mock electron API for components that use it
 Object.defineProperty(window, 'electronAPI', {
