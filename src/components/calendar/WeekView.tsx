@@ -203,14 +203,14 @@ const WeekView: React.FC<WeekViewProps> = memo(({
     })
     
     // Get all events for the entire week to ensure we catch cross-day events
-    const allWeekEvents = new Set()
+    const allWeekEvents = new Set<Event>()
     days.forEach(day => {
       const dayEvents = getEventsForDate(day)
       dayEvents.forEach(event => allWeekEvents.add(event))
     })
-    
+
     // Process each unique event and calculate its contribution to each day
-    allWeekEvents.forEach(event => {
+    allWeekEvents.forEach((event: Event) => {
       // Check if event has a billable type
       if (event.type_id) {
         const eventType = eventTypes.find(t => t.id === event.type_id)
@@ -774,28 +774,49 @@ const WeekView: React.FC<WeekViewProps> = memo(({
               }}>
                 <Typography.Text strong style={{ fontSize: '12px' }}>Billable</Typography.Text>
               </th>
-              {days.map(day => {
+              {days.map((day, index) => {
                 const dayKey = day.format('YYYY-MM-DD')
                 const billableTime = dailyBillableHours.get(dayKey) || { hours: 0, minutes: 0 }
                 const isToday = day.isSame(dayjs(), 'day')
-                
+
+                // Calculate running total up to and including this day
+                let runningTotalMinutes = 0
+                for (let i = 0; i <= index; i++) {
+                  const dayKeyIter = days[i].format('YYYY-MM-DD')
+                  const billableTimeIter = dailyBillableHours.get(dayKeyIter) || { hours: 0, minutes: 0, totalMinutes: 0 }
+                  runningTotalMinutes += billableTimeIter.totalMinutes
+                }
+
+                const runningHours = Math.floor(runningTotalMinutes / 60)
+                const runningMinutes = runningTotalMinutes % 60
+
                 return (
-                  <th 
+                  <th
                     key={`footer-${dayKey}`}
-                    style={{ 
+                    style={{
                       height: '40px',
-                      padding: '8px', 
+                      padding: '8px',
                       border: `1px solid ${token.colorBorder}`,
                       backgroundColor: isToday ? token.colorPrimaryBg : token.colorFillAlter,
                       textAlign: 'center'
                     }}
                   >
-                    <Typography.Text strong style={{ fontSize: '12px' }}>
-                      {billableTime.hours > 0 || billableTime.minutes > 0 
-                        ? `${billableTime.hours}h ${billableTime.minutes}m`
-                        : '-'
-                      }
-                    </Typography.Text>
+                    <div>
+                      <Typography.Text strong style={{ fontSize: '12px' }}>
+                        {billableTime.hours > 0 || billableTime.minutes > 0
+                          ? `${billableTime.hours}h ${billableTime.minutes}m`
+                          : '-'
+                        }
+                      </Typography.Text>
+                    </div>
+                    <div style={{ marginTop: '4px' }}>
+                      <Typography.Text type="secondary" style={{ fontSize: '10px' }}>
+                        {runningTotalMinutes > 0
+                          ? `${runningHours}h ${runningMinutes}m`
+                          : ''
+                        }
+                      </Typography.Text>
+                    </div>
                   </th>
                 )
               })}
