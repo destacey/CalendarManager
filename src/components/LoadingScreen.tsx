@@ -16,7 +16,7 @@ const LoadingScreen: React.FC = () => {
         padding: '20px',
       }}
     >
-      <Space direction="vertical" size="large" style={{ textAlign: 'center' }}>
+      <Space orientation="vertical" size="large" style={{ textAlign: 'center' }}>
         {/* Logo/Icon */}
         <Flex
           justify="center"

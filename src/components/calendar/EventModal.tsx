@@ -179,24 +179,25 @@ const EventModal: React.FC<EventModalProps> = ({
                     onChange={handleTypeChange}
                     style={{ minWidth: 120 }}
                     placeholder="Select type"
-                  >
-                    {eventTypes.map(type => (
-                      <Select.Option key={type.id} value={type.id}>
+                    options={eventTypes.map(type => ({
+                      key: type.id,
+                      value: type.id,
+                      label: (
                         <Space>
-                          <div 
-                            style={{ 
-                              width: 16, 
-                              height: 16, 
-                              borderRadius: 4, 
+                          <div
+                            style={{
+                              width: 16,
+                              height: 16,
+                              borderRadius: 4,
                               backgroundColor: type.color,
                               border: `1px solid ${token.colorBorder}`
-                            }} 
+                            }}
                           />
                           {type.name}
                         </Space>
-                      </Select.Option>
-                    ))}
-                  </Select>
+                      )
+                    }))}
+                  />
                   <Button type="primary" size="small" onClick={handleSaveType}>
                     Save
                   </Button>
@@ -269,7 +270,7 @@ const EventModal: React.FC<EventModalProps> = ({
                 try {
                   const attendees = JSON.parse(event.attendees)
                   return (
-                    <Space direction="vertical" size="small">
+                    <Space orientation="vertical" size="small">
                       {attendees.map((att: any, index: number) => (
                         <Tag 
                           key={index}

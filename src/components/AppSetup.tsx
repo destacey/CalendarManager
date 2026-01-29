@@ -33,7 +33,7 @@ const AppSetup: React.FC<AppSetupProps> = ({ onSetupComplete }) => {
       style={{ minHeight: '100vh', padding: '24px' }}
     >
       <Card style={{ maxWidth: 500, width: '100%' }}>
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+        <Space orientation="vertical" size="large" style={{ width: '100%' }}>
           <div style={{ textAlign: 'center' }}>
             <KeyOutlined style={{ fontSize: '48px', color: '#1890ff', marginBottom: '16px' }} />
             <Title level={2}>Setup Microsoft Graph Integration</Title>
@@ -44,7 +44,7 @@ const AppSetup: React.FC<AppSetupProps> = ({ onSetupComplete }) => {
           </div>
 
           <Alert
-            message="Contact your IT administrator"
+            title="Contact your IT administrator"
             description="If you don't have an App Registration ID, please contact your IT administrator to set up an Azure AD application registration for this Calendar Manager app."
             type="info"
             showIcon

@@ -155,31 +155,31 @@ const SyncProgress: React.FC<SyncProgressProps> = ({
         <div style={{ marginTop: '12px', padding: '8px', backgroundColor: token.colorBgContainer, borderRadius: '6px', border: `1px solid ${token.colorBorderSecondary}` }}>
           <Row gutter={16}>
             <Col span={6}>
-              <Statistic 
-                title="Fetched" 
-                value={progress.stats.fetched} 
-                valueStyle={{ fontSize: '14px' }}
+              <Statistic
+                title="Fetched"
+                value={progress.stats.fetched}
+                styles={{ content: { fontSize: '14px' } }}
               />
             </Col>
             <Col span={6}>
-              <Statistic 
-                title="Created" 
-                value={progress.stats.created} 
-                valueStyle={{ fontSize: '14px', color: token.colorSuccess }}
+              <Statistic
+                title="Created"
+                value={progress.stats.created}
+                styles={{ content: { fontSize: '14px', color: token.colorSuccess } }}
               />
             </Col>
             <Col span={6}>
-              <Statistic 
-                title="Updated" 
-                value={progress.stats.updated} 
-                valueStyle={{ fontSize: '14px', color: token.colorPrimary }}
+              <Statistic
+                title="Updated"
+                value={progress.stats.updated}
+                styles={{ content: { fontSize: '14px', color: token.colorPrimary } }}
               />
             </Col>
             <Col span={6}>
-              <Statistic 
-                title="Deleted" 
-                value={progress.stats.deleted} 
-                valueStyle={{ fontSize: '14px', color: token.colorError }}
+              <Statistic
+                title="Deleted"
+                value={progress.stats.deleted}
+                styles={{ content: { fontSize: '14px', color: token.colorError } }}
               />
             </Col>
           </Row>

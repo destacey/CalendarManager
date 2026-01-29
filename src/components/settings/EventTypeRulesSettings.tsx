@@ -386,7 +386,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
   if (!shouldShow) return null
 
   return (
-    <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }}>
+    <Space orientation="vertical" style={{ width: '100%', marginBottom: 16 }}>
       <Flex justify="space-between" align="center">
         <Text strong>Rules</Text>
         <Space>

@@ -69,7 +69,7 @@ const MicrosoftGraphSettings: React.FC<MicrosoftGraphSettingsProps> = ({ searchT
       </Title>
       
       <Card size="small" style={{ marginBottom: '16px' }}>
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
           <div>
             <Text strong>Application Registration ID</Text>
             <Paragraph type="secondary" style={{ marginBottom: '8px', marginTop: '4px' }}>
@@ -108,7 +108,7 @@ const MicrosoftGraphSettings: React.FC<MicrosoftGraphSettingsProps> = ({ searchT
 
           {saved && (
             <Alert
-              message="Client ID updated successfully!"
+              title="Client ID updated successfully!"
               description="You may need to restart the application for changes to take effect."
               type="success"
               showIcon

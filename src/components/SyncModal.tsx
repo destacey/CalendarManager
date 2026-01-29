@@ -134,10 +134,10 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
         <Card size="small" style={{ marginBottom: 16 }}>
           <Row gutter={16}>
             <Col span={24}>
-              <Statistic 
-                title="Connection" 
-                value={isOnline ? 'Online' : 'Offline'} 
-                valueStyle={{ color: isOnline ? '#3f8600' : '#cf1322' }}
+              <Statistic
+                title="Connection"
+                value={isOnline ? 'Online' : 'Offline'}
+                styles={{ content: { color: isOnline ? '#3f8600' : '#cf1322' } }}
               />
             </Col>
           </Row>
@@ -203,7 +203,7 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
         </Card>
 
         {/* Sync Options */}
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+        <Space orientation="vertical" size="large" style={{ width: '100%' }}>
           <div>
             <Button
               type="primary"
@@ -222,7 +222,7 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
 
         {!isOnline && (
           <Alert
-            message="Offline"
+            title="Offline"
             description="You're currently offline. Sync options will be available when you reconnect to the internet."
             type="warning"
             style={{ marginTop: 16 }}
@@ -258,7 +258,7 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
         </Card>
 
         <Alert
-          message="Sync in Progress"
+          title="Sync in Progress"
           description="You can continue using the app while the sync runs in the background. This modal will update with the results when complete."
           type="info"
           style={{ marginTop: 16 }}
@@ -276,7 +276,7 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
         <Title level={4}>Sync Complete</Title>
         
         <Alert
-          message={lastResult.success ? "Sync Successful" : "Sync Failed"}
+          title={lastResult.success ? "Sync Successful" : "Sync Failed"}
           description={lastResult.message}
           type={lastResult.success ? "success" : "error"}
           icon={lastResult.success ? <CheckCircleOutlined /> : <ExclamationCircleOutlined />}
@@ -288,13 +288,13 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
           <Card title={`${lastResult.mode === 'differential' ? 'Differential' : 'Full'} Sync Results`} size="small">
             <Row gutter={16}>
               <Col span={6}>
-                <Statistic title="Created" value={lastResult.stats.created} valueStyle={{ color: '#3f8600' }} />
+                <Statistic title="Created" value={lastResult.stats.created} styles={{ content: { color: '#3f8600' } }} />
               </Col>
               <Col span={6}>
-                <Statistic title="Updated" value={lastResult.stats.updated} valueStyle={{ color: '#1890ff' }} />
+                <Statistic title="Updated" value={lastResult.stats.updated} styles={{ content: { color: '#1890ff' } }} />
               </Col>
               <Col span={6}>
-                <Statistic title="Deleted" value={lastResult.stats.deleted} valueStyle={{ color: '#cf1322' }} />
+                <Statistic title="Deleted" value={lastResult.stats.deleted} styles={{ content: { color: '#cf1322' } }} />
               </Col>
               <Col span={6}>
                 <Statistic title="Total" value={lastResult.stats.total} />

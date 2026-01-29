@@ -58,7 +58,7 @@ const CalendarEventCell: React.FC<CalendarEventCellProps> = memo(({
   const hasMoreEvents = dayEvents.length > 4
 
   return (
-    <Space direction="vertical" size={1} style={{ width: '100%' }}>
+    <Space orientation="vertical" size={1} style={{ width: '100%' }}>
       {dayEvents.slice(0, eventsToShow).map((event, index) => {
         const eventTime = formatEventTime(event.start_date, event.is_all_day, userTimezone)
         const displayText = eventTime ? `${eventTime} ${event.title}` : event.title

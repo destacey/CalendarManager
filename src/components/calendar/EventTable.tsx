@@ -5,7 +5,7 @@ import type { ColumnsType, FilterDropdownProps } from 'antd/es/table'
 import type { TableRef } from 'antd/es/table'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 import { Event, EventType } from '../../types'
 import { calculateEventDuration } from '../../utils/eventUtils'
 
@@ -176,16 +176,16 @@ const EventTable: React.FC<EventTableProps> = ({
   }
 
   // Export function
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback(async () => {
     // Use filtered data if available, otherwise use all table events
     const dataToExport = filteredData.length > 0 ? filteredData : tableEvents
-    
+
     const exportData = dataToExport.map(event => ({
-      'Start': event.is_all_day 
+      'Start': event.is_all_day
         ? `${dayjs(event.start_date).format('MMM D, YYYY')} 12:00 AM`
         : `${event.displayDate} ${event.displayStartTime}`,
-      'End': event.end_date 
-        ? (event.is_all_day 
+      'End': event.end_date
+        ? (event.is_all_day
           ? `${dayjs(event.end_date).format('MMM D, YYYY')} 12:00 AM`
           : `${event.endDateTime!.format('MMM D, YYYY')} ${event.displayEndTime}`)
         : '',
@@ -197,20 +197,68 @@ const EventTable: React.FC<EventTableProps> = ({
       'Categories': event.categories || ''
     }))
 
-    // Create workbook and worksheet
-    const workbook = XLSX.utils.book_new()
-    const worksheet = XLSX.utils.json_to_sheet(exportData)
+    // Create workbook and worksheet using exceljs
+    const workbook = new ExcelJS.Workbook()
+    const worksheet = workbook.addWorksheet('Calendar Events')
 
-    // Add worksheet to workbook
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Calendar Events')
+    // Add headers
+    const headers = ['Start', 'End', 'Title', 'Duration', 'Status', 'Type', 'Meeting', 'Categories']
+    worksheet.addRow(headers)
+
+    // Style the header row
+    worksheet.getRow(1).font = { bold: true }
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' }
+    }
+
+    // Add data rows
+    exportData.forEach(row => {
+      worksheet.addRow([
+        row.Start,
+        row.End,
+        row.Title,
+        row.Duration,
+        row.Status,
+        row.Type,
+        row.Meeting,
+        row.Categories
+      ])
+    })
+
+    // Auto-fit columns
+    worksheet.columns.forEach(column => {
+      let maxLength = 0
+      column.eachCell?.({ includeEmpty: true }, cell => {
+        const columnLength = cell.value ? String(cell.value).length : 10
+        if (columnLength > maxLength) {
+          maxLength = columnLength
+        }
+      })
+      column.width = Math.min(maxLength + 2, 50)
+    })
 
     // Generate filename with timestamp to ensure uniqueness
     const now = dayjs().tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
     const timestamp = now.format('YYYY-MM-DD HHmm')
     const fileName = `Calendar Export ${timestamp}.xlsx`
-    
-    // Use browser download (which works in Electron's renderer process)
-    XLSX.writeFile(workbook, fileName)
+
+    // Generate buffer and create blob for download
+    const buffer = await workbook.xlsx.writeBuffer()
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    })
+
+    // Create download link and trigger download
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
   }, [filteredData, tableEvents, userTimezone])
 
   // Pass export function to parent via callback
