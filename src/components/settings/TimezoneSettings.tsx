@@ -206,7 +206,7 @@ const TimezoneSettings: React.FC<TimezoneSettingsProps> = ({ searchTerm = '' }) 
       </Title>
       
       <Card size="small">
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
           <div>
             <Text strong>Display Timezone</Text>
             <Paragraph type="secondary" style={{ marginBottom: '8px', marginTop: '4px' }}>
@@ -229,7 +229,7 @@ const TimezoneSettings: React.FC<TimezoneSettingsProps> = ({ searchTerm = '' }) 
 
           {selectedTimezone && (
             <Alert
-              message="Current time in selected timezone:"
+              title="Current time in selected timezone:"
               description={
                 <Text strong style={{ fontSize: '16px' }}>
                   {currentTime}
@@ -255,7 +255,7 @@ const TimezoneSettings: React.FC<TimezoneSettingsProps> = ({ searchTerm = '' }) 
 
           {saved && (
             <Alert
-              message="Timezone updated successfully!"
+              title="Timezone updated successfully!"
               type="success"
               showIcon
               closable

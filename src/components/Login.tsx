@@ -34,7 +34,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess: _onLoginSuccess, onLoginE
       padding: '24px'
     }}>
       <Card style={{ maxWidth: 400, width: '100%' }}>
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+        <Space orientation="vertical" size="large" style={{ width: '100%' }}>
           <div style={{ textAlign: 'center' }}>
             <UserOutlined style={{ fontSize: '48px', color: '#1890ff', marginBottom: '16px' }} />
             <Title level={2}>Sign In</Title>
@@ -44,7 +44,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess: _onLoginSuccess, onLoginE
           </div>
 
           <Alert
-            message="Microsoft Account Required"
+            title="Microsoft Account Required"
             description="You'll need to sign in with your Microsoft work or school account to access Microsoft Graph services."
             type="info"
             showIcon

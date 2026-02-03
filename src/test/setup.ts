@@ -1,6 +1,13 @@
 import '@testing-library/jest-dom'
 import { vi } from 'vitest'
 
+// Mock ResizeObserver for antd v6 components
+global.ResizeObserver = vi.fn().mockImplementation(() => ({
+  observe: vi.fn(),
+  unobserve: vi.fn(),
+  disconnect: vi.fn(),
+}))
+
 // Mock electron API for components that use it
 Object.defineProperty(window, 'electronAPI', {
   value: {

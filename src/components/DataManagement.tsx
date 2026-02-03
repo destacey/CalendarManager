@@ -121,7 +121,7 @@ const DataManagement: React.FC = () => {
   }
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+    <Space orientation="vertical" size="large" style={{ width: '100%' }}>
       <Card>
         <Title level={4}>
           <DatabaseOutlined style={{ marginRight: 8 }} />
@@ -138,10 +138,10 @@ const DataManagement: React.FC = () => {
             />
           </Col>
           <Col span={12}>
-            <Statistic 
-              title="Sync Status" 
-              value={syncStatus.hasMetadata ? 'Configured' : 'Not Set Up'} 
-              valueStyle={{ color: syncStatus.hasMetadata ? '#3f8600' : '#cf1322' }}
+            <Statistic
+              title="Sync Status"
+              value={syncStatus.hasMetadata ? 'Configured' : 'Not Set Up'}
+              styles={{ content: { color: syncStatus.hasMetadata ? '#3f8600' : '#cf1322' } }}
             />
           </Col>
         </Row>
@@ -162,7 +162,7 @@ const DataManagement: React.FC = () => {
           Data Management
         </Title>
         
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
           <div>
             <Title level={5}>Clear All Calendar Events</Title>
             <Paragraph type="secondary">
@@ -221,7 +221,7 @@ const DataManagement: React.FC = () => {
           This action cannot be undone.
         </Paragraph>
         <Alert
-          message="Warning"
+          title="Warning"
           description="You will need to sync again from Microsoft Graph to restore your calendar data."
           type="warning"
           showIcon
@@ -249,7 +249,7 @@ const DataManagement: React.FC = () => {
           but the next sync will be treated as a first-time sync.
         </Paragraph>
         <Alert
-          message="Info"
+          title="Info"
           description="This will reset sync tokens and force a full sync next time."
           type="info"
           showIcon

@@ -61,7 +61,7 @@ const Settings: React.FC<SettingsProps> = ({ onEventsUpdated }) => {
 
   return (
     <div style={{ padding: "24px", height: "100%", overflow: "auto" }}>
-      <Space direction="vertical" size="large" style={{ width: "100%" }}>
+      <Space orientation="vertical" size="large" style={{ width: "100%" }}>
         <div>
           <Title level={2} style={{ marginBottom: "8px" }}>
             Settings
@@ -79,7 +79,7 @@ const Settings: React.FC<SettingsProps> = ({ onEventsUpdated }) => {
         <Tabs
           defaultActiveKey="general"
           items={tabItems}
-          tabPosition="top"
+          tabPlacement="top"
           style={{ width: "100%" }}
         />
       </Space>

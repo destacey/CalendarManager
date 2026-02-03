@@ -12,14 +12,21 @@ import {
 } from '../../test/utils'
 import EventTable from './EventTable'
 
-// Mock XLSX library
-vi.mock('xlsx', () => ({
-  utils: {
-    book_new: vi.fn(() => ({})),
-    json_to_sheet: vi.fn(() => ({})),
-    book_append_sheet: vi.fn()
-  },
-  writeFile: vi.fn()
+// Mock ExcelJS library
+vi.mock('exceljs', () => ({
+  default: class Workbook {
+    addWorksheet = vi.fn(() => ({
+      addRow: vi.fn(),
+      getRow: vi.fn(() => ({
+        font: {},
+        fill: {}
+      })),
+      columns: []
+    }))
+    xlsx = {
+      writeBuffer: vi.fn(() => Promise.resolve(new ArrayBuffer(0)))
+    }
+  }
 }))
 
 // Mock calculateEventDuration utility
