@@ -65,7 +65,10 @@ function initStore() {
 function initDatabase() {
   const dbPath = path.join(__dirname, '..', 'calendar.db');
   db = new Database(dbPath);
-  
+
+  // Enable WAL mode for better read/write concurrency
+  db.pragma('journal_mode = WAL');
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,6 +98,7 @@ function initDatabase() {
     
     CREATE INDEX IF NOT EXISTS idx_events_graph_id ON events(graph_id);
     CREATE INDEX IF NOT EXISTS idx_events_start_date ON events(start_date);
+    CREATE INDEX IF NOT EXISTS idx_events_date_range ON events(start_date, end_date);
   `);
 
   // Add migration for new columns (safe to run multiple times)
@@ -196,6 +200,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    show: false,
     frame: false,
     titleBarStyle: 'hiddenInset',
     webPreferences: {
@@ -203,6 +208,10 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
     }
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
   });
 
   // Set Content Security Policy
@@ -352,6 +361,11 @@ ipcMain.handle('db:syncGraphEvents', (event, graphEvents) => {
   let createdCount = 0;
   let updatedCount = 0;
 
+  // Pre-fetch rules and default type once before the loop
+  const rules = db.prepare('SELECT * FROM event_type_rules ORDER BY priority ASC').all();
+  const defaultType = db.prepare('SELECT id FROM event_types WHERE is_default = 1 LIMIT 1').get();
+  const defaultTypeId = defaultType ? defaultType.id : null;
+
   const transaction = db.transaction((events) => {
     for (const graphEvent of events) {
       const categories = graphEvent.categories ? graphEvent.categories.join(',') : '';
@@ -401,7 +415,7 @@ ipcMain.handle('db:syncGraphEvents', (event, graphEvents) => {
           );
         } else {
           // Evaluate type and update
-          const evaluatedTypeId = evaluateEventTypeSync(eventData);
+          const evaluatedTypeId = evaluateEventTypeSync(eventData, rules, defaultTypeId);
           updateStmt.run(
             graphEvent.subject || 'Untitled Event',
             description,
@@ -421,7 +435,7 @@ ipcMain.handle('db:syncGraphEvents', (event, graphEvents) => {
         updatedCount++;
       } else {
         // Insert new event with type evaluation
-        const evaluatedTypeId = evaluateEventTypeSync(eventData);
+        const evaluatedTypeId = evaluateEventTypeSync(eventData, rules, defaultTypeId);
         insertStmt.run(
           graphEvent.id,
           graphEvent.subject || 'Untitled Event',
@@ -654,7 +668,12 @@ ipcMain.handle('db:reprocessEventTypes', () => {
     
     let processedCount = 0;
     let updatedCount = 0;
-    
+
+    // Pre-fetch rules and default type once
+    const rules = db.prepare('SELECT * FROM event_type_rules ORDER BY priority ASC').all();
+    const defaultType = db.prepare('SELECT id FROM event_types WHERE is_default = 1 LIMIT 1').get();
+    const defaultTypeId = defaultType ? defaultType.id : null;
+
     const transaction = db.transaction((events) => {
       for (const event of events) {
         const eventData = {
@@ -663,8 +682,8 @@ ipcMain.handle('db:reprocessEventTypes', () => {
           show_as: event.show_as || '',
           categories: event.categories || ''
         };
-        
-        const newTypeId = evaluateEventTypeSync(eventData);
+
+        const newTypeId = evaluateEventTypeSync(eventData, rules, defaultTypeId);
         processedCount++;
         
         // Only update if the type has actually changed
@@ -727,28 +746,26 @@ function evaluateRule(rule, eventData) {
 }
 
 // Synchronous version for use within transactions
-function evaluateEventTypeSync(eventData) {
+// Accepts pre-fetched rules and defaultTypeId to avoid repeated queries during bulk operations
+function evaluateEventTypeSync(eventData, rules, defaultTypeId) {
   try {
-    // Get all rules ordered by priority
-    const rulesStmt = db.prepare('SELECT * FROM event_type_rules ORDER BY priority ASC');
-    const rules = rulesStmt.all();
-    
-    // Get default type
-    const defaultTypeStmt = db.prepare('SELECT id FROM event_types WHERE is_default = 1 LIMIT 1');
-    const defaultType = defaultTypeStmt.get();
-    
+    // If rules not provided, fetch them (fallback for non-bulk callers)
+    if (!rules) {
+      rules = db.prepare('SELECT * FROM event_type_rules ORDER BY priority ASC').all();
+    }
+    if (defaultTypeId === undefined) {
+      const defaultType = db.prepare('SELECT id FROM event_types WHERE is_default = 1 LIMIT 1').get();
+      defaultTypeId = defaultType ? defaultType.id : null;
+    }
+
     // Evaluate each rule in order
     for (const rule of rules) {
-      const matches = evaluateRule(rule, eventData);
-      
-      if (matches) {
+      if (evaluateRule(rule, eventData)) {
         return rule.target_type_id;
       }
     }
-    
-    // Return default type if no rules match
-    const defaultId = defaultType ? defaultType.id : null;
-    return defaultId;
+
+    return defaultTypeId;
   } catch (error) {
     console.warn('Failed to evaluate event type:', error);
     return null;
