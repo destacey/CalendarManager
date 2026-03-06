@@ -22,7 +22,6 @@ class AuthService {
       },
       cache: {
         cacheLocation: 'localStorage',
-        storeAuthStateInCookie: false,
       },
     };
 

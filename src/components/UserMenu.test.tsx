@@ -29,7 +29,7 @@ const mockGraphClient = {
   api: vi.fn(() => ({
     get: mockGet
   }))
-}
+} as any
 
 const mockUserData = {
   displayName: 'John Doe',
@@ -119,6 +119,7 @@ describe('UserMenu', () => {
     })
 
     it('handles user data fetch error gracefully', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
       vi.mocked(authService.getGraphClient).mockRejectedValue(new Error('Network error'))
       
       await act(async () => {

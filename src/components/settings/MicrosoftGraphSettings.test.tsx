@@ -128,6 +128,7 @@ describe('MicrosoftGraphSettings', () => {
     })
 
     it('handles storage error gracefully', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
       vi.mocked(storageService.getAppRegistrationId).mockRejectedValue(new Error('Storage error'))
       
       expect(() => {
@@ -140,6 +141,7 @@ describe('MicrosoftGraphSettings', () => {
     })
 
     it('falls back to empty string on storage error', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
       vi.mocked(storageService.getAppRegistrationId).mockRejectedValue(new Error('Storage error'))
       
       render(<MicrosoftGraphSettings {...defaultProps} />)
@@ -335,6 +337,7 @@ describe('MicrosoftGraphSettings', () => {
     })
 
     it('handles save error gracefully', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
       vi.mocked(storageService.setAppRegistrationId).mockRejectedValue(new Error('Save failed'))
       
       render(<MicrosoftGraphSettings {...defaultProps} />)

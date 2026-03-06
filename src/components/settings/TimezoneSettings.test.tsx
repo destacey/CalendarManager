@@ -129,6 +129,7 @@ describe('TimezoneSettings', () => {
     })
 
     it('handles storage error gracefully', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
       vi.mocked(storageService.getTimezone).mockRejectedValue(new Error('Storage error'))
       
       expect(() => {
@@ -141,6 +142,7 @@ describe('TimezoneSettings', () => {
     })
 
     it('falls back to browser timezone on storage error', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
       vi.mocked(storageService.getTimezone).mockRejectedValue(new Error('Storage error'))
       
       render(<TimezoneSettings {...defaultProps} />)

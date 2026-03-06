@@ -2,11 +2,11 @@ import '@testing-library/jest-dom'
 import { vi } from 'vitest'
 
 // Mock ResizeObserver for antd v6 components
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}))
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as any
 
 // Mock electron API for components that use it
 Object.defineProperty(window, 'electronAPI', {
@@ -103,14 +103,24 @@ Object.defineProperty(window, 'matchMedia', {
   configurable: true,
 })
 
+// Suppress jsdom CSS parse warnings from Ant Design stylesheets
+const originalStderrWrite = process.stderr.write.bind(process.stderr)
+process.stderr.write = ((chunk: any, ...args: any[]) => {
+  if (typeof chunk === 'string' && chunk.includes('Could not parse CSS stylesheet')) {
+    return true
+  }
+  return originalStderrWrite(chunk, ...args)
+}) as any
+
 // Suppress React key warnings in tests as they're caused by our mock dayjs returning identical dates
 // These warnings don't affect test functionality but create noise in the output
 const originalConsoleError = console.error
 console.error = (message, ...args) => {
-  // Suppress React duplicate key warnings during tests
-  if (typeof message === 'string' && message.includes('Encountered two children with the same key')) {
+  if (typeof message === 'string' && (
+    message.includes('Encountered two children with the same key') ||
+    message.includes('Could not parse CSS stylesheet')
+  )) {
     return
   }
-  // Call original console.error for other messages
   originalConsoleError(message, ...args)
 }

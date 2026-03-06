@@ -403,6 +403,8 @@ describe('TitleBar', () => {
 
   describe('Error Handling', () => {
     it('handles isWindowMaximized error gracefully', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
       mockElectronAPI.isWindowMaximized.mockRejectedValue(new Error('Test error'))
       
       // Should not throw
