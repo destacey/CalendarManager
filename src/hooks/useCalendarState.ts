@@ -3,7 +3,7 @@ import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 
 export interface CalendarState {
-  viewMode: 'month' | 'week' | 'table'
+  viewMode: 'month' | 'week' | 'day' | 'table'
   calendarType: 'month' | 'year'  
   currentWeek: Dayjs
   currentDate: Dayjs
@@ -62,7 +62,7 @@ export const useCalendarState = () => {
     })
   }, [saveState])
 
-  const setViewMode = useCallback((viewMode: 'month' | 'week' | 'table') => {
+  const setViewMode = useCallback((viewMode: 'month' | 'week' | 'day' | 'table') => {
     updateState({ viewMode })
   }, [updateState])
 

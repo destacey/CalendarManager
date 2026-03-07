@@ -10,6 +10,7 @@ import { useCalendarEvents } from '../../hooks/useCalendarEvents'
 // import { useCalendarViewEvents } from '../../hooks/useCalendarViewEvents' // Disabled temporarily
 import { useCalendarState } from '../../hooks/useCalendarState'
 import WeekView from './WeekView'
+import DayView from './DayView'
 import EventTable from './EventTable'
 import EventModal from './EventModal'
 import CalendarEventCell from './CalendarEventCell'
@@ -221,6 +222,20 @@ const CalendarView: React.FC = () => {
           />
         ) : viewMode === 'week' ? (
           <WeekView
+            currentWeek={currentWeek}
+            setCurrentWeek={setCurrentWeek}
+            setViewMode={setViewMode}
+            setCalendarType={setCalendarType}
+            getEventsForDate={getEventsForDate}
+            getEventBackgroundColor={getEventBackgroundColor}
+            getEventDisplayColor={getEventDisplayColor}
+            setSelectedEvent={setSelectedEvent}
+            setIsModalVisible={setIsModalVisible}
+            userTimezone={userTimezone || ''}
+            eventTypes={eventTypes}
+          />
+        ) : viewMode === 'day' ? (
+          <DayView
             currentWeek={currentWeek}
             setCurrentWeek={setCurrentWeek}
             setViewMode={setViewMode}

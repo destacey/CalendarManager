@@ -55,9 +55,9 @@ describe('WeekView', () => {
       expect(screen.getByTitle('Next week')).toBeInTheDocument()
     })
 
-    it('renders view mode toggle', () => {
+    it('renders view mode toggle with Week selected', () => {
       render(<WeekView {...defaultProps} />)
-      
+
       expect(screen.getByDisplayValue('Week')).toBeInTheDocument()
     })
   })
@@ -246,11 +246,12 @@ describe('WeekView', () => {
       expect(flexContainer).toBeInTheDocument()
     })
 
-    it('renders table structure for time grid', () => {
+    it('renders time grid with hour labels', () => {
       render(<WeekView {...defaultProps} />)
-      
-      const tables = screen.getAllByRole('table')
-      expect(tables.length).toBeGreaterThan(0)
+
+      // The new grid uses div-based layout with hour labels
+      expect(screen.getByText('12 AM')).toBeInTheDocument()
+      expect(screen.getByText('12 PM')).toBeInTheDocument()
     })
   })
 })

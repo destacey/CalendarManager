@@ -17,9 +17,10 @@ describe('ViewModeToggle', () => {
       expect(document.body).toBeInTheDocument()
     })
 
-    it('renders all four radio button options', () => {
+    it('renders all five radio button options', () => {
       render(<ViewModeToggle {...defaultProps} />)
-      
+
+      expect(screen.getByRole('radio', { name: 'Day' })).toBeInTheDocument()
       expect(screen.getByRole('radio', { name: 'Week' })).toBeInTheDocument()
       expect(screen.getByRole('radio', { name: 'Month' })).toBeInTheDocument()
       expect(screen.getByRole('radio', { name: 'Year' })).toBeInTheDocument()
@@ -41,11 +42,12 @@ describe('ViewModeToggle', () => {
         viewMode: 'week',
         calendarType: 'month'
       })
-      
+
       render(<ViewModeToggle {...props} />)
-      
+
       const weekRadio = screen.getByRole('radio', { name: 'Week' })
       expect(weekRadio).toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Day' })).not.toBeChecked()
       expect(screen.getByRole('radio', { name: 'Month' })).not.toBeChecked()
       expect(screen.getByRole('radio', { name: 'Year' })).not.toBeChecked()
       expect(screen.getByRole('radio', { name: 'Table' })).not.toBeChecked()
@@ -324,7 +326,7 @@ describe('ViewModeToggle', () => {
       render(<ViewModeToggle {...defaultProps} />)
       
       const radios = screen.getAllByRole('radio')
-      expect(radios).toHaveLength(4)
+      expect(radios).toHaveLength(5)
       
       radios.forEach(radio => {
         expect(radio).toHaveAttribute('type', 'radio')
@@ -354,7 +356,7 @@ describe('ViewModeToggle', () => {
       
       // Should render without crashing
       const radios = screen.getAllByRole('radio')
-      expect(radios).toHaveLength(4)
+      expect(radios).toHaveLength(5)
       
       // Should handle clicks properly
       fireEvent.click(screen.getByRole('radio', { name: 'Month' }))

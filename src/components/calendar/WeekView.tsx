@@ -1,50 +1,22 @@
-import React, { useMemo, useTransition, memo, useState } from 'react'
-import { Typography, theme, Radio, Space, Spin, Button, DatePicker } from 'antd'
-import { LeftOutlined, RightOutlined } from '@ant-design/icons'
+import React, { useMemo, useTransition, useEffect, useRef, memo } from 'react'
+import { Typography, theme, Radio, Space, Spin, Button, DatePicker, Tooltip } from 'antd'
+import { LeftOutlined, RightOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import minMax from 'dayjs/plugin/minMax'
 import { Event, EventType } from '../../types'
+import { useCurrentTime } from '../../hooks/useCurrentTime'
+import { useZoom } from '../../hooks/useZoom'
+import { HOURS, SCROLL_TO_HOUR, formatHour, layoutEvents } from '../../utils/calendarLayout'
 
 dayjs.extend(minMax)
-
-// Extended event type with pre-processed timezone data
-interface ProcessedEvent extends Event {
-  processedStart?: Dayjs
-  processedEnd?: Dayjs
-  startHour?: number
-  startMinute?: number
-}
-
-// Generate time slots more efficiently without dayjs in module scope
-const TIME_SLOTS = (() => {
-  const slots = []
-  for (let hour = 0; hour < 24; hour++) {
-    for (let minute = 0; minute < 60; minute += 5) {
-      const timeStr = `${hour}:${minute.toString().padStart(2, '0')}`
-      const display24 = hour === 0 ? '12' : hour > 12 ? (hour - 12).toString() : hour.toString()
-      const ampm = hour < 12 ? 'AM' : 'PM'
-      const displayMinute = minute === 0 ? '00' : minute.toString()
-      
-      slots.push({
-        time: timeStr,
-        display: `${display24}:${displayMinute} ${ampm}`,
-        showLabel: minute % 15 === 0
-      })
-    }
-  }
-  return slots
-})()
-
-// Pre-calculate the 7:00 AM index for scrolling  
-const SEVEN_AM_INDEX = TIME_SLOTS.findIndex(slot => slot.time === '7:00')
 
 const { Text } = Typography
 
 interface WeekViewProps {
   currentWeek: Dayjs
   setCurrentWeek: (week: Dayjs) => void
-  setViewMode: (mode: 'month' | 'week' | 'table') => void
+  setViewMode: (mode: 'month' | 'week' | 'day' | 'table') => void
   setCalendarType: (type: 'month' | 'year') => void
   getEventsForDate: (date: Dayjs) => Event[]
   getEventBackgroundColor: (showAs: string) => string
@@ -70,526 +42,425 @@ const WeekView: React.FC<WeekViewProps> = memo(({
 }) => {
   const { token } = theme.useToken()
   const [isPending, startTransition] = useTransition()
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const hasScrolled = useRef(false)
+  const { now, getTimePosition } = useCurrentTime()
+  const { hourHeight, zoomIn, zoomOut, canZoomIn, canZoomOut } = useZoom(scrollContainerRef)
 
-  // Memoize days array to prevent unnecessary recalculations
+  const tz = userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone
+
+  // Scroll to 7 AM on initial render and when week changes
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container || hasScrolled.current) return
+
+    const targetTop = SCROLL_TO_HOUR * hourHeight
+    const tryScroll = () => {
+      if (container.scrollHeight > container.clientHeight) {
+        hasScrolled.current = true
+        container.scrollTop = targetTop
+      }
+    }
+
+    // Try immediately, then observe for when container gets its dimensions
+    tryScroll()
+    if (!hasScrolled.current) {
+      const observer = new ResizeObserver(() => {
+        tryScroll()
+        if (hasScrolled.current) observer.disconnect()
+      })
+      observer.observe(container)
+      return () => observer.disconnect()
+    }
+  }, [hourHeight])
+
+  // Reset scroll flag when week changes
+  useEffect(() => {
+    hasScrolled.current = false
+  }, [currentWeek])
+
   const days = useMemo(() => {
     const startOfWeek = currentWeek.startOf('week')
     return Array.from({ length: 7 }, (_, i) => startOfWeek.add(i, 'day'))
   }, [currentWeek])
 
-  // Pre-process events for the week with memoization
-  const weekEvents = useMemo(() => {
-    const events = new Map()
-    const timeSlotMap = new Map()
-    
+  // Pre-process all events for the week
+  const weekData = useMemo(() => {
+    const result = new Map<string, {
+      allDay: Array<Event & { startDay: Dayjs; endDay: Dayjs }>
+      positioned: ReturnType<typeof layoutEvents>
+    }>()
+
+    const allDayEventsMap = new Map<string, Event & { startDay: Dayjs; endDay: Dayjs }>()
+
     days.forEach(day => {
       const dayKey = day.format('YYYY-MM-DD')
       const dayEvents = getEventsForDate(day)
-      
-      // Separate all-day and timed events
-      const allDayEvents = dayEvents.filter(event => event.is_all_day)
-      const timedEvents = dayEvents.filter(event => !event.is_all_day)
-      
-      // Pre-convert all timed events to user timezone once
-      const processedTimedEvents = timedEvents.map(event => {
-        const eventStart = dayjs.utc(event.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-        const eventEnd = event.end_date ? dayjs.utc(event.end_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone) : eventStart.add(1, 'hour')
-        
-        return {
-          ...event,
-          processedStart: eventStart,
-          processedEnd: eventEnd,
-          startHour: eventStart.hour(),
-          startMinute: Math.floor(eventStart.minute() / 5) * 5 // Round to 5-minute intervals
+
+      const allDayEvents = dayEvents.filter(e => e.is_all_day)
+      const timedEvents = dayEvents.filter(e => !e.is_all_day)
+
+      allDayEvents.forEach(event => {
+        if (!allDayEventsMap.has(event.id)) {
+          const eventStart = dayjs(event.start_date)
+          const eventEnd = event.end_date ? dayjs(event.end_date).subtract(1, 'day') : eventStart
+          allDayEventsMap.set(event.id, {
+            ...event,
+            startDay: eventStart.startOf('day'),
+            endDay: eventEnd.startOf('day')
+          })
         }
       })
-      
-      events.set(dayKey, {
-        allDay: allDayEvents,
-        timed: processedTimedEvents
-      })
-      
-      // Create time slot lookup for fast access
-      const slotLookup = new Map()
-      processedTimedEvents.forEach(event => {
-        // For cross-day events, calculate the effective start time for this specific day
-        const eventStart = event.processedStart!
-        const eventEnd = event.processedEnd!
+
+      const processedEvents = timedEvents.map(event => {
+        const localStart = dayjs.utc(event.start_date).tz(tz)
+        const localEnd = event.end_date
+          ? dayjs.utc(event.end_date).tz(tz)
+          : localStart.add(1, 'hour')
+        return { event, localStart, localEnd }
+      }).filter(({ localStart, localEnd }) => {
         const dayStart = day.startOf('day')
         const dayEnd = day.endOf('day')
-        
-        // Calculate intersection start time for this day
-        const effectiveStart = eventStart.isAfter(dayStart) ? eventStart : dayStart
-        
-        // Only include if event intersects with this day
-        if (effectiveStart.isBefore(dayEnd) && eventEnd.isAfter(dayStart)) {
-          const effectiveHour = effectiveStart.hour()
-          const effectiveMinute = Math.floor(effectiveStart.minute() / 5) * 5
-          const slotKey = `${effectiveHour}:${effectiveMinute.toString().padStart(2, '0')}`
-          
-          if (!slotLookup.has(slotKey)) {
-            slotLookup.set(slotKey, [])
-          }
-          slotLookup.get(slotKey).push(event)
+        return localStart.isBefore(dayEnd) && localEnd.isAfter(dayStart)
+      })
+
+      const positioned = layoutEvents(processedEvents, day, hourHeight)
+
+      result.set(dayKey, {
+        allDay: [],
+        positioned
+      })
+    })
+
+    const allDayEventsList = Array.from(allDayEventsMap.values())
+    days.forEach(day => {
+      const dayKey = day.format('YYYY-MM-DD')
+      const dayData = result.get(dayKey)!
+      dayData.allDay = allDayEventsList.filter(e =>
+        (e.startDay.isSame(day, 'day') || e.startDay.isBefore(day, 'day')) &&
+        (e.endDay.isSame(day, 'day') || e.endDay.isAfter(day, 'day'))
+      )
+    })
+
+    return result
+  }, [days, getEventsForDate, tz, hourHeight])
+
+  // Layout all-day event rows for spanning
+  const allDayRows = useMemo(() => {
+    type EventWithDays = Event & { startDay: Dayjs; endDay: Dayjs }
+    const uniqueEvents = new Map<string, EventWithDays>()
+
+    days.forEach(day => {
+      const dayKey = day.format('YYYY-MM-DD')
+      const dayData = weekData.get(dayKey)
+      dayData?.allDay.forEach(event => {
+        if (!uniqueEvents.has(event.id)) {
+          uniqueEvents.set(event.id, event)
         }
       })
-      
-      timeSlotMap.set(dayKey, slotLookup)
     })
-    
-    return { events, timeSlotMap }
-  }, [days, getEventsForDate, userTimezone])
 
-  // Calculate overlap map with proper grouping of overlapping events
-  const dayOverlapMap = useMemo(() => {
-    const map = new Map()
-    
-    days.forEach(day => {
-      const dayKey = day.format('YYYY-MM-DD')
-      const dayEvents = weekEvents.events.get(dayKey)?.timed || []
-      
-      // Group overlapping events together
-      const eventsMap = new Map()
-      const processedEvents = new Set()
-      let groupId = 0
-      
-      dayEvents.forEach((event: ProcessedEvent) => {
-        if (processedEvents.has(event.id)) return
-        
-        // Find all events that overlap with this event
-        const overlappingEvents = [event]
-        const eventStart = dayjs.utc(event.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-        const eventEnd = dayjs.utc(event.end_date!).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-        
-        dayEvents.forEach((otherEvent: ProcessedEvent) => {
-          if (otherEvent.id === event.id || processedEvents.has(otherEvent.id)) return
-          
-          const otherStart = dayjs.utc(otherEvent.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-          const otherEnd = dayjs.utc(otherEvent.end_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-          
-          // Check if events overlap
-          if (eventStart.isBefore(otherEnd) && eventEnd.isAfter(otherStart)) {
-            overlappingEvents.push(otherEvent)
-            processedEvents.add(otherEvent.id)
-          }
-        })
-        
-        // Sort overlapping events by start time for consistent positioning
-        overlappingEvents.sort((a, b) => 
-          dayjs.utc(a.start_date).valueOf() - dayjs.utc(b.start_date).valueOf()
+    const eventRows: EventWithDays[][] = []
+    uniqueEvents.forEach(event => {
+      let placed = false
+      for (const row of eventRows) {
+        const hasConflict = row.some(existing =>
+          event.startDay.isBefore(existing.endDay.add(1, 'day')) &&
+          event.endDay.add(1, 'day').isAfter(existing.startDay)
         )
-        
-        eventsMap.set(groupId++, overlappingEvents)
-        processedEvents.add(event.id)
-      })
-      
-      map.set(dayKey, eventsMap)
-    })
-    
-    return map
-  }, [days, weekEvents, userTimezone])
-
-  // Remove the useState and useEffect for calculating overlap
-  const [isCalculating] = useState(false)
-
-  // Calculate billable hours for each day
-  const dailyBillableHours = useMemo(() => {
-    const hoursMap = new Map()
-    
-    // Initialize all days with 0 hours
-    days.forEach(day => {
-      const dayKey = day.format('YYYY-MM-DD')
-      hoursMap.set(dayKey, { hours: 0, minutes: 0, totalMinutes: 0 })
-    })
-    
-    // Get all events for the entire week to ensure we catch cross-day events
-    const allWeekEvents = new Set<Event>()
-    days.forEach(day => {
-      const dayEvents = getEventsForDate(day)
-      dayEvents.forEach(event => allWeekEvents.add(event))
-    })
-
-    // Process each unique event and calculate its contribution to each day
-    allWeekEvents.forEach((event: Event) => {
-      // Check if event has a billable type
-      if (event.type_id) {
-        const eventType = eventTypes.find(t => t.id === event.type_id)
-        if (eventType && eventType.is_billable && event.end_date) {
-          if (event.is_all_day) {
-            // Handle all-day events
-            const eventStart = dayjs(event.start_date)
-            const eventEnd = dayjs(event.end_date).subtract(1, 'day') // Microsoft Graph adds 1 day to end date for all-day events
-            
-            // Add 24 hours (1440 minutes) for each day the event spans
-            days.forEach(day => {
-              const dayKey = day.format('YYYY-MM-DD')
-              const dayStart = day.startOf('day')
-              
-              // Check if this day falls within the all-day event span
-              if ((dayStart.isSame(eventStart, 'day') || dayStart.isAfter(eventStart, 'day')) && 
-                  (dayStart.isSame(eventEnd, 'day') || dayStart.isBefore(eventEnd, 'day'))) {
-                const currentDay = hoursMap.get(dayKey)
-                const newTotalMinutes = currentDay.totalMinutes + 1440 // Add 24 hours = 1440 minutes
-                const newHours = Math.floor(newTotalMinutes / 60)
-                const newMinutes = newTotalMinutes % 60
-                
-                hoursMap.set(dayKey, {
-                  hours: newHours,
-                  minutes: newMinutes,
-                  totalMinutes: newTotalMinutes
-                })
-              }
-            })
-          } else {
-            // Handle timed events (existing logic)
-            const eventStart = dayjs.utc(event.start_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-            const eventEnd = dayjs.utc(event.end_date).tz(userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
-            
-            // Check each day to see how much of the event falls within that day
-            days.forEach(day => {
-              const dayKey = day.format('YYYY-MM-DD')
-              const dayStart = day.startOf('day')
-              const dayEnd = day.endOf('day')
-              
-              // Calculate the intersection of the event with this specific day
-              const intersectionStart = dayjs.max(eventStart, dayStart)
-              const intersectionEnd = dayjs.min(eventEnd, dayEnd)
-              
-              // If there's a valid intersection (start before end), add the duration
-              if (intersectionStart.isBefore(intersectionEnd)) {
-                const intersectionMinutes = intersectionEnd.diff(intersectionStart, 'minute')
-                const currentDay = hoursMap.get(dayKey)
-                const newTotalMinutes = currentDay.totalMinutes + intersectionMinutes
-                const newHours = Math.floor(newTotalMinutes / 60)
-                const newMinutes = newTotalMinutes % 60
-                
-                hoursMap.set(dayKey, {
-                  hours: newHours,
-                  minutes: newMinutes,
-                  totalMinutes: newTotalMinutes
-                })
-              }
-            })
-          }
+        if (!hasConflict) {
+          row.push(event)
+          placed = true
+          break
         }
       }
+      if (!placed) {
+        eventRows.push([event])
+      }
     })
-    
-    return hoursMap
-  }, [days, getEventsForDate, eventTypes, userTimezone])
 
+    return eventRows
+  }, [weekData, days])
+
+  // Calculate billable hours
+  const dailyBillableHours = useMemo(() => {
+    const hoursMap = new Map<string, { hours: number; minutes: number; totalMinutes: number }>()
+
+    days.forEach(day => {
+      hoursMap.set(day.format('YYYY-MM-DD'), { hours: 0, minutes: 0, totalMinutes: 0 })
+    })
+
+    const allWeekEvents = new Set<Event>()
+    days.forEach(day => {
+      getEventsForDate(day).forEach(event => allWeekEvents.add(event))
+    })
+
+    allWeekEvents.forEach((event: Event) => {
+      if (!event.type_id) return
+      const eventType = eventTypes.find(t => t.id === event.type_id)
+      if (!eventType?.is_billable || !event.end_date) return
+
+      if (event.is_all_day) {
+        const eventStart = dayjs(event.start_date)
+        const eventEnd = dayjs(event.end_date).subtract(1, 'day')
+
+        days.forEach(day => {
+          const dayKey = day.format('YYYY-MM-DD')
+          if ((day.isSame(eventStart, 'day') || day.isAfter(eventStart, 'day')) &&
+              (day.isSame(eventEnd, 'day') || day.isBefore(eventEnd, 'day'))) {
+            const current = hoursMap.get(dayKey)!
+            const newTotal = current.totalMinutes + 1440
+            hoursMap.set(dayKey, {
+              hours: Math.floor(newTotal / 60),
+              minutes: newTotal % 60,
+              totalMinutes: newTotal
+            })
+          }
+        })
+      } else {
+        const eventStart = dayjs.utc(event.start_date).tz(tz)
+        const eventEnd = dayjs.utc(event.end_date).tz(tz)
+
+        days.forEach(day => {
+          const dayKey = day.format('YYYY-MM-DD')
+          const dayStart = day.startOf('day')
+          const dayEnd = day.endOf('day')
+
+          const intersectionStart = dayjs.max(eventStart, dayStart)
+          const intersectionEnd = dayjs.min(eventEnd, dayEnd)
+
+          if (intersectionStart.isBefore(intersectionEnd)) {
+            const mins = intersectionEnd.diff(intersectionStart, 'minute')
+            const current = hoursMap.get(dayKey)!
+            const newTotal = current.totalMinutes + mins
+            hoursMap.set(dayKey, {
+              hours: Math.floor(newTotal / 60),
+              minutes: newTotal % 60,
+              totalMinutes: newTotal
+            })
+          }
+        })
+      }
+    })
+
+    return hoursMap
+  }, [days, getEventsForDate, eventTypes, tz])
+
+  const today = dayjs()
+  const currentTimeTop = getTimePosition(hourHeight)
+
+  const getColor = (event: Event) =>
+    getEventDisplayColor ? getEventDisplayColor(event) : getEventBackgroundColor(event.show_as)
 
   return (
-    <div style={{ 
-      position: 'relative'
-    }}>
-      {/* Show loading overlay while calculating events */}
-      {(isPending || isCalculating) && (
+    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+      {/* Loading overlay */}
+      {isPending && (
         <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
           backgroundColor: token.colorBgMask,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
           zIndex: 1000
         }}>
           <Spin size="large" />
         </div>
       )}
+
       {/* Week Header */}
-      <div className="ant-picker-calendar-header" style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
+      <div className="ant-picker-calendar-header" style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         padding: '12px',
         backgroundColor: token.colorBgContainer,
         borderBottom: `1px solid ${token.colorBorder}`
       }}>
-        <div className="ant-picker-calendar-header-value">
-          <Space>
-            <Button
-              loading={isPending}
-              onClick={() => {
-                startTransition(() => {
-                  setCurrentWeek(dayjs())
-                })
-              }}
-              title="Go to today"
-            >
-              Today
-            </Button>
-            <Button
-              icon={<LeftOutlined />}
-              loading={isPending}
-              onClick={() => {
-                startTransition(() => {
-                  setCurrentWeek(currentWeek.subtract(1, 'week'))
-                })
-              }}
-              title="Previous week"
-            />
-            <DatePicker 
-              value={currentWeek}
-              onChange={(date) => {
-                if (date) {
-                  startTransition(() => {
-                    setCurrentWeek(date)
-                  })
-                }
-              }}
-              picker="week"
-              allowClear={false}
-              format={(value) => {
-                const start = value.startOf('week')
-                const end = value.endOf('week')
-                return `${start.format('MMM D')} - ${end.format('MMM D, YYYY')}`
-              }}
-            />
-            <Button
-              icon={<RightOutlined />}
-              loading={isPending}
-              onClick={() => {
-                startTransition(() => {
-                  setCurrentWeek(currentWeek.add(1, 'week'))
-                })
-              }}
-              title="Next week"
-            />
-          </Space>
-        </div>
-        <div className="ant-picker-calendar-header-view">
-          <Radio.Group 
-            value="Week"
-            block 
-            buttonStyle="solid"
-            onChange={(e) => {
-              const selectedValue = e.target.value
-              if (selectedValue === 'Week') {
-                setViewMode('week')
-              } else if (selectedValue === 'Table') {
-                setViewMode('table')
-              } else if (selectedValue === 'Month') {
-                setViewMode('month')
-                setCalendarType('month')
-              } else if (selectedValue === 'Year') {
-                setViewMode('month')
-                setCalendarType('year')
-              }
-            }}
-            options={[
-              { label: 'Week', value: 'Week' },
-              { label: 'Month', value: 'Month' },
-              { label: 'Year', value: 'Year' },
-              { label: 'Table', value: 'Table' }
-            ]} 
-            defaultValue="Week" 
-            optionType="button"
+        <Space>
+          <Button
+            loading={isPending}
+            onClick={() => startTransition(() => setCurrentWeek(dayjs()))}
+            title="Go to today"
+          >
+            Today
+          </Button>
+          <Button
+            icon={<LeftOutlined />}
+            loading={isPending}
+            onClick={() => startTransition(() => setCurrentWeek(currentWeek.subtract(1, 'week')))}
+            title="Previous week"
           />
-        </div>
+          <DatePicker
+            value={currentWeek}
+            onChange={(date) => {
+              if (date) startTransition(() => setCurrentWeek(date))
+            }}
+            picker="week"
+            allowClear={false}
+            format={(value) => {
+              const start = value.startOf('week')
+              const end = value.endOf('week')
+              return `${start.format('MMM D')} - ${end.format('MMM D, YYYY')}`
+            }}
+          />
+          <Button
+            icon={<RightOutlined />}
+            loading={isPending}
+            onClick={() => startTransition(() => setCurrentWeek(currentWeek.add(1, 'week')))}
+            title="Next week"
+          />
+          <Tooltip title="Zoom out (Ctrl+Scroll down)">
+            <Button
+              icon={<ZoomOutOutlined />}
+              onClick={zoomOut}
+              disabled={!canZoomOut}
+              size="small"
+            />
+          </Tooltip>
+          <Tooltip title="Zoom in (Ctrl+Scroll up)">
+            <Button
+              icon={<ZoomInOutlined />}
+              onClick={zoomIn}
+              disabled={!canZoomIn}
+              size="small"
+            />
+          </Tooltip>
+        </Space>
+        <Radio.Group
+          value="Week"
+          block
+          buttonStyle="solid"
+          onChange={(e) => {
+            const v = e.target.value
+            if (v === 'Week') setViewMode('week')
+            else if (v === 'Day') setViewMode('day')
+            else if (v === 'Table') setViewMode('table')
+            else if (v === 'Month') { setViewMode('month'); setCalendarType('month') }
+            else if (v === 'Year') { setViewMode('month'); setCalendarType('year') }
+          }}
+          options={[
+            { label: 'Day', value: 'Day' },
+            { label: 'Week', value: 'Week' },
+            { label: 'Month', value: 'Month' },
+            { label: 'Year', value: 'Year' },
+            { label: 'Table', value: 'Table' }
+          ]}
+          optionType="button"
+        />
       </div>
-      
-      {/* Week Grid */}
-      <div style={{ 
-        flex: 1,
-        height: 'calc(100vh - 200px)',
-        overflowY: 'auto',
-        overflowX: 'hidden',
-        backgroundColor: token.colorBgContainer,
-        position: 'relative'
-      }}>
-        {isPending && (
+
+      {/* Scrollable content area */}
+      <div
+        ref={scrollContainerRef}
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          backgroundColor: token.colorBgContainer,
+          position: 'relative'
+        }}
+      >
+        {/* Day column headers (sticky) */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '80px repeat(7, 1fr)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          backgroundColor: token.colorBgContainer,
+          borderBottom: `1px solid ${token.colorBorder}`
+        }}>
+          {/* Time column header */}
           <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(255, 255, 255, 0.8)',
+            padding: '8px',
+            borderRight: `1px solid ${token.colorBorder}`,
+            backgroundColor: token.colorFillAlter,
+            textAlign: 'center',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000
+            justifyContent: 'center'
           }}>
-            <Spin size="large" />
+            <Text strong style={{ fontSize: '12px' }}>Time</Text>
           </div>
-        )}
-        <table 
-          style={{ 
-            width: '100%',
-            borderCollapse: 'separate',
-            borderSpacing: '0',
-            tableLayout: 'fixed',
-            borderBottom: `1px solid ${token.colorBorder}`
-          }}
-          ref={(el) => {
-            if (el && SEVEN_AM_INDEX > 0) {
-              // Scroll to 7 AM, accounting for sticky header (5-minute rows at 13.33px each)
-              const scrollTop = (SEVEN_AM_INDEX * 13.33)
-              el.parentElement?.scrollTo({ top: scrollTop, behavior: 'smooth' })
-            }
-          }}
-        >
-          <thead style={{ position: 'sticky', top: -1, zIndex: 10, backgroundColor: token.colorBgContainer }}>
-            {/* Day Headers */}
-            <tr>
-              <th style={{ 
-                width: '80px',
-                height: '60px',
-                padding: '8px', 
-                border: `1px solid ${token.colorBorder}`,
-                backgroundColor: token.colorFillAlter,
-                textAlign: 'center'
-              }}>
-                <Typography.Text strong style={{ fontSize: '12px' }}>Time</Typography.Text>
-              </th>
-              {days.map(day => {
-                const isToday = day.isSame(dayjs(), 'day')
-                return (
-                  <th 
-                    key={`header-${day.format('YYYY-MM-DD')}`}
-                    style={{ 
-                      height: '60px',
-                      padding: '8px', 
-                      border: `1px solid ${token.colorBorder}`,
-                      backgroundColor: isToday ? token.colorPrimaryBg : token.colorFillAlter,
-                      textAlign: 'center'
-                    }}
-                  >
-                    <Typography.Text strong style={{ fontSize: '12px' }}>{day.format('ddd')}</Typography.Text>
-                    <div style={{ marginTop: '2px' }}>
-                      <Typography.Text style={{ fontSize: '14px' }}>{day.format('M/D')}</Typography.Text>
-                    </div>
-                  </th>
-                )
-              })}
-            </tr>
-            
-            {/* All-day events in header */}
-            {(() => {
-              // Get all all-day events for the week from pre-processed data
-              const allDayEvents: Array<Event & { startDay: Dayjs; endDay: Dayjs }> = []
-              days.forEach(day => {
-                const dayKey = day.format('YYYY-MM-DD')
-                const dayEvents = weekEvents.events.get(dayKey)?.allDay || []
-                dayEvents.forEach((event: Event) => {
-                  // For all-day events, treat as calendar dates without timezone conversion
-                  const eventStart = dayjs(event.start_date)
-                  // For all-day events, Microsoft Graph sets end date to the day after, so subtract 1 day for proper display
-                  const eventEnd = event.end_date ? dayjs(event.end_date).subtract(1, 'day') : eventStart
-                  
-                  // Check if this event is already in our list (to avoid duplicates for multi-day events)
-                  if (!allDayEvents.find(e => e.id === event.id)) {
-                    const eventWithDays = {
-                      ...event,
-                      startDay: eventStart.startOf('day'),
-                      endDay: eventEnd.startOf('day')
-                    }
-                    allDayEvents.push(eventWithDays)
-                  }
-                })
-              })
-
-              // Group overlapping all-day events into rows
-              type EventWithDays = Event & { startDay: Dayjs; endDay: Dayjs }
-              const eventRows: EventWithDays[][] = []
-              allDayEvents.forEach((event: EventWithDays) => {
-                let placed = false
-                for (let rowIndex = 0; rowIndex < eventRows.length; rowIndex++) {
-                  const row = eventRows[rowIndex]
-                  const hasConflict = row.some((existingEvent: EventWithDays) => {
-                    return (event.startDay.isBefore(existingEvent.endDay.add(1, 'day')) && 
-                            event.endDay.add(1, 'day').isAfter(existingEvent.startDay))
+          {/* Day headers */}
+          {days.map(day => {
+            const isToday = day.isSame(today, 'day')
+            return (
+              <div
+                key={`header-${day.format('YYYY-MM-DD')}`}
+                style={{
+                  padding: '8px',
+                  borderRight: `1px solid ${token.colorBorder}`,
+                  backgroundColor: isToday ? token.colorPrimaryBg : token.colorFillAlter,
+                  textAlign: 'center',
+                  cursor: 'pointer'
+                }}
+                onClick={() => {
+                  startTransition(() => {
+                    setCurrentWeek(day)
+                    setViewMode('day')
                   })
-                  
-                  if (!hasConflict) {
-                    row.push(event)
-                    placed = true
-                    break
-                  }
-                }
-                
-                if (!placed) {
-                  eventRows.push([event])
-                }
-              })
+                }}
+                title="Click to view this day"
+              >
+                <Text strong style={{ fontSize: '12px' }}>{day.format('ddd')}</Text>
+                <div style={{ marginTop: '2px' }}>
+                  <Text style={{ fontSize: '14px' }}>{day.format('M/D')}</Text>
+                </div>
+              </div>
+            )
+          })}
 
-              return eventRows.map((row, rowIndex) => (
-                <tr key={`all-day-row-${rowIndex}`} style={{ height: '30px' }}>
-                  <th style={{
-                    width: '80px',
-                    height: '30px',
+          {/* All-day event rows */}
+          {allDayRows.length > 0 && (
+            <>
+              {allDayRows.map((row, rowIndex) => (
+                <React.Fragment key={`all-day-row-${rowIndex}`}>
+                  <div style={{
                     padding: '4px 8px',
-                    borderTop: rowIndex === 0 ? `1px solid ${token.colorBorder}` : 'none',
-                    borderBottom: rowIndex === eventRows.length - 1 ? `1px solid ${token.colorBorder}` : 'none',
-                    borderLeft: `1px solid ${token.colorBorder}`,
                     borderRight: `1px solid ${token.colorBorder}`,
+                    borderBottom: rowIndex === allDayRows.length - 1 ? `1px solid ${token.colorBorder}` : 'none',
                     backgroundColor: token.colorFillAlter,
                     textAlign: 'right',
-                    verticalAlign: 'middle'
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end'
                   }}>
                     {rowIndex === 0 && (
-                      <Typography.Text type="secondary" style={{ fontSize: '10px' }}>
-                        All Day
-                      </Typography.Text>
+                      <Text type="secondary" style={{ fontSize: '10px' }}>All Day</Text>
                     )}
-                  </th>
-                  
+                  </div>
                   {days.map((day, dayIndex) => {
-                    // Find events that should render in this day column
-                    const eventsToRender = row.filter((event: EventWithDays) => {
-                      const weekStart = days[0]
-                      const weekEnd = days[6]
-                      
-                      // Check if this event overlaps with the current week
-                      const eventOverlapsWeek = (event.startDay.isSame(weekEnd, 'day') || event.startDay.isBefore(weekEnd, 'day')) && 
-                                               (event.endDay.isSame(weekStart, 'day') || event.endDay.isAfter(weekStart, 'day'))
-                      
+                    const weekStart = days[0]
+                    const weekEnd = days[6]
+
+                    const eventsToRender = row.filter(event => {
+                      const eventOverlapsWeek =
+                        (event.startDay.isSame(weekEnd, 'day') || event.startDay.isBefore(weekEnd, 'day')) &&
+                        (event.endDay.isSame(weekStart, 'day') || event.endDay.isAfter(weekStart, 'day'))
                       if (!eventOverlapsWeek) return false
-                      
-                      // For events that start before the week, render on Sunday (day 0)
-                      // For events that start within the week, render on their start day
+
                       const eventStartInWeek = event.startDay.isBefore(weekStart) ? weekStart : event.startDay
                       const startDayIndex = days.findIndex(d => d.isSame(eventStartInWeek, 'day'))
-                      
-                      // Only render on the first day of the event span within this week
                       return startDayIndex === dayIndex
                     })
-                    
+
                     return (
-                      <th
-                        key={`${day.format('YYYY-MM-DD')}-all-day-${rowIndex}`}
+                      <div
+                        key={`${day.format('YYYY-MM-DD')}-allday-${rowIndex}`}
                         style={{
                           height: '30px',
                           padding: '2px',
-                          borderTop: rowIndex === 0 ? `1px solid ${token.colorBorder}` : 'none',
-                          borderBottom: rowIndex === eventRows.length - 1 ? `1px solid ${token.colorBorder}` : 'none',
-                          borderLeft: dayIndex === 0 ? `1px solid ${token.colorBorder}` : 'none',
-                          borderRight: dayIndex === 6 ? `1px solid ${token.colorBorder}` : 'none',
+                          borderRight: `1px solid ${token.colorBorder}`,
+                          borderBottom: rowIndex === allDayRows.length - 1 ? `1px solid ${token.colorBorder}` : 'none',
                           backgroundColor: token.colorBgContainer,
-                          verticalAlign: 'middle',
                           position: 'relative'
                         }}
                       >
-                        {eventsToRender.map((event: EventWithDays) => {
-                          // Calculate how many days this event spans within the current week
-                          const weekStart = days[0]
-                          const weekEnd = days[6]
+                        {eventsToRender.map(event => {
                           const eventStartInWeek = event.startDay.isBefore(weekStart) ? weekStart : event.startDay
                           const eventEndInWeek = event.endDay.isAfter(weekEnd) ? weekEnd : event.endDay
-                          
-                          // Calculate position and width
-                          const startDayIndex = days.findIndex(d => d.isSame(eventStartInWeek, 'day'))
-                          const endDayIndex = days.findIndex(d => d.isSame(eventEndInWeek, 'day'))
-                          const spanDays = endDayIndex - startDayIndex + 1
-                          
-                          // Calculate width to span across multiple columns
-                          const columnWidth = 100 // each column is 100% of its container
-                          const totalWidth = `calc(${spanDays * columnWidth}% + ${(spanDays - 1)}px)` // Account for borders
-                          
+                          const startIdx = days.findIndex(d => d.isSame(eventStartInWeek, 'day'))
+                          const endIdx = days.findIndex(d => d.isSame(eventEndInWeek, 'day'))
+                          const spanDays = endIdx - startIdx + 1
+
                           return (
                             <div
                               key={event.id}
@@ -601,12 +472,12 @@ const WeekView: React.FC<WeekViewProps> = memo(({
                                 position: 'absolute',
                                 top: '3px',
                                 left: '2px',
-                                width: spanDays > 1 ? totalWidth : 'calc(100% - 4px)',
+                                width: spanDays > 1 ? `calc(${spanDays * 100}% + ${spanDays - 1}px)` : 'calc(100% - 4px)',
                                 height: '24px',
                                 fontSize: '11px',
                                 padding: '4px 6px',
                                 borderRadius: '3px',
-                                backgroundColor: getEventDisplayColor ? getEventDisplayColor(event) : getEventBackgroundColor(event.show_as),
+                                backgroundColor: getColor(event),
                                 color: '#fff',
                                 cursor: 'pointer',
                                 overflow: 'hidden',
@@ -624,205 +495,226 @@ const WeekView: React.FC<WeekViewProps> = memo(({
                             </div>
                           )
                         })}
-                      </th>
+                      </div>
                     )
                   })}
-                </tr>
-              ))
-            })()}
-          </thead>
-          
-          {/* Time Grid */}
-          <tbody>
-            {TIME_SLOTS.map((timeSlot) => (
-              <tr key={timeSlot.time}>
-                {timeSlot.showLabel && (
-                  <td 
-                    rowSpan={3}
-                    style={{ 
-                      width: '80px',
-                      height: '40px',
-                      padding: '2px 8px',
-                      border: `1px solid ${token.colorBorder}`,
-                      backgroundColor: token.colorFillAlter,
-                      textAlign: 'right',
-                      verticalAlign: 'top'
+                </React.Fragment>
+              ))}
+            </>
+          )}
+        </div>
+
+        {/* Time grid body */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '80px repeat(7, 1fr)',
+          position: 'relative'
+        }}>
+          {/* Time gutter */}
+          <div style={{ position: 'relative' }}>
+            {HOURS.map(hour => (
+              <div
+                key={`time-${hour}`}
+                style={{
+                  height: `${hourHeight}px`,
+                  padding: '2px 8px',
+                  borderRight: `1px solid ${token.colorBorder}`,
+                  borderBottom: `1px solid ${token.colorBorder}`,
+                  backgroundColor: token.colorFillAlter,
+                  textAlign: 'right',
+                  boxSizing: 'border-box'
+                }}
+              >
+                <Text type="secondary" style={{ fontSize: '10px' }}>
+                  {formatHour(hour)}
+                </Text>
+              </div>
+            ))}
+          </div>
+
+          {/* Day columns */}
+          {days.map(day => {
+            const dayKey = day.format('YYYY-MM-DD')
+            const isToday = day.isSame(today, 'day')
+            const dayData = weekData.get(dayKey)
+            const positioned = dayData?.positioned || []
+
+            return (
+              <div
+                key={`col-${dayKey}`}
+                style={{
+                  position: 'relative',
+                  height: `${24 * hourHeight}px`,
+                  borderRight: `1px solid ${token.colorBorder}`
+                }}
+              >
+                {/* Hour grid lines with quarter-hour subdivisions */}
+                {HOURS.map(hour => (
+                  <div
+                    key={`grid-${hour}`}
+                    style={{
+                      position: 'absolute',
+                      top: `${hour * hourHeight}px`,
+                      left: 0,
+                      right: 0,
+                      height: `${hourHeight}px`,
+                      borderBottom: `1px solid ${token.colorBorder}`,
+                      boxSizing: 'border-box'
                     }}
                   >
-                    <Typography.Text type="secondary" style={{ fontSize: '10px' }}>
-                      {timeSlot.display}
-                    </Typography.Text>
-                  </td>
+                    <div style={{
+                      position: 'absolute', top: '25%', left: 0, right: 0,
+                      borderBottom: `1px dotted ${token.colorBorderSecondary}`
+                    }} />
+                    <div style={{
+                      position: 'absolute', top: '50%', left: 0, right: 0,
+                      borderBottom: `1px dashed ${token.colorBorderSecondary}`
+                    }} />
+                    <div style={{
+                      position: 'absolute', top: '75%', left: 0, right: 0,
+                      borderBottom: `1px dotted ${token.colorBorderSecondary}`
+                    }} />
+                  </div>
+                ))}
+
+                {/* Current time indicator */}
+                {isToday && (
+                  <div style={{
+                    position: 'absolute',
+                    top: `${currentTimeTop}px`,
+                    left: 0, right: 0,
+                    zIndex: 15,
+                    pointerEvents: 'none'
+                  }}>
+                    <div style={{
+                      position: 'absolute', left: -4, top: -4,
+                      width: 8, height: 8,
+                      borderRadius: '50%',
+                      backgroundColor: '#f5222d'
+                    }} />
+                    <div style={{
+                      height: '2px',
+                      backgroundColor: '#f5222d',
+                      width: '100%'
+                    }} />
+                  </div>
                 )}
-                
-                {days.map(day => {
-                  const dayKey = day.format('YYYY-MM-DD')
-                  // Use pre-processed time slot lookup for much faster access
-                  const timeSlotLookup = weekEvents.timeSlotMap.get(dayKey) || new Map()
-                  const timeSlotEvents = timeSlotLookup.get(timeSlot.time) || []
-                  
-                  // Get pre-calculated overlapping groups for this day
-                  const overlappingGroups = dayOverlapMap.get(dayKey) || new Map()
-                  
+
+                {/* Events */}
+                {positioned.map((event) => {
+                  const colWidth = 100 / event.totalColumns
+                  const left = event.column * colWidth
+                  const width = colWidth
+                  const zIndex = 5 + event.column
+
+                  const startTime = event.localStart.format('h:mm A')
+                  const endTime = event.localEnd.format('h:mm A')
+
                   return (
-                    <td 
-                      key={`${day.format('YYYY-MM-DD')}-${timeSlot.time}`}
-                      style={{ 
-                        height: '13.33px',
-                        padding: '0', 
-                        borderLeft: `1px solid ${token.colorBorder}`,
-                        borderRight: `1px solid ${token.colorBorder}`,
-                        borderTop: (parseInt(timeSlot.time.split(':')[1]) % 15 === 0) ? `1px solid ${token.colorBorder}` : '0',
-                        borderBottom: '0',
-                        backgroundColor: token.colorBgContainer,
-                        verticalAlign: 'top',
-                        position: 'relative'
+                    <div
+                      key={event.id}
+                      onClick={() => {
+                        setSelectedEvent(event)
+                        setIsModalVisible(true)
                       }}
+                      style={{
+                        position: 'absolute',
+                        top: `${event.top}px`,
+                        left: `${left}%`,
+                        width: `${width}%`,
+                        height: `${Math.max(event.height - 2, 14)}px`,
+                        fontSize: '10px',
+                        padding: '2px 4px',
+                        borderRadius: '4px',
+                        backgroundColor: getColor(event),
+                        color: '#fff',
+                        cursor: 'pointer',
+                        overflow: 'hidden',
+                        zIndex,
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        boxSizing: 'border-box'
+                      }}
+                      title={`${event.title} (${startTime} - ${endTime})`}
                     >
-                      {timeSlotEvents.map((event: ProcessedEvent, index: number) => {
-                        // Use pre-processed timezone-converted dates
-                        const eventStart = event.processedStart
-                        const eventEnd = event.processedEnd
-                        
-                        if (!eventStart || !eventEnd) return null
-                        
-                        // Calculate the intersection of the event with this specific day
-                        const dayStart = day.startOf('day')
-                        const dayEnd = day.endOf('day')
-                        const intersectionStart = eventStart.isAfter(dayStart) ? eventStart : dayStart
-                        const intersectionEnd = eventEnd.isBefore(dayEnd) ? eventEnd : dayEnd
-                        
-                        // Only render if there's a valid intersection with this day
-                        if (!intersectionStart.isBefore(intersectionEnd)) return null
-                        
-                        // Calculate duration for just the portion within this day
-                        const intersectionDurationMinutes = intersectionEnd.diff(intersectionStart, 'minute')
-                        const slots = Math.max(1, Math.ceil(intersectionDurationMinutes / 5))
-                        const height = (slots * 13.33) - 2 // 13.33px per slot minus border/padding
-                        
-                        // Calculate the visual start time for this day's portion
-                        const visualStartTime = intersectionStart.format('h:mm A')
-                        const visualEndTime = intersectionEnd.format('h:mm A')
-                        
-                        // Find this event's overlapping group (already sorted)
-                        let eventGroup: ProcessedEvent[] = []
-                        let eventIndex = 0
-                        for (const [, group] of overlappingGroups) {
-                          if (group.find((e: ProcessedEvent) => e.id === event.id)) {
-                            eventGroup = group
-                            eventIndex = eventGroup.findIndex((e: ProcessedEvent) => e.id === event.id)
-                            break
-                          }
-                        }
-                        
-                        const totalOverlapping = eventGroup.length
-                        const width = totalOverlapping > 1 ? `${100 / totalOverlapping}%` : 'calc(100% - 4px)'
-                        const leftOffset = totalOverlapping > 1 ? `${(eventIndex * 100) / totalOverlapping}%` : '2px'
-                        
-                        return (
-                          <div
-                            key={`${event.id}-${index}`}
-                            onClick={() => {
-                              setSelectedEvent(event)
-                              setIsModalVisible(true)
-                            }}
-                            style={{
-                              position: 'absolute',
-                              top: '1px',
-                              left: leftOffset,
-                              width: width,
-                              height: `${height}px`,
-                              fontSize: '10px',
-                              padding: '2px 4px',
-                              borderRadius: '2px',
-                              backgroundColor: getEventDisplayColor ? getEventDisplayColor(event) : getEventBackgroundColor(event.show_as),
-                              color: '#fff',
-                              cursor: 'pointer',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              zIndex: 5,
-                              border: '1px solid rgba(255,255,255,0.2)'
-                            }}
-                            title={`${event.title} (${visualStartTime} - ${visualEndTime})`}
-                          >
-                            <Text style={{ fontWeight: 'bold', fontSize: '9px' }}>
-                              {visualStartTime}
-                            </Text>
-                            <Text style={{ marginTop: '2px', display: 'block' }}>
-                              {event.title}
-                            </Text>
-                          </div>
-                        )
-                      })}
-                    </td>
+                      <Text style={{ fontWeight: 'bold', fontSize: '9px', color: '#fff' }}>
+                        {startTime}
+                      </Text>
+                      {event.height > 30 && (
+                        <Text style={{ display: 'block', fontSize: '10px', color: '#fff' }}>
+                          {event.title}
+                        </Text>
+                      )}
+                      {event.height <= 30 && (
+                        <Text style={{ marginLeft: '4px', fontSize: '10px', color: '#fff' }}>
+                          {event.title}
+                        </Text>
+                      )}
+                    </div>
                   )
                 })}
-              </tr>
-            ))}
-          </tbody>
-          
-          {/* Billable Hours Footer */}
-          <tfoot style={{ position: 'sticky', bottom: 0, zIndex: 10, backgroundColor: token.colorBgContainer }}>
-            <tr>
-              <th style={{ 
-                width: '80px',
-                height: '40px',
-                padding: '8px', 
-                border: `1px solid ${token.colorBorder}`,
-                backgroundColor: token.colorFillAlter,
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Billable Hours Footer (sticky) */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '80px repeat(7, 1fr)',
+        borderTop: `1px solid ${token.colorBorder}`,
+        backgroundColor: token.colorBgContainer,
+        flexShrink: 0
+      }}>
+        <div style={{
+          padding: '8px',
+          borderRight: `1px solid ${token.colorBorder}`,
+          backgroundColor: token.colorFillAlter,
+          textAlign: 'center',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <Text strong style={{ fontSize: '12px' }}>Billable</Text>
+        </div>
+        {days.map((day, index) => {
+          const dayKey = day.format('YYYY-MM-DD')
+          const billableTime = dailyBillableHours.get(dayKey) || { hours: 0, minutes: 0, totalMinutes: 0 }
+          const isToday = day.isSame(today, 'day')
+
+          let runningTotalMinutes = 0
+          for (let i = 0; i <= index; i++) {
+            const k = days[i].format('YYYY-MM-DD')
+            runningTotalMinutes += (dailyBillableHours.get(k) || { totalMinutes: 0 }).totalMinutes
+          }
+          const runningHours = Math.floor(runningTotalMinutes / 60)
+          const runningMinutes = runningTotalMinutes % 60
+
+          return (
+            <div
+              key={`footer-${dayKey}`}
+              style={{
+                padding: '8px',
+                borderRight: `1px solid ${token.colorBorder}`,
+                backgroundColor: isToday ? token.colorPrimaryBg : token.colorFillAlter,
                 textAlign: 'center'
-              }}>
-                <Typography.Text strong style={{ fontSize: '12px' }}>Billable</Typography.Text>
-              </th>
-              {days.map((day, index) => {
-                const dayKey = day.format('YYYY-MM-DD')
-                const billableTime = dailyBillableHours.get(dayKey) || { hours: 0, minutes: 0 }
-                const isToday = day.isSame(dayjs(), 'day')
-
-                // Calculate running total up to and including this day
-                let runningTotalMinutes = 0
-                for (let i = 0; i <= index; i++) {
-                  const dayKeyIter = days[i].format('YYYY-MM-DD')
-                  const billableTimeIter = dailyBillableHours.get(dayKeyIter) || { hours: 0, minutes: 0, totalMinutes: 0 }
-                  runningTotalMinutes += billableTimeIter.totalMinutes
-                }
-
-                const runningHours = Math.floor(runningTotalMinutes / 60)
-                const runningMinutes = runningTotalMinutes % 60
-
-                return (
-                  <th
-                    key={`footer-${dayKey}`}
-                    style={{
-                      height: '40px',
-                      padding: '8px',
-                      border: `1px solid ${token.colorBorder}`,
-                      backgroundColor: isToday ? token.colorPrimaryBg : token.colorFillAlter,
-                      textAlign: 'center'
-                    }}
-                  >
-                    <div>
-                      <Typography.Text strong style={{ fontSize: '12px' }}>
-                        {billableTime.hours > 0 || billableTime.minutes > 0
-                          ? `${billableTime.hours}h ${billableTime.minutes}m`
-                          : '-'
-                        }
-                      </Typography.Text>
-                    </div>
-                    <div style={{ marginTop: '4px' }}>
-                      <Typography.Text type="secondary" style={{ fontSize: '10px' }}>
-                        {runningTotalMinutes > 0
-                          ? `${runningHours}h ${runningMinutes}m`
-                          : ''
-                        }
-                      </Typography.Text>
-                    </div>
-                  </th>
-                )
-              })}
-            </tr>
-          </tfoot>
-        </table>
+              }}
+            >
+              <div>
+                <Text strong style={{ fontSize: '12px' }}>
+                  {billableTime.hours > 0 || billableTime.minutes > 0
+                    ? `${billableTime.hours}h ${billableTime.minutes}m`
+                    : '-'}
+                </Text>
+              </div>
+              <div style={{ marginTop: '4px' }}>
+                <Text type="secondary" style={{ fontSize: '10px' }}>
+                  {runningTotalMinutes > 0 ? `${runningHours}h ${runningMinutes}m` : ''}
+                </Text>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

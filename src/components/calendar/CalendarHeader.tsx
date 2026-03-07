@@ -14,7 +14,7 @@ interface CalendarHeaderProps {
   onTypeChange: (type: 'month' | 'year') => void
   onCurrentDateChange: (date: Dayjs) => void
   onCurrentWeekChange: (date: Dayjs) => void
-  onViewModeChange: (mode: 'week' | 'month' | 'table') => void
+  onViewModeChange: (mode: 'week' | 'day' | 'month' | 'table') => void
   onCalendarTypeChange: (type: 'month' | 'year') => void
   exportFunction?: (() => void) | null
 }
