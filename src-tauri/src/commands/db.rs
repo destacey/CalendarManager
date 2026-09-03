@@ -5,6 +5,7 @@
 
 use tauri::State;
 
+use crate::db::assignment::{self, EventFieldsInput, ReprocessEventTypesResult};
 use crate::db::categories::{self, NewCategory};
 use crate::db::error::DbResult;
 use crate::db::event_types::{
@@ -109,4 +110,24 @@ pub async fn delete_event_type_rule(db: State<'_, Db>, id: i64) -> DbResult<bool
 #[tauri::command]
 pub async fn update_rule_priorities(db: State<'_, Db>, rule_ids: Vec<i64>) -> DbResult<bool> {
     db.call(move |conn| event_types::update_rule_priorities(conn, &rule_ids)).await
+}
+
+#[tauri::command]
+pub async fn evaluate_event_type(db: State<'_, Db>, fields: EventFieldsInput) -> DbResult<Option<i64>> {
+    db.call(move |conn| assignment::evaluate_event_type(conn, &fields.into())).await
+}
+
+#[tauri::command]
+pub async fn set_event_type_manually(db: State<'_, Db>, event_id: i64, type_id: i64) -> DbResult<bool> {
+    db.call(move |conn| assignment::set_event_type_manually(conn, event_id, type_id)).await
+}
+
+#[tauri::command]
+pub async fn reprocess_event_types(db: State<'_, Db>) -> DbResult<ReprocessEventTypesResult> {
+    db.call(|conn| Ok(assignment::reprocess_event_types(conn))).await
+}
+
+#[tauri::command]
+pub async fn reset_event_type_to_auto(db: State<'_, Db>, event_id: i64) -> DbResult<Option<i64>> {
+    db.call(move |conn| assignment::reset_event_type_to_auto(conn, event_id)).await
 }

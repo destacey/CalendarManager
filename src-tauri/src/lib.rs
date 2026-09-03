@@ -99,6 +99,10 @@ pub fn run() {
             commands::db::update_event_type_rule,
             commands::db::delete_event_type_rule,
             commands::db::update_rule_priorities,
+            commands::db::evaluate_event_type,
+            commands::db::set_event_type_manually,
+            commands::db::reprocess_event_types,
+            commands::db::reset_event_type_to_auto,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
