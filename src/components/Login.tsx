@@ -11,18 +11,32 @@ interface LoginProps {
 
 const Login: React.FC<LoginProps> = ({ onLoginSuccess, onLoginError }) => {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleLogin = async () => {
     setLoading(true);
+    setError(null);
     try {
       const { authService } = await import('../services/auth');
       await authService.login();
       onLoginSuccess();
-    } catch (error) {
-      console.error('Login failed:', error);
-      onLoginError(typeof error === 'string' ? error : 'Login failed');
+    } catch (caught) {
+      // Rust rejects with a plain, readable string, so it is worth showing
+      // rather than only logging — the likeliest failure here is Entra's
+      // AADSTS7000218, which names its own fix.
+      const message = typeof caught === 'string' ? caught : 'Login failed';
+      console.error('Login failed:', caught);
+      setError(message);
+      onLoginError(message);
       setLoading(false);
     }
+  };
+
+  const handleCancel = async () => {
+    const { authService } = await import('../services/auth');
+    await authService.cancelLogin();
+    // The pending login() rejects with 'Login was cancelled', which clears
+    // the loading state through the catch above.
   };
 
   return (
@@ -50,6 +64,17 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onLoginError }) => {
             showIcon
           />
 
+          {error && (
+            <Alert
+              title="Sign-in failed"
+              description={error}
+              type="error"
+              showIcon
+              closable
+              onClose={() => setError(null)}
+            />
+          )}
+
           <div style={{ textAlign: 'center' }}>
             <Button 
               type="primary" 
@@ -59,8 +84,13 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onLoginError }) => {
               loading={loading}
               block
             >
-              Sign in with Microsoft
+              {loading ? 'Waiting for your browser…' : 'Sign in with Microsoft'}
             </Button>
+            {loading && (
+              <Button type="link" onClick={handleCancel} style={{ marginTop: 8 }}>
+                Cancel
+              </Button>
+            )}
           </div>
         </Space>
       </Card>
