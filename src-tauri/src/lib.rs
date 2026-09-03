@@ -1,5 +1,6 @@
 mod auth;
 mod commands;
+mod db;
 
 use std::time::Duration;
 
@@ -34,6 +35,28 @@ pub fn run() {
                     }
                 }
             });
+
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| format!("no app data dir: {e}"))?;
+
+            // Where electron/main.js kept it: the repo root, i.e. the parent of
+            // src-tauri during development. Also check beside the executable,
+            // which is where a packaged Electron build would have left it.
+            let mut legacy = Vec::new();
+            if let Ok(cwd) = std::env::current_dir() {
+                legacy.push(cwd.join("calendar.db"));
+                legacy.push(cwd.join("..").join("calendar.db"));
+            }
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(dir) = exe.parent() {
+                    legacy.push(dir.join("calendar.db"));
+                }
+            }
+
+            app.manage(db::open(&app_data_dir, &legacy)?);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
