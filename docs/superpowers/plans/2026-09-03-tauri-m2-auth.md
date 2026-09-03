@@ -15,6 +15,10 @@
 - **Authority:** `https://login.microsoftonline.com/organizations` — organizations, not `common` and not a tenant GUID. This matches the existing `src/services/auth.ts:20`.
 - **Scopes requested:** exactly `offline_access User.Read Calendars.Read Calendars.ReadWrite`. `offline_access` is what yields the refresh token; the other three match today's behaviour.
 - **`prompt=select_account`** on the authorize request, matching `src/services/auth.ts:53`.
+- **Query encoding:** the authorization request query is
+  `application/x-www-form-urlencoded` per RFC 6749 §3.1 — so the redirect URI
+  is percent-encoded and the scope string's spaces become `+`, not `%20`.
+  `Url::query_pairs_mut` produces exactly this, and Entra accepts it.
 - **Redirect URI:** `http://localhost:{port}` where `{port}` is the OS-assigned port from binding `127.0.0.1:0`. Entra treats loopback redirects as port-agnostic, so the single registered `http://localhost` entry covers every port.
 - **Loopback bind address is `127.0.0.1`, never `0.0.0.0`.** Binding all interfaces would expose the authorization code catcher to the local network.
 - **The `state` parameter must be verified** on the redirect before the code is used, and a mismatch must abort the login. This is CSRF protection, not optional.
@@ -118,7 +122,13 @@ Two notes on these choices:
 
 - [ ] **Step 2: Write the failing tests**
 
-Create `src-tauri/src/auth/pkce.rs` containing **only** the test module for now:
+First register the module, or the test file is not part of the crate and Step 3
+reports "0 tests filtered out" instead of the compile error it expects. Create
+`src-tauri/src/auth/mod.rs` with `pub mod error;` and `pub mod pkce;`, add
+`mod auth;` to `src-tauri/src/lib.rs` beside `mod commands;`, and create
+`src-tauri/src/auth/error.rs` with the contents given in Step 6.
+
+Then create `src-tauri/src/auth/pkce.rs` containing **only** the test module for now:
 
 ```rust
 #[cfg(test)]
@@ -194,14 +204,23 @@ mod tests {
     }
 
     #[test]
-    fn authorize_url_percent_encodes_the_redirect_and_scopes() {
+    fn authorize_url_encodes_the_redirect_and_scopes() {
         let url = authorize_url("c", "http://localhost:1234", "ch", "st");
 
-        // A raw "http://localhost:1234" or spaces between scopes would be a
-        // malformed query string.
+        // The redirect URI is percent-encoded.
         assert!(url.contains("redirect_uri=http%3A%2F%2Flocalhost%3A1234"));
-        assert!(url.contains("offline_access"));
-        assert!(!url.contains("offline_access User.Read"));
+
+        // Scope spaces become '+', not '%20'. RFC 6749 section 3.1 specifies
+        // the authorization request query in application/x-www-form-urlencoded
+        // form, which is what Url::query_pairs_mut emits; Entra accepts it.
+        // Asserting the exact encoding means a silent change gets caught here
+        // rather than against the live endpoint.
+        assert!(url.contains(
+            "scope=offline_access+User.Read+Calendars.Read+Calendars.ReadWrite"
+        ));
+
+        // What must never appear is a raw, unencoded space anywhere in the URL.
+        assert!(!url.contains(' '), "authorize URL contained a raw space: {url}");
     }
 }
 ```
@@ -238,9 +257,12 @@ pub struct PkcePair {
     pub challenge: String,
 }
 
-/// Two UUIDs give 256 bits of entropy across 64 unreserved characters, inside
-/// RFC 7636's 43-128 range. `Uuid::new_v4` is a stabler source than `rand`,
-/// whose API has shifted across major versions.
+/// Two UUIDs give ~244 bits of entropy across 64 unreserved characters, inside
+/// RFC 7636's 43-128 range. (A v4 UUID has 6 of its 128 bits fixed as version
+/// and variant markers, so each contributes 122 random bits, not 128.)
+/// `Uuid::new_v4` is a stabler source than `rand`, whose API has shifted across
+/// major versions, and the uuid crate's v4 feature already draws from
+/// getrandom, so the randomness is OS-CSPRNG quality either way.
 pub fn generate_pkce() -> PkcePair {
     let verifier = format!(
         "{}{}",
