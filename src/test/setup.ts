@@ -13,9 +13,6 @@ Object.defineProperty(window, 'electronAPI', {
   value: {
     getEvents: vi.fn(() => Promise.resolve([])),
     syncGraphEvents: vi.fn(() => Promise.resolve()),
-    getConfig: vi.fn(() => Promise.resolve({})),
-    setConfig: vi.fn(() => Promise.resolve()),
-    clearConfig: vi.fn(() => Promise.resolve()),
     // Add other electronAPI methods as needed
   },
   writable: true,

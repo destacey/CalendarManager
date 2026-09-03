@@ -1,5 +1,28 @@
 # CLAUDE.md
 
+> ## ⚠️ Migration in progress: Electron → Tauri
+>
+> This project is migrating from Electron to Tauri v2. **The Electron
+> architecture described below is stale** and is rewritten in milestone M5.
+>
+> - **Design spec:** `docs/superpowers/specs/2026-09-03-electron-to-tauri-migration-design.md`
+> - **Backend:** Rust, in `src-tauri/`. `electron/` is deleted.
+> - **Frontend → backend calls:** typed wrappers in `src/api/`, over Tauri
+>   `invoke()`. **Do not add `window.electronAPI` call sites** — the remaining
+>   ones are legacy and are being removed milestone by milestone.
+> - **Config:** `tauri-plugin-store` via Rust commands. No `electron-store`,
+>   no localStorage fallback.
+> - **Run the app:** `npm start` (`tauri dev`). `npm run build` builds only the
+>   frontend; `npm run build:app` builds the desktop app.
+> - **Known incomplete:** the database layer (M2), authentication (M3), and
+>   Graph sync (M4) still reference the deleted Electron bridge and throw at
+>   runtime. This is expected.
+>
+> **The bundle identifier `com.triowfs.calendarmanager` in
+> `src-tauri/tauri.conf.json` is permanent.** `app_data_dir()` derives from it
+> and M2's database migration keys off that path. Changing it makes the app
+> start against an empty database at a new location.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Development Commands

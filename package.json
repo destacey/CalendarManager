@@ -40,7 +40,6 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-store": "^2.4.4",
     "antd": "^6.3.1",
     "dayjs": "^1.11.19",
     "exceljs": "^4.4.0",
