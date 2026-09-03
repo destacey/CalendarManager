@@ -12,13 +12,26 @@ const REFRESH_MARGIN: Duration = Duration::from_secs(300);
 const KEYRING_SERVICE: &str = "com.triowfs.calendarmanager";
 const KEYRING_ACCOUNT: &str = "microsoft-refresh-token";
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct TokenResponse {
     pub access_token: String,
     /// Absent on some refresh responses, in which case the existing token stands.
     #[serde(default)]
     pub refresh_token: Option<String>,
     pub expires_in: u64,
+}
+
+/// Hand-rolled so that `{:?}` can never print a token. A derived `Debug` would
+/// put both tokens in plaintext into any log line or panic message that
+/// formatted this struct.
+impl std::fmt::Debug for TokenResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenResponse")
+            .field("access_token", &"<redacted>")
+            .field("refresh_token", &self.refresh_token.as_ref().map(|_| "<redacted>"))
+            .field("expires_in", &self.expires_in)
+            .finish()
+    }
 }
 
 /// The display identity of the signed-in user. This is the ONLY auth data that
@@ -179,6 +192,22 @@ pub fn clear_refresh_token() -> AuthResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_output_never_contains_a_token() {
+        let response = TokenResponse {
+            access_token: "super-secret-access".into(),
+            refresh_token: Some("super-secret-refresh".into()),
+            expires_in: 3599,
+        };
+
+        let rendered = format!("{response:?}");
+
+        assert!(!rendered.contains("super-secret-access"));
+        assert!(!rendered.contains("super-secret-refresh"));
+        assert!(rendered.contains("<redacted>"));
+        assert!(rendered.contains("3599"));
+    }
 
     #[test]
     fn parses_a_token_response() {
