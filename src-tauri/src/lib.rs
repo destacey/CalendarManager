@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use tauri::Manager;
 
+use auth::AuthState;
+
 /// If the frontend never mounts (CSP violation, devUrl mismatch, module
 /// error), `src/main.tsx` never calls `show()` and the process would run with
 /// no window at all — leaving no way to open devtools and diagnose it. Show
@@ -15,6 +17,8 @@ const WINDOW_SHOW_FALLBACK: Duration = Duration::from_secs(5);
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_opener::init())
+        .manage(AuthState::default())
         .setup(|app| {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -36,6 +40,11 @@ pub fn run() {
             commands::config::get_config,
             commands::config::set_config,
             commands::config::clear_config,
+            commands::auth::login,
+            commands::auth::cancel_login,
+            commands::auth::logout,
+            commands::auth::get_account,
+            commands::auth::has_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
