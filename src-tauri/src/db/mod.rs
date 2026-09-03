@@ -2,6 +2,7 @@
 // *file* into place, then `schema` runs the *migrations* against it.
 pub mod categories;
 pub mod error;
+pub mod event_types;
 pub mod events;
 pub mod migrate;
 pub mod models;

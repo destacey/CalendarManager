@@ -89,6 +89,16 @@ pub fn run() {
             commands::db::delete_event,
             commands::db::get_categories,
             commands::db::create_category,
+            commands::db::get_event_types,
+            commands::db::create_event_type,
+            commands::db::update_event_type,
+            commands::db::delete_event_type,
+            commands::db::set_default_event_type,
+            commands::db::get_event_type_rules,
+            commands::db::create_event_type_rule,
+            commands::db::update_event_type_rule,
+            commands::db::delete_event_type_rule,
+            commands::db::update_rule_priorities,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -7,8 +7,9 @@ use tauri::State;
 
 use crate::db::categories::{self, NewCategory};
 use crate::db::error::DbResult;
+use crate::db::event_types::{self, EventTypeRuleUpdate, EventTypeUpdate, NewEventType, NewEventTypeRule};
 use crate::db::events::{self, EventUpdate, NewEvent};
-use crate::db::models::{Category, Event};
+use crate::db::models::{Category, Event, EventType, EventTypeRule};
 use crate::db::Db;
 
 #[tauri::command]
@@ -48,4 +49,62 @@ pub async fn get_categories(db: State<'_, Db>) -> DbResult<Vec<Category>> {
 #[tauri::command]
 pub async fn create_category(db: State<'_, Db>, category: NewCategory) -> DbResult<Category> {
     db.call(move |conn| categories::create_category(conn, &category)).await
+}
+
+#[tauri::command]
+pub async fn get_event_types(db: State<'_, Db>) -> DbResult<Vec<EventType>> {
+    db.call(event_types::get_event_types).await
+}
+
+#[tauri::command]
+pub async fn create_event_type(db: State<'_, Db>, event_type: NewEventType) -> DbResult<EventType> {
+    db.call(move |conn| event_types::create_event_type(conn, &event_type)).await
+}
+
+#[tauri::command]
+pub async fn update_event_type(
+    db: State<'_, Db>,
+    id: i64,
+    event_type: EventTypeUpdate,
+) -> DbResult<Option<EventType>> {
+    db.call(move |conn| event_types::update_event_type(conn, id, &event_type)).await
+}
+
+#[tauri::command]
+pub async fn delete_event_type(db: State<'_, Db>, id: i64) -> DbResult<bool> {
+    db.call(move |conn| event_types::delete_event_type(conn, id)).await
+}
+
+#[tauri::command]
+pub async fn set_default_event_type(db: State<'_, Db>, id: i64) -> DbResult<bool> {
+    db.call(move |conn| event_types::set_default_event_type(conn, id)).await
+}
+
+#[tauri::command]
+pub async fn get_event_type_rules(db: State<'_, Db>) -> DbResult<Vec<EventTypeRule>> {
+    db.call(event_types::get_event_type_rules).await
+}
+
+#[tauri::command]
+pub async fn create_event_type_rule(db: State<'_, Db>, rule: NewEventTypeRule) -> DbResult<EventTypeRule> {
+    db.call(move |conn| event_types::create_event_type_rule(conn, &rule)).await
+}
+
+#[tauri::command]
+pub async fn update_event_type_rule(
+    db: State<'_, Db>,
+    id: i64,
+    rule: EventTypeRuleUpdate,
+) -> DbResult<Option<EventTypeRule>> {
+    db.call(move |conn| event_types::update_event_type_rule(conn, id, &rule)).await
+}
+
+#[tauri::command]
+pub async fn delete_event_type_rule(db: State<'_, Db>, id: i64) -> DbResult<bool> {
+    db.call(move |conn| event_types::delete_event_type_rule(conn, id)).await
+}
+
+#[tauri::command]
+pub async fn update_rule_priorities(db: State<'_, Db>, rule_ids: Vec<i64>) -> DbResult<bool> {
+    db.call(move |conn| event_types::update_rule_priorities(conn, &rule_ids)).await
 }
