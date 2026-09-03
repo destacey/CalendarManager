@@ -1612,8 +1612,9 @@ describe('authService', () => {
 
   it('exposes no way to obtain a token', () => {
     // Tokens must never cross the IPC boundary.
-    expect((authService as Record<string, unknown>).getAccessToken).toBeUndefined()
-    expect((authService as Record<string, unknown>).getGraphClient).toBeUndefined()
+    const surface = authService as unknown as Record<string, unknown>
+    expect(surface.getAccessToken).toBeUndefined()
+    expect(surface.getGraphClient).toBeUndefined()
   })
 })
 ```
@@ -1850,7 +1851,14 @@ Expected: all green, with 8 new tests in `auth.test.ts`. `UserMenu.test.tsx` wil
 npx tsc --noEmit 2>&1 | grep -c "error TS"
 ```
 
-Expected: **fewer** than 108. Deleting MSAL removes type errors; it must not add any. Report the number and check that no new error mentions `auth`, `Login`, `UserMenu`, or `App`.
+Expected: **111** — the 108 baseline plus exactly three new errors in
+`src/services/calendar.ts`, where `authService.getGraphClient()` no longer
+exists. Those three are unavoidable and correct: this task deletes
+`getGraphClient`, and `calendar.ts` belongs to the sync milestone, which
+replaces those call sites with Rust-side Graph fetching. Do not fix them here.
+
+Check that **no** new error mentions `auth`, `Login`, `UserMenu`, or `App` — those
+would be real. `UserMenu.tsx`'s single unread-`token` error is pre-existing.
 
 - [ ] **Step 11: Commit**
 
@@ -1879,7 +1887,9 @@ rather than querying Graph. MSAL is uninstalled."
 
 - [ ] `cd src-tauri && cargo test` — 33 tests pass, no warnings.
 - [ ] `npm run test:run` — green, including the 8 new `auth.test.ts` tests.
-- [ ] `npx tsc --noEmit` error count is below 108 and no new error touches the auth path.
+- [ ] `npx tsc --noEmit` reports 111 errors: the 108 baseline plus three
+  `getGraphClient` errors in `calendar.ts` that the sync milestone owns. No new
+  error touches the auth path itself.
 - [ ] `grep -rn "msal" src/` returns nothing outside tests.
 - [ ] No command returns a token: `grep -rn "access_token\|refresh_token" src/` returns nothing.
 

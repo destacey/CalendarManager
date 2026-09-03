@@ -61,7 +61,8 @@ describe('authService', () => {
 
   it('exposes no way to obtain a token', () => {
     // Tokens must never cross the IPC boundary.
-    expect((authService as Record<string, unknown>).getAccessToken).toBeUndefined()
-    expect((authService as Record<string, unknown>).getGraphClient).toBeUndefined()
+    const surface = authService as unknown as Record<string, unknown>
+    expect(surface.getAccessToken).toBeUndefined()
+    expect(surface.getGraphClient).toBeUndefined()
   })
 })
