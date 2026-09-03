@@ -4,16 +4,26 @@
 // and `db:updateRulePriorities` IPC handlers from `electron/main.js`
 // (`git show ca805d0:electron/main.js`, lines 485-622).
 //
-// `set_default_event_type` and `update_rule_priorities` are the two commands
-// that must be atomic: the original wrapped each in `db.transaction(...)` and
+// `set_default_event_type` and `update_rule_priorities` are two commands that
+// must be atomic: the original wrapped each in `db.transaction(...)` and
 // swallowed any error into a bare `false`. Here both use a real rusqlite
 // transaction (`unchecked_transaction`, the same primitive `schema.rs` already
 // uses on a shared `&Connection`) and propagate `Err(DbError)` instead of
 // hiding the failure — a deliberate improvement over the original, not a
 // faithful-port detail.
+//
+// `delete_event_type` is a third: unlike the rest of this file, it is not a
+// faithful port at all. `main.js:536`'s bare `DELETE FROM event_types` relied
+// on better-sqlite3 leaving foreign keys unenforced by default, so a
+// referencing event or rule just went dangling. This crate's bundled SQLite
+// enforces foreign keys unconditionally, so the same statement instead fails
+// outright the moment real data references the type. A deliberate,
+// user-approved behaviour change replaces both: reassign referencing events
+// to the default type and drop referencing rules, all in one transaction,
+// before deleting the type itself. See `DeleteEventTypeOutcome` below.
 
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::error::{DbError, DbResult};
 use super::models::{EventType, EventTypeRule};
@@ -113,22 +123,107 @@ pub fn update_event_type(conn: &Connection, id: i64, update: &EventTypeUpdate) -
     get_event_type_by_id(conn, id)
 }
 
-/// Ported as-is from `main.js:536`: a bare delete, with no application-level
-/// cleanup of `events.type_id` or `event_type_rules.target_type_id`
-/// referencing this row. The brief's premise — and better-sqlite3's default —
-/// was that SQLite leaves those references dangling because foreign keys go
-/// unenforced. That does not hold in this crate: `libsqlite3-sys`'s bundled
-/// build is compiled with `-DSQLITE_DEFAULT_FOREIGN_KEYS=1`, so every
-/// connection starts with foreign keys already ON, and this statement is
-/// unchanged from `main.js` either way — no PRAGMA is set here, and none
-/// should be added by this task. The result is a real behavioural difference
-/// from the original: deleting a type still referenced by a rule or an event
-/// now fails with a constraint-violation `Err` instead of succeeding and
-/// leaving a dangling id. See the task report for the follow-up this should
-/// prompt.
-pub fn delete_event_type(conn: &Connection, id: i64) -> DbResult<bool> {
-    let changed = conn.execute("DELETE FROM event_types WHERE id = ?1", params![id])?;
-    Ok(changed > 0)
+/// What deleting a type actually did. Returned instead of a bare bool because
+/// reassigning thousands of events is not something to do silently.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteEventTypeOutcome {
+    pub deleted: bool,
+    /// Events moved to the default type.
+    pub events_reassigned: i64,
+    /// Rules that targeted this type and were removed with it.
+    pub rules_removed: i64,
+    /// Name of the type events were moved to, for the confirmation message.
+    pub reassigned_to: Option<String>,
+}
+
+/// `main.js:536` ported this as a bare `DELETE`, relying on better-sqlite3's
+/// foreign keys being off by default: an event or rule left pointing at a
+/// deleted type just went dangling, silently. `libsqlite3-sys`'s bundled
+/// SQLite is compiled with `-DSQLITE_DEFAULT_FOREIGN_KEYS=1`, so every
+/// connection here starts with foreign keys already ON — the same bare
+/// statement instead fails outright the moment any row still references the
+/// type. Neither behaviour is acceptable: one corrupts the database quietly,
+/// the other blocks every delete once real data exists (measured against the
+/// user's live database: 8,924 events, all with a valid `type_id`, spread
+/// across just 3 types — deleting any of them would fail).
+///
+/// So this reassigns before deleting, in one transaction:
+/// 1. Look up the type; a missing id is a no-op `Ok`, not an error.
+/// 2. If the type being deleted is the default, promote another type
+///    (lowest id among the rest) to default first — refusing outright if
+///    it's the only type, since that would leave the database with no
+///    default for every unmatched event to fall back to.
+/// 3. Move every event pointing at this type onto the (possibly
+///    newly-promoted) default, bumping `updated_at` on just those rows.
+/// 4. Delete the rules that targeted this type.
+/// 5. Delete the type itself.
+///
+/// All five steps commit together, so a failure partway through can never
+/// leave events pointing at a half-deleted type.
+pub fn delete_event_type(conn: &Connection, id: i64) -> DbResult<DeleteEventTypeOutcome> {
+    let tx = conn.unchecked_transaction()?;
+
+    let Some(target) = get_event_type_by_id(&tx, id)? else {
+        return Ok(DeleteEventTypeOutcome {
+            deleted: false,
+            events_reassigned: 0,
+            rules_removed: 0,
+            reassigned_to: None,
+        });
+    };
+
+    // Resolve the type everything should fall back to. If the type being
+    // deleted is itself the default, some *other* type must be promoted
+    // first — chosen deterministically (lowest id) rather than arbitrarily,
+    // so this is reproducible. If there is no other type, refuse: deleting
+    // the only type would leave the database with no default at all.
+    let default_id: i64 = if target.is_default == Some(true) {
+        let promoted: Option<i64> = tx
+            .query_row(
+                "SELECT id FROM event_types WHERE id != ?1 ORDER BY id ASC LIMIT 1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(promoted_id) = promoted else {
+            return Err(DbError::Other(format!(
+                "cannot delete event type {id}: it is the only event type, and deleting it \
+                 would leave the database with no default type"
+            )));
+        };
+        tx.execute("UPDATE event_types SET is_default = 0", [])?;
+        tx.execute("UPDATE event_types SET is_default = 1 WHERE id = ?1", params![promoted_id])?;
+        promoted_id
+    } else {
+        let existing: Option<i64> = tx
+            .query_row("SELECT id FROM event_types WHERE is_default = 1", [], |row| row.get(0))
+            .optional()?;
+        existing.ok_or_else(|| {
+            DbError::Other("cannot delete event type: no default event type exists to reassign to".to_string())
+        })?
+    };
+    let default_name: String =
+        tx.query_row("SELECT name FROM event_types WHERE id = ?1", params![default_id], |row| row.get(0))?;
+
+    let events_reassigned = tx.execute(
+        "UPDATE events SET type_id = ?1, updated_at = CURRENT_TIMESTAMP WHERE type_id = ?2",
+        params![default_id, id],
+    )? as i64;
+
+    let rules_removed =
+        tx.execute("DELETE FROM event_type_rules WHERE target_type_id = ?1", params![id])? as i64;
+
+    tx.execute("DELETE FROM event_types WHERE id = ?1", params![id])?;
+
+    tx.commit()?;
+
+    Ok(DeleteEventTypeOutcome {
+        deleted: true,
+        events_reassigned,
+        rules_removed,
+        reassigned_to: Some(default_name),
+    })
 }
 
 /// Clears `is_default` on every type, then sets it on `id`, in one
@@ -324,70 +419,200 @@ mod tests {
         assert!(updated.is_billable);
     }
 
-    #[test]
-    fn delete_event_type_returns_false_for_missing_id() {
-        let conn = setup();
-        assert!(!delete_event_type(&conn, 9999).unwrap());
+    /// Inserts a bare event row with the given type, bypassing
+    /// `events::create_event` (which never accepts `type_id`) since these
+    /// tests need to control it directly. Returns the new row's id.
+    fn insert_event_with_type(conn: &Connection, title: &str, type_id: i64) -> i64 {
+        conn.execute(
+            "INSERT INTO events (title, start_date, type_id) VALUES (?1, '2026-01-01T09:00:00', ?2)",
+            params![title, type_id],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
     }
 
-    #[test]
-    fn delete_event_type_returns_true_when_a_row_is_removed() {
-        let conn = setup();
-        let created = create_event_type(&conn, &new_type("Gone soon", false, false)).unwrap();
-
-        assert!(delete_event_type(&conn, created.id.unwrap()).unwrap());
-        assert!(get_event_types(&conn).unwrap().is_empty());
+    fn event_type_id_and_updated_at(conn: &Connection, event_id: i64) -> (Option<i64>, Option<String>) {
+        conn.query_row(
+            "SELECT type_id, updated_at FROM events WHERE id = ?1",
+            params![event_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap()
     }
 
-    /// `delete_event_type` is ported as a bare DELETE, unchanged from
-    /// `main.js:536`. The brief (and the original Electron/better-sqlite3
-    /// behaviour) assumed SQLite's foreign keys go unenforced, letting a
-    /// referencing rule's `target_type_id` go dangling silently. That
-    /// assumption does not hold here: `libsqlite3-sys`'s bundled build is
-    /// compiled with `-DSQLITE_DEFAULT_FOREIGN_KEYS=1`, so every connection
-    /// (this in-memory test connection and the real one `db::open` hands out)
-    /// starts with `PRAGMA foreign_keys = ON` already in effect — nothing in
-    /// this crate turns it on or off explicitly. So instead of leaving a
-    /// dangling reference, the bare DELETE now fails outright with a
-    /// `FOREIGN KEY constraint failed` error whenever a rule still targets
-    /// the type — a real behavioural difference from the original app, not
-    /// introduced by this task's code. See the task report for the
-    /// follow-up this should prompt.
+    /// 1. Deleting an unused, non-default type deletes it outright and
+    /// reports nothing else was touched.
     #[test]
-    fn delete_event_type_fails_when_a_rule_still_targets_it() {
+    fn delete_event_type_deletes_unused_non_default_type() {
         let conn = setup();
-        let event_type = create_event_type(&conn, &new_type("Consulting", false, false)).unwrap();
-        let type_id = event_type.id.unwrap();
-        let rule = create_event_type_rule(&conn, &new_rule("Consulting keyword", 1, type_id)).unwrap();
+        create_event_type(&conn, &new_type("Default", true, false)).unwrap();
+        let unused = create_event_type(&conn, &new_type("Unused", false, false)).unwrap();
 
-        let result = delete_event_type(&conn, type_id);
+        let outcome = delete_event_type(&conn, unused.id.unwrap()).unwrap();
 
-        assert!(result.is_err(), "foreign_keys is ON by default in the bundled SQLite build, so this must fail rather than silently dangle");
+        assert!(outcome.deleted);
+        assert_eq!(outcome.events_reassigned, 0);
+        assert_eq!(outcome.rules_removed, 0);
+        let names: Vec<_> = get_event_types(&conn).unwrap().into_iter().map(|t| t.name).collect();
+        assert_eq!(names, vec!["Default"]);
+    }
 
-        // Nothing changed: the statement failed, so both rows are exactly as
-        // they were before the call.
+    /// 2. Deleting a type used by events reassigns every one of them to the
+    /// default type and reports the count and destination name.
+    #[test]
+    fn delete_event_type_reassigns_its_events_to_the_default() {
+        let conn = setup();
+        let default_type = create_event_type(&conn, &new_type("Default", true, false)).unwrap();
+        let to_delete = create_event_type(&conn, &new_type("Consulting", false, false)).unwrap();
+        let default_id = default_type.id.unwrap();
+        let to_delete_id = to_delete.id.unwrap();
+        let e1 = insert_event_with_type(&conn, "Standup", to_delete_id);
+        let e2 = insert_event_with_type(&conn, "Client call", to_delete_id);
+        let e3 = insert_event_with_type(&conn, "Review", to_delete_id);
+
+        let outcome = delete_event_type(&conn, to_delete_id).unwrap();
+
+        assert!(outcome.deleted);
+        assert_eq!(outcome.events_reassigned, 3);
+        assert_eq!(outcome.reassigned_to.as_deref(), Some("Default"));
+        for event_id in [e1, e2, e3] {
+            let (type_id, _) = event_type_id_and_updated_at(&conn, event_id);
+            assert_eq!(type_id, Some(default_id));
+        }
+    }
+
+    /// 3. Deleting a type targeted by rules removes exactly those rules and
+    /// reports the count.
+    #[test]
+    fn delete_event_type_removes_rules_that_target_it() {
+        let conn = setup();
+        create_event_type(&conn, &new_type("Default", true, false)).unwrap();
+        let to_delete = create_event_type(&conn, &new_type("Consulting", false, false)).unwrap();
+        let to_delete_id = to_delete.id.unwrap();
+        create_event_type_rule(&conn, &new_rule("Rule A", 1, to_delete_id)).unwrap();
+        create_event_type_rule(&conn, &new_rule("Rule B", 2, to_delete_id)).unwrap();
+
+        let outcome = delete_event_type(&conn, to_delete_id).unwrap();
+
+        assert!(outcome.deleted);
+        assert_eq!(outcome.rules_removed, 2);
+        assert!(get_event_type_rules(&conn).unwrap().is_empty());
+    }
+
+    /// 4. Deleting the default type, when another type exists, promotes the
+    /// other type (lowest id) to default before deleting — the database
+    /// never has zero or two defaults.
+    #[test]
+    fn delete_event_type_promotes_another_type_when_deleting_the_default() {
+        let conn = setup();
+        let default_type = create_event_type(&conn, &new_type("Default", true, false)).unwrap();
+        let other_a = create_event_type(&conn, &new_type("Other A", false, false)).unwrap();
+        let _other_b = create_event_type(&conn, &new_type("Other B", false, false)).unwrap();
+
+        let outcome = delete_event_type(&conn, default_type.id.unwrap()).unwrap();
+
+        assert!(outcome.deleted);
+        let defaults: Vec<_> = get_event_types(&conn)
+            .unwrap()
+            .into_iter()
+            .filter(|t| t.is_default == Some(true))
+            .map(|t| t.id.unwrap())
+            .collect();
+        assert_eq!(
+            defaults,
+            vec![other_a.id.unwrap()],
+            "exactly one type must be default afterwards, and it must be the lowest-id survivor"
+        );
+    }
+
+    /// 5. Deleting the only type refuses outright rather than leaving the
+    /// database with no default; the type and its events are untouched.
+    #[test]
+    fn delete_event_type_refuses_to_delete_the_only_type() {
+        let conn = setup();
+        let solo = create_event_type(&conn, &new_type("Solo", true, false)).unwrap();
+        let solo_id = solo.id.unwrap();
+        let event_id = insert_event_with_type(&conn, "Standup", solo_id);
+
+        let result = delete_event_type(&conn, solo_id);
+
+        assert!(result.is_err(), "deleting the only type would leave no default type");
         let types = get_event_types(&conn).unwrap();
         assert_eq!(types.len(), 1);
-        assert_eq!(types[0].id, Some(type_id));
-        let rules = get_event_type_rules(&conn).unwrap();
-        assert_eq!(rules.len(), 1);
-        assert_eq!(rules[0].id, rule.id);
-        assert_eq!(rules[0].target_type_id, type_id);
+        assert_eq!(types[0].id, Some(solo_id));
+        let (type_id, _) = event_type_id_and_updated_at(&conn, event_id);
+        assert_eq!(type_id, Some(solo_id));
     }
 
-    /// Once the referencing rule is gone, the same bare DELETE succeeds —
-    /// confirming the failure above is specifically the foreign-key
-    /// constraint, not some other problem with the statement.
+    /// 6. Deleting a non-existent id is a no-op `Ok`, not an error.
     #[test]
-    fn delete_event_type_succeeds_once_no_rule_targets_it() {
+    fn delete_event_type_returns_not_deleted_for_missing_id() {
         let conn = setup();
-        let event_type = create_event_type(&conn, &new_type("Consulting", false, false)).unwrap();
-        let type_id = event_type.id.unwrap();
-        let rule = create_event_type_rule(&conn, &new_rule("Consulting keyword", 1, type_id)).unwrap();
-        assert!(delete_event_type_rule(&conn, rule.id.unwrap()).unwrap());
+        create_event_type(&conn, &new_type("Default", true, false)).unwrap();
 
-        assert!(delete_event_type(&conn, type_id).unwrap());
-        assert!(get_event_types(&conn).unwrap().is_empty());
+        let outcome = delete_event_type(&conn, 9999).unwrap();
+
+        assert!(!outcome.deleted);
+        assert_eq!(outcome.events_reassigned, 0);
+        assert_eq!(outcome.rules_removed, 0);
+        assert_eq!(outcome.reassigned_to, None);
+    }
+
+    /// 7. The integrity guard this task exists for: after deleting a type
+    /// that events referenced, no event is left pointing at a type id that
+    /// no longer exists. A future regression that reintroduces orphaning
+    /// (e.g. reverting to the bare `DELETE`) fails this assertion.
+    #[test]
+    fn delete_event_type_leaves_no_event_pointing_at_a_missing_type() {
+        let conn = setup();
+        create_event_type(&conn, &new_type("Default", true, false)).unwrap();
+        let to_delete = create_event_type(&conn, &new_type("Consulting", false, false)).unwrap();
+        let to_delete_id = to_delete.id.unwrap();
+        insert_event_with_type(&conn, "Standup", to_delete_id);
+        insert_event_with_type(&conn, "Client call", to_delete_id);
+        insert_event_with_type(&conn, "Review", to_delete_id);
+
+        delete_event_type(&conn, to_delete_id).unwrap();
+
+        let orphaned: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM events \
+                 WHERE type_id IS NOT NULL AND type_id NOT IN (SELECT id FROM event_types)",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphaned, 0);
+    }
+
+    /// 8. `updated_at` reassignment is scoped to the events that actually
+    /// moved. Comparing the reassigned rows' `updated_at` against a
+    /// before/after snapshot would be flaky (`CURRENT_TIMESTAMP` is
+    /// second-granularity and this test runs well within a second), so this
+    /// asserts the stronger, non-flaky half instead: an event of an
+    /// unrelated type keeps both its `type_id` and its exact original
+    /// `updated_at`, proving the UPDATE's `WHERE type_id = ?` did not touch
+    /// rows outside the deleted type.
+    #[test]
+    fn delete_event_type_does_not_touch_events_of_other_types() {
+        let conn = setup();
+        create_event_type(&conn, &new_type("Default", true, false)).unwrap();
+        let to_delete = create_event_type(&conn, &new_type("Consulting", false, false)).unwrap();
+        let other = create_event_type(&conn, &new_type("Personal", false, false)).unwrap();
+        let to_delete_id = to_delete.id.unwrap();
+        let other_id = other.id.unwrap();
+        let other_event = insert_event_with_type(&conn, "Untouched", other_id);
+        let (_, other_updated_at_before) = event_type_id_and_updated_at(&conn, other_event);
+
+        let outcome = delete_event_type(&conn, to_delete_id).unwrap();
+
+        assert!(outcome.deleted);
+        let (other_type_id_after, other_updated_at_after) = event_type_id_and_updated_at(&conn, other_event);
+        assert_eq!(other_type_id_after, Some(other_id), "an unrelated type's events must not be reassigned");
+        assert_eq!(
+            other_updated_at_after, other_updated_at_before,
+            "an unrelated type's events must not have their updated_at touched"
+        );
     }
 
     /// Enumerated case: `set_default_event_type` leaves exactly one default

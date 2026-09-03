@@ -7,7 +7,9 @@ use tauri::State;
 
 use crate::db::categories::{self, NewCategory};
 use crate::db::error::DbResult;
-use crate::db::event_types::{self, EventTypeRuleUpdate, EventTypeUpdate, NewEventType, NewEventTypeRule};
+use crate::db::event_types::{
+    self, DeleteEventTypeOutcome, EventTypeRuleUpdate, EventTypeUpdate, NewEventType, NewEventTypeRule,
+};
 use crate::db::events::{self, EventUpdate, NewEvent};
 use crate::db::models::{Category, Event, EventType, EventTypeRule};
 use crate::db::Db;
@@ -71,7 +73,7 @@ pub async fn update_event_type(
 }
 
 #[tauri::command]
-pub async fn delete_event_type(db: State<'_, Db>, id: i64) -> DbResult<bool> {
+pub async fn delete_event_type(db: State<'_, Db>, id: i64) -> DbResult<DeleteEventTypeOutcome> {
     db.call(move |conn| event_types::delete_event_type(conn, id)).await
 }
 
