@@ -1,191 +1,103 @@
-import { SyncConfig, SyncMetadata } from './calendar';
+import type { SyncConfig, SyncMetadata } from './calendar'
+import { getConfig, setConfig, clearConfig } from '../api/config'
 
-interface AppConfig {
-  appRegistrationId: string | null;
-  syncConfig?: SyncConfig;
-  syncMetadata?: SyncMetadata;
-  timezone?: string;
-}
-
+/**
+ * Configuration persistence. Backed by tauri-plugin-store through Rust
+ * commands; every read applies its own default so a missing key is never
+ * an error.
+ */
 class StorageService {
-  private readonly APP_CONFIG_KEY = 'calendar-manager-config';
-
-  // Check if we're in Electron environment
-  private get isElectron(): boolean {
-    return typeof window !== 'undefined' && window.electronAPI;
+  private defaultSyncConfig(): SyncConfig {
+    return {
+      startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0],
+    }
   }
 
   async getAppRegistrationId(): Promise<string | null> {
     try {
-      if (this.isElectron) {
-        return await window.electronAPI.getConfig('appRegistrationId');
-      } else {
-        // Fallback to localStorage for web/dev environment
-        const config = this.getLocalStorageConfig();
-        return config.appRegistrationId;
-      }
+      return await getConfig<string>('appRegistrationId')
     } catch (error) {
-      console.error('Error getting app registration ID:', error);
-      return null;
+      console.error('Error getting app registration ID:', error)
+      return null
     }
   }
 
   async setAppRegistrationId(appRegistrationId: string): Promise<void> {
     try {
-      if (this.isElectron) {
-        await window.electronAPI.setConfig('appRegistrationId', appRegistrationId);
-      } else {
-        // Fallback to localStorage for web/dev environment
-        const config = this.getLocalStorageConfig();
-        config.appRegistrationId = appRegistrationId;
-        this.setLocalStorageConfig(config);
-      }
+      await setConfig('appRegistrationId', appRegistrationId)
     } catch (error) {
-      console.error('Error setting app registration ID:', error);
+      console.error('Error setting app registration ID:', error)
     }
   }
 
   async getSyncConfig(): Promise<SyncConfig> {
     try {
-      const defaultConfig = {
-        startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        endDate: new Date().toISOString().split('T')[0]
-      };
-
-      if (this.isElectron) {
-        const config = await window.electronAPI.getConfig('syncConfig');
-        return config || defaultConfig;
-      } else {
-        // Fallback to localStorage for web/dev environment
-        const config = this.getLocalStorageConfig();
-        return config.syncConfig || defaultConfig;
-      }
+      return (await getConfig<SyncConfig>('syncConfig')) ?? this.defaultSyncConfig()
     } catch (error) {
-      console.error('Error getting sync config:', error);
-      return {
-        startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        endDate: new Date().toISOString().split('T')[0]
-      };
+      console.error('Error getting sync config:', error)
+      return this.defaultSyncConfig()
     }
   }
 
   async setSyncConfig(syncConfig: SyncConfig): Promise<void> {
     try {
-      if (this.isElectron) {
-        await window.electronAPI.setConfig('syncConfig', syncConfig);
-      } else {
-        // Fallback to localStorage for web/dev environment
-        const config = this.getLocalStorageConfig();
-        config.syncConfig = syncConfig;
-        this.setLocalStorageConfig(config);
-      }
+      await setConfig('syncConfig', syncConfig)
     } catch (error) {
-      console.error('Error setting sync config:', error);
+      console.error('Error setting sync config:', error)
     }
   }
 
   async getSyncMetadata(): Promise<SyncMetadata | null> {
     try {
-      if (this.isElectron) {
-        return await window.electronAPI.getConfig('syncMetadata');
-      } else {
-        // Fallback to localStorage for web/dev environment
-        const config = this.getLocalStorageConfig();
-        return config.syncMetadata || null;
-      }
+      return await getConfig<SyncMetadata>('syncMetadata')
     } catch (error) {
-      console.error('Error getting sync metadata:', error);
-      return null;
+      console.error('Error getting sync metadata:', error)
+      return null
     }
   }
 
   async setSyncMetadata(syncMetadata: SyncMetadata): Promise<void> {
     try {
-      // Clean up undefined values to avoid JSON serialization issues
-      const cleanMetadata: SyncMetadata = {};
+      // Drop undefined values so they don't serialize as JSON nulls
+      const clean: SyncMetadata = {}
       if (syncMetadata.deltaToken !== undefined) {
-        cleanMetadata.deltaToken = syncMetadata.deltaToken;
+        clean.deltaToken = syncMetadata.deltaToken
       }
       if (syncMetadata.lastEventModified !== undefined) {
-        cleanMetadata.lastEventModified = syncMetadata.lastEventModified;
+        clean.lastEventModified = syncMetadata.lastEventModified
       }
-      
-      if (this.isElectron) {
-        await window.electronAPI.setConfig('syncMetadata', cleanMetadata);
-      } else {
-        // Fallback to localStorage for web/dev environment
-        const config = this.getLocalStorageConfig();
-        config.syncMetadata = cleanMetadata;
-        this.setLocalStorageConfig(config);
-      }
+      await setConfig('syncMetadata', clean)
     } catch (error) {
-      console.error('Error setting sync metadata:', error);
+      console.error('Error setting sync metadata:', error)
     }
   }
 
   async getTimezone(): Promise<string> {
+    const systemTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
     try {
-      const defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      
-      if (this.isElectron) {
-        const timezone = await window.electronAPI.getConfig('timezone');
-        return timezone || defaultTimezone;
-      } else {
-        // Fallback to localStorage for web/dev environment
-        const config = this.getLocalStorageConfig();
-        return config.timezone || defaultTimezone;
-      }
+      return (await getConfig<string>('timezone')) ?? systemTimezone
     } catch (error) {
-      console.error('Error getting timezone:', error);
-      return Intl.DateTimeFormat().resolvedOptions().timeZone;
+      console.error('Error getting timezone:', error)
+      return systemTimezone
     }
   }
 
   async setTimezone(timezone: string): Promise<void> {
     try {
-      if (this.isElectron) {
-        await window.electronAPI.setConfig('timezone', timezone);
-      } else {
-        // Fallback to localStorage for web/dev environment
-        const config = this.getLocalStorageConfig();
-        config.timezone = timezone;
-        this.setLocalStorageConfig(config);
-      }
+      await setConfig('timezone', timezone)
     } catch (error) {
-      console.error('Error setting timezone:', error);
+      console.error('Error setting timezone:', error)
     }
   }
 
   async clearConfig(): Promise<void> {
     try {
-      if (this.isElectron) {
-        await window.electronAPI.clearConfig();
-      } else {
-        // Fallback to localStorage for web/dev environment
-        localStorage.removeItem(this.APP_CONFIG_KEY);
-      }
+      await clearConfig()
     } catch (error) {
-      console.error('Error clearing config:', error);
+      console.error('Error clearing config:', error)
     }
-  }
-
-  // Fallback methods for localStorage (dev environment)
-  private getLocalStorageConfig(): AppConfig {
-    try {
-      const configJson = localStorage.getItem(this.APP_CONFIG_KEY);
-      if (!configJson) {
-        return { appRegistrationId: null };
-      }
-      return JSON.parse(configJson);
-    } catch (error) {
-      console.error('Error parsing config from localStorage:', error);
-      return { appRegistrationId: null };
-    }
-  }
-
-  private setLocalStorageConfig(config: AppConfig): void {
-    localStorage.setItem(this.APP_CONFIG_KEY, JSON.stringify(config));
   }
 }
 
-export const storageService = new StorageService();
+export const storageService = new StorageService()
