@@ -901,12 +901,28 @@ Now replace the whole `describe('Window Controls', ...)` block with:
       expect(windowApi.closeWindow).toHaveBeenCalled()
     })
 
-    it('reads the initial maximized state on mount', async () => {
+    it('shows the restore icon when the window starts maximized', async () => {
       vi.mocked(windowApi.isWindowMaximized).mockResolvedValue(true)
 
-      render(<TitleBar {...defaultProps} />)
+      const { container } = render(<TitleBar {...defaultProps} />)
 
       await waitFor(() => expect(windowApi.isWindowMaximized).toHaveBeenCalled())
+      await waitFor(() =>
+        expect(container.querySelector('.anticon-block')).toBeInTheDocument()
+      )
+      expect(container.querySelector('.anticon-border')).not.toBeInTheDocument()
+    })
+
+    it('shows the maximize icon when the window starts unmaximized', async () => {
+      vi.mocked(windowApi.isWindowMaximized).mockResolvedValue(false)
+
+      const { container } = render(<TitleBar {...defaultProps} />)
+
+      await waitFor(() => expect(windowApi.isWindowMaximized).toHaveBeenCalled())
+      await waitFor(() =>
+        expect(container.querySelector('.anticon-border')).toBeInTheDocument()
+      )
+      expect(container.querySelector('.anticon-block')).not.toBeInTheDocument()
     })
 
     it('subscribes to resize events and unsubscribes on unmount', async () => {
