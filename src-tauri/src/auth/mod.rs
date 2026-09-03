@@ -1,6 +1,7 @@
 pub mod error;
 pub mod loopback;
 pub mod pkce;
+pub mod secret_store;
 pub mod tokens;
 
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -9,9 +9,6 @@ use super::pkce::{AUTHORITY, SCOPES};
 /// token expire mid-flight.
 const REFRESH_MARGIN: Duration = Duration::from_secs(300);
 
-const KEYRING_SERVICE: &str = "com.triowfs.calendarmanager";
-const KEYRING_ACCOUNT: &str = "microsoft-refresh-token";
-
 #[derive(Deserialize)]
 pub struct TokenResponse {
     pub access_token: String,
@@ -159,34 +156,6 @@ pub async fn fetch_account(access_token: &str) -> AuthResult<Account> {
 
     serde_json::from_str(&body)
         .map_err(|e| AuthError::Other(format!("unexpected /me response: {e}")))
-}
-
-fn keyring_entry() -> AuthResult<keyring::Entry> {
-    keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)
-        .map_err(|e| AuthError::Keyring(e.to_string()))
-}
-
-pub fn store_refresh_token(token: &str) -> AuthResult<()> {
-    keyring_entry()?
-        .set_password(token)
-        .map_err(|e| AuthError::Keyring(e.to_string()))
-}
-
-pub fn load_refresh_token() -> AuthResult<Option<String>> {
-    match keyring_entry()?.get_password() {
-        Ok(token) => Ok(Some(token)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(AuthError::Keyring(e.to_string())),
-    }
-}
-
-pub fn clear_refresh_token() -> AuthResult<()> {
-    match keyring_entry()?.delete_credential() {
-        Ok(()) => Ok(()),
-        // Already absent is the desired end state, not a failure.
-        Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(AuthError::Keyring(e.to_string())),
-    }
 }
 
 #[cfg(test)]

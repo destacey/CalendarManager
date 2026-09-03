@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager, Runtime, State};
@@ -5,10 +6,11 @@ use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_store::StoreExt;
 
 use crate::auth::error::{AuthError, AuthResult};
-use crate::auth::{loopback, pkce, tokens, AuthState};
+use crate::auth::{loopback, pkce, secret_store, tokens, AuthState};
 
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 const STORE_FILE: &str = "config.json";
+const REFRESH_TOKEN_FILE: &str = "refresh-token.bin";
 
 fn client_id<R: Runtime>(app: &AppHandle<R>) -> AuthResult<String> {
     let store = app
@@ -22,6 +24,15 @@ fn client_id<R: Runtime>(app: &AppHandle<R>) -> AuthResult<String> {
         .ok_or(AuthError::NotConfigured)
 }
 
+/// Path to the DPAPI-encrypted refresh token file, alongside `config.json` in
+/// `%APPDATA%/com.triowfs.calendarmanager/`.
+fn refresh_token_path<R: Runtime>(app: &AppHandle<R>) -> AuthResult<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .map(|dir| dir.join(REFRESH_TOKEN_FILE))
+        .map_err(|e| AuthError::Keyring(e.to_string()))
+}
+
 /// Records the session and persists the refresh token. Shared by login and
 /// session restore so the two cannot drift apart.
 async fn establish_session<R: Runtime>(
@@ -31,7 +42,7 @@ async fn establish_session<R: Runtime>(
     // Persist before the profile read: a transient Graph failure must not cost
     // the user a refresh token Entra has already rotated and accepted.
     if let Some(refresh_token) = response.refresh_token.as_deref() {
-        tokens::store_refresh_token(refresh_token)?;
+        secret_store::store(&refresh_token_path(app)?, refresh_token)?;
     }
 
     let account = tokens::fetch_account(&response.access_token).await?;
@@ -55,7 +66,8 @@ pub async fn ensure_access_token<R: Runtime>(app: &AppHandle<R>) -> AuthResult<S
     }
 
     let client_id = client_id(app)?;
-    let refresh_token = tokens::load_refresh_token()?.ok_or(AuthError::NoSession)?;
+    let token_path = refresh_token_path(app)?;
+    let refresh_token = secret_store::load(&token_path)?.ok_or(AuthError::NoSession)?;
 
     let response = match tokens::refresh(&client_id, &refresh_token).await {
         Ok(response) => response,
@@ -68,7 +80,7 @@ pub async fn ensure_access_token<R: Runtime>(app: &AppHandle<R>) -> AuthResult<S
             // establish_session — says nothing about the refresh token and must
             // never reach it.
             if matches!(error, AuthError::Provider(_)) {
-                let _ = tokens::clear_refresh_token();
+                let _ = secret_store::clear(&token_path);
             }
             return Err(error);
         }
@@ -140,7 +152,7 @@ pub fn cancel_login(state: State<'_, AuthState>) {
 
 #[tauri::command]
 pub async fn logout<R: Runtime>(app: AppHandle<R>) -> AuthResult<()> {
-    tokens::clear_refresh_token()?;
+    secret_store::clear(&refresh_token_path(&app)?)?;
     app.state::<AuthState>().clear_session();
     Ok(())
 }
