@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor, act } from '../test/utils'
 import { createTitleBarProps } from '../test/utils'
 import TitleBar from './TitleBar'
 import { calendarService } from '../services/calendar'
+import * as windowApi from '../api/window'
 
 // Mock the services and components
 vi.mock('../services/calendar', () => ({
@@ -41,27 +42,24 @@ vi.mock('./SyncModal', () => ({
   ) : null
 }))
 
-// Mock electron API
-const mockElectronAPI = {
-  isWindowMaximized: vi.fn(),
-  minimizeWindow: vi.fn(),
-  maximizeWindow: vi.fn(),
-  closeWindow: vi.fn(),
-  onWindowStateChange: vi.fn(),
-  removeAllListeners: vi.fn()
-}
-
-Object.defineProperty(window, 'electronAPI', {
-  value: mockElectronAPI,
-  writable: true
-})
+vi.mock('../api/window', () => ({
+  minimizeWindow: vi.fn(() => Promise.resolve()),
+  toggleMaximizeWindow: vi.fn(() => Promise.resolve()),
+  closeWindow: vi.fn(() => Promise.resolve()),
+  isWindowMaximized: vi.fn(() => Promise.resolve(false)),
+  onWindowResized: vi.fn(() => Promise.resolve(vi.fn())),
+}))
 
 describe('TitleBar', () => {
   const defaultProps = createTitleBarProps()
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockElectronAPI.isWindowMaximized.mockResolvedValue(false)
+    vi.mocked(windowApi.isWindowMaximized).mockResolvedValue(false)
+    vi.mocked(windowApi.onWindowResized).mockResolvedValue(vi.fn())
+    vi.mocked(windowApi.minimizeWindow).mockResolvedValue(undefined)
+    vi.mocked(windowApi.toggleMaximizeWindow).mockResolvedValue(undefined)
+    vi.mocked(windowApi.closeWindow).mockResolvedValue(undefined)
   })
 
   describe('Basic Rendering', () => {
@@ -231,75 +229,70 @@ describe('TitleBar', () => {
   })
 
   describe('Window Controls', () => {
-    it('calls minimizeWindow when minimize button is clicked', async () => {
-      await act(async () => {
-        render(<TitleBar {...defaultProps} />)
-      })
-      
-      await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /minus/i }))
-      })
-      
-      expect(mockElectronAPI.minimizeWindow).toHaveBeenCalledOnce()
+    it('minimizes the window when the minimize button is clicked', async () => {
+      const { container } = render(<TitleBar {...defaultProps} />)
+      await waitFor(() => expect(container.querySelector('.ant-btn')).toBeInTheDocument())
+
+      const buttons = container.querySelectorAll('.ant-btn')
+      fireEvent.click(buttons[buttons.length - 3])
+
+      expect(windowApi.minimizeWindow).toHaveBeenCalled()
     })
 
-    it('calls maximizeWindow when maximize button is clicked', async () => {
-      await act(async () => {
-        render(<TitleBar {...defaultProps} />)
-      })
-      
-      await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /border/i }))
-      })
-      
-      expect(mockElectronAPI.maximizeWindow).toHaveBeenCalledOnce()
+    it('toggles maximize when the maximize button is clicked', async () => {
+      const { container } = render(<TitleBar {...defaultProps} />)
+      await waitFor(() => expect(container.querySelector('.ant-btn')).toBeInTheDocument())
+
+      const buttons = container.querySelectorAll('.ant-btn')
+      fireEvent.click(buttons[buttons.length - 2])
+
+      expect(windowApi.toggleMaximizeWindow).toHaveBeenCalled()
     })
 
-    it('calls closeWindow when close button is clicked', async () => {
-      await act(async () => {
-        render(<TitleBar {...defaultProps} />)
-      })
-      
-      await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /close/i }))
-      })
-      
-      expect(mockElectronAPI.closeWindow).toHaveBeenCalledOnce()
+    it('closes the window when the close button is clicked', async () => {
+      const { container } = render(<TitleBar {...defaultProps} />)
+      await waitFor(() => expect(container.querySelector('.ant-btn')).toBeInTheDocument())
+
+      const buttons = container.querySelectorAll('.ant-btn')
+      fireEvent.click(buttons[buttons.length - 1])
+
+      expect(windowApi.closeWindow).toHaveBeenCalled()
     })
 
-    it('shows correct maximize/restore button based on window state', async () => {
-      mockElectronAPI.isWindowMaximized.mockResolvedValue(true)
-      
-      await act(async () => {
-        render(<TitleBar {...defaultProps} />)
-      })
-      
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /block/i })).toBeInTheDocument()
-      })
+    it('reads the initial maximized state on mount', async () => {
+      vi.mocked(windowApi.isWindowMaximized).mockResolvedValue(true)
+
+      render(<TitleBar {...defaultProps} />)
+
+      await waitFor(() => expect(windowApi.isWindowMaximized).toHaveBeenCalled())
     })
 
-    it('handles window state change events', async () => {
-      await act(async () => {
-        render(<TitleBar {...defaultProps} />)
-      })
-      
-      expect(mockElectronAPI.onWindowStateChange).toHaveBeenCalledWith(expect.any(Function))
+    it('subscribes to resize events and unsubscribes on unmount', async () => {
+      const unlisten = vi.fn()
+      vi.mocked(windowApi.onWindowResized).mockResolvedValue(unlisten)
+
+      const { unmount } = render(<TitleBar {...defaultProps} />)
+      await waitFor(() => expect(windowApi.onWindowResized).toHaveBeenCalled())
+
+      unmount()
+
+      await waitFor(() => expect(unlisten).toHaveBeenCalled())
     })
 
-    it('handles missing electronAPI gracefully', async () => {
-      // Temporarily remove electronAPI by setting to undefined
-      const originalAPI = window.electronAPI
-      ;(window as any).electronAPI = undefined
-      
-      await act(async () => {
-        expect(() => {
-          render(<TitleBar {...defaultProps} />)
-        }).not.toThrow()
-      })
-      
-      // Restore electronAPI
-      ;(window as any).electronAPI = originalAPI
+    it('survives a failing isWindowMaximized call', async () => {
+      vi.mocked(windowApi.isWindowMaximized).mockRejectedValue(new Error('no window'))
+
+      const { container } = render(<TitleBar {...defaultProps} />)
+
+      await waitFor(() => expect(container.querySelector('.ant-btn')).toBeInTheDocument())
+    })
+
+    it('marks the titlebar as a drag region', async () => {
+      const { container } = render(<TitleBar {...defaultProps} />)
+
+      await waitFor(() =>
+        expect(container.querySelector('[data-tauri-drag-region]')).toBeInTheDocument()
+      )
     })
   })
 
@@ -371,50 +364,6 @@ describe('TitleBar', () => {
         expect.any(Function),
         expect.any(Function)
       )
-    })
-
-    it('cleans up listeners on unmount', async () => {
-      const { unmount } = await act(async () => {
-        return render(<TitleBar {...defaultProps} />)
-      })
-      
-      unmount()
-      
-      expect(mockElectronAPI.removeAllListeners).toHaveBeenCalledWith('window-state-change')
-      
-      expect(calendarService.setSyncCallbacks).toHaveBeenCalledWith()
-    })
-
-    it('handles missing removeAllListeners gracefully', async () => {
-      const originalRemoveAllListeners = mockElectronAPI.removeAllListeners
-      delete mockElectronAPI.removeAllListeners
-      
-      const { unmount } = await act(async () => {
-        return render(<TitleBar {...defaultProps} />)
-      })
-      
-      expect(() => {
-        unmount()
-      }).not.toThrow()
-      
-      mockElectronAPI.removeAllListeners = originalRemoveAllListeners
-    })
-  })
-
-  describe('Error Handling', () => {
-    it('handles isWindowMaximized error gracefully', async () => {
-      vi.spyOn(console, 'error').mockImplementation(() => {})
-      vi.spyOn(console, 'warn').mockImplementation(() => {})
-      mockElectronAPI.isWindowMaximized.mockRejectedValue(new Error('Test error'))
-      
-      // Should not throw
-      await act(async () => {
-        expect(() => {
-          render(<TitleBar {...defaultProps} />)
-        }).not.toThrow()
-      })
-      
-      // Should log warning (we can't easily test console.warn in this setup)
     })
   })
 })

@@ -5,6 +5,13 @@ import UserMenu from './UserMenu';
 import SyncProgress from './SyncProgress';
 import SyncModal from './SyncModal';
 import { calendarService, SyncProgress as SyncProgressType } from '../services/calendar';
+import {
+  minimizeWindow,
+  toggleMaximizeWindow,
+  closeWindow,
+  isWindowMaximized,
+  onWindowResized,
+} from '../api/window';
 
 interface TitleBarProps {
   showUserMenu?: boolean;
@@ -38,28 +45,32 @@ const TitleBar: React.FC<TitleBarProps> = ({
   const { token } = theme.useToken();
 
   useEffect(() => {
-    // Check initial window state
-    const checkWindowState = async () => {
-      if (window.electronAPI) {
-        try {
-          const maximized = await window.electronAPI.isWindowMaximized();
-          setIsMaximized(maximized);
-        } catch (error) {
-          console.warn('Could not get window state:', error);
+    let unlistenResize: (() => void) | undefined;
+    let cancelled = false;
+
+    const setUpWindowState = async () => {
+      try {
+        const maximized = await isWindowMaximized();
+        if (!cancelled) setIsMaximized(maximized);
+      } catch (error) {
+        console.warn('Could not get window state:', error);
+      }
+
+      try {
+        const unlisten = await onWindowResized((maximized) => {
+          if (!cancelled) setIsMaximized(maximized);
+        });
+        if (cancelled) {
+          unlisten();
+        } else {
+          unlistenResize = unlisten;
         }
+      } catch (error) {
+        console.warn('Could not subscribe to window resize:', error);
       }
     };
 
-    checkWindowState();
-
-    // Listen for window state changes
-    const handleWindowStateChange = (event: any, maximized: boolean) => {
-      setIsMaximized(maximized);
-    };
-
-    if (window.electronAPI?.onWindowStateChange) {
-      window.electronAPI.onWindowStateChange(handleWindowStateChange);
-    }
+    setUpWindowState();
 
     // Set up sync progress tracking
     calendarService.setSyncCallbacks(
@@ -68,32 +79,25 @@ const TitleBar: React.FC<TitleBarProps> = ({
     );
 
     return () => {
-      if (window.electronAPI?.removeAllListeners) {
-        window.electronAPI.removeAllListeners('window-state-change');
-      }
+      cancelled = true;
+      unlistenResize?.();
       // Clean up sync callbacks
       calendarService.setSyncCallbacks();
     };
   }, []);
 
   const handleMinimize = () => {
-    if (window.electronAPI) {
-      window.electronAPI.minimizeWindow();
-    }
+    minimizeWindow().catch((error) => console.warn('Minimize failed:', error));
   };
 
   const handleMaximize = () => {
-    if (window.electronAPI) {
-      window.electronAPI.maximizeWindow();
-      // Toggle the state immediately for responsive UI
-      setIsMaximized(!isMaximized);
-    }
+    // Optimistic flip keeps the icon responsive; onWindowResized corrects it
+    setIsMaximized((previous) => !previous);
+    toggleMaximizeWindow().catch((error) => console.warn('Maximize failed:', error));
   };
 
   const handleClose = () => {
-    if (window.electronAPI) {
-      window.electronAPI.closeWindow();
-    }
+    closeWindow().catch((error) => console.warn('Close failed:', error));
   };
 
   const handleCancelSync = () => {
@@ -136,6 +140,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
 
   return (
     <Flex
+      data-tauri-drag-region
       justify="space-between"
       align="center"
       style={{
@@ -143,7 +148,6 @@ const TitleBar: React.FC<TitleBarProps> = ({
         background: token.colorBgContainer,
         padding: '0 12px',
         borderBottom: `1px solid ${token.colorBorder}`,
-        WebkitAppRegion: 'drag',
         userSelect: 'none',
       }}
     >
@@ -162,9 +166,6 @@ const TitleBar: React.FC<TitleBarProps> = ({
               type="text"
               size="small"
               icon={<MenuOutlined style={{ fontSize: '14px' }} />}
-              style={{ 
-                WebkitAppRegion: 'no-drag'
-              }}
               title="Navigation menu"
             />
           </Dropdown>
@@ -177,13 +178,10 @@ const TitleBar: React.FC<TitleBarProps> = ({
               <MenuFoldOutlined style={{ fontSize: '14px' }} />
             }
             onClick={onMenuToggle}
-            style={{ 
-              WebkitAppRegion: 'no-drag'
-            }}
             title={sideNavCollapsed ? 'Expand menu' : 'Collapse menu'}
           />
         )}
-        <Text style={{ fontSize: '14px', fontWeight: 500 }}>
+        <Text data-tauri-drag-region style={{ fontSize: '14px', fontWeight: 500 }}>
           {isMobile ? 'CM' : 'Calendar Manager'}
         </Text>
         
@@ -193,9 +191,8 @@ const TitleBar: React.FC<TitleBarProps> = ({
       <Flex 
         justify="center"
         align="center"
-        style={{ 
-          flex: 1, 
-          WebkitAppRegion: 'no-drag',
+        style={{
+          flex: 1,
           maxWidth: '300px'
         }}
       >
@@ -221,7 +218,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
         )}
       </Flex>
       
-      <Flex align="center" style={{ WebkitAppRegion: 'no-drag' }}>
+      <Flex align="center">
         <Space size={8}>
           {showUserMenu && onLogout && (
             <div style={{ marginRight: '8px' }}>

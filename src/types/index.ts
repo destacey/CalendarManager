@@ -140,24 +140,10 @@ export interface ElectronAPI {
   saveFile: (content: string) => Promise<any>
   onMenuAction: (callback: (event: any, action: string) => void) => void
   removeAllListeners: (channel: string) => void
-  
-  // Window controls
-  minimizeWindow: () => Promise<void>
-  maximizeWindow: () => Promise<void>
-  closeWindow: () => Promise<void>
-  isWindowMaximized: () => Promise<boolean>
-  onWindowStateChange: (callback: (event: any, maximized: boolean) => void) => void
 }
 
 declare global {
   interface Window {
     electronAPI?: ElectronAPI
-  }
-}
-
-// Extend CSSProperties to include Webkit properties for Electron
-declare module 'react' {
-  interface CSSProperties {
-    WebkitAppRegion?: 'drag' | 'no-drag';
   }
 }
