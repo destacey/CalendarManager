@@ -524,3 +524,72 @@ Tracked as follow-ups, deliberately excluded:
 - `getEventsInRange`'s lexicographic ISO-string date comparison, which is
   fragile if Graph returns mixed offset formats. Ported faithfully so that a
   behaviour change is not mistaken for a Tauri regression.
+
+## Follow-ups raised during M1 review
+
+Added after the whole-branch review of M1, with the milestone that owns each.
+
+**M2 must handle:**
+
+- **A corrupt `config.json` is silently swallowed, then destroyed.**
+  `tauri-plugin-store`'s `build()` discards the deserialize error, so an
+  unparseable file yields an empty store and every read falls through to its
+  default — the user simply lands back on the setup screen. The first write
+  then truncates the bad file, destroying it. `Store::reload()` *does*
+  propagate the error, unlike `build()`: call it once in the `setup` hook and,
+  on `Err`, rename the file to `config.json.corrupt` before continuing.
+  Today's blast radius is a client ID, a date range and a timezone. It becomes
+  serious the moment a "legacy DB already copied" marker lives in that
+  store — a silent reset of that flag would re-run the legacy copy over a live
+  database.
+- **Nothing migrates the old `electron-store` config.** The old path was
+  `%APPDATA%/<userData>/config.json`; the new one is
+  `%APPDATA%/com.triowfs.calendarmanager/config.json`. The user re-enters the
+  client ID, but `timezone` and `syncConfig` are lost silently — and a reset
+  timezone means every event displays in the wrong zone until someone notices.
+  Fold a config copy in alongside the legacy database copy, or record the loss
+  as accepted.
+- **Settle the Rust error type before it is stamped across 20 more commands.**
+  M1's three config commands use `Result<_, String>` rather than the
+  `thiserror` the architecture section names, so the frontend cannot
+  distinguish "key absent" from "store unreadable" from "disk full". An
+  `AppError` enum implementing `Serialize` is far cheaper to introduce now
+  than to retrofit.
+- **Use `#[tauri::command(async)]` for the database commands.** A non-`async`
+  command body runs inline in the IPC handler, so a blocking SQLite query
+  would freeze the window. M1's config commands set the precedent and should
+  be switched too.
+- **Document the argument-name convention.** Tauri auto-camelCases command
+  *arguments*, not just names, so a Rust `start_date` parameter must be
+  invoked as `startDate`. M1's single-word `key`/`value` arguments exercise
+  neither rule, leaving it untested until M2's first multi-word argument.
+
+**M5 must handle:**
+
+- **`README.md`.** It sells the app as Electron-based and documents
+  `electron/main.js` as the main process. M5 was scoped to CLAUDE.md only, so
+  nothing owned the README; it is now explicitly M5's. Both files carry a
+  staleness banner in the meantime.
+- **The Electron leftovers in `.gitignore`** (`dist-electron/` and the
+  `# Electron` block).
+- **`core:window:allow-is-maximized`** in the capability allowlist, redundant
+  with `core:window:default`.
+
+**M6 must handle:**
+
+- **`tauri.conf.json`'s `"version": "../package.json"` resolves relative to
+  the process working directory, not to the config file.** Any tool parsing
+  the config from the repo root fails with a misleading "must be a semver
+  string". Worth knowing before `tauri-action` is wired up.
+
+**Unowned, worth a look:**
+
+- **The CSP lives in two files that must be edited in pairs** —
+  `src-tauri/tauri.conf.json` (injected as a header in production) and
+  `index.html` (the only one that applies under `tauri dev`, since the page
+  comes from Vite and Tauri cannot add headers to it). Neither says so.
+- **The draggable titlebar surface is narrower than it appears.** A bare
+  `data-tauri-drag-region` is self-only, so only the outer flex container's
+  own exposed gaps and the title text drag; the inner wrappers are dead
+  zones. Switching to `"deep"` would require excluding the SyncProgress click
+  wrapper, whose `onClick` the drag handler would otherwise kill.
