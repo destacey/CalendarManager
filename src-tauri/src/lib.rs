@@ -1,3 +1,4 @@
+mod auth;
 mod commands;
 
 use std::time::Duration;
