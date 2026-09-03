@@ -81,7 +81,9 @@ src-tauri/
       migrate.rs               # legacy calendar.db copy
     auth/
       mod.rs                   # loopback PKCE flow
-      tokens.rs                # keyring refresh token, in-memory access token
+      tokens.rs                # token exchange/refresh, in-memory access token
+      secret_store.rs          # DPAPI-encrypted refresh token on disk
+      flow.rs                  # login, session restore, ensure_access_token
     graph/
       mod.rs                   # reqwest client
       sync.rs                  # paginated fetch → transform → upsert
@@ -98,7 +100,7 @@ costs nothing now, makes each piece independently testable, and small focused
 files are far easier to reason about while learning Rust.
 
 **Key crates:** `rusqlite` (feature `bundled`), `reqwest`, `tokio`,
-`tokio-util` (`CancellationToken`), `serde`, `keyring`, `thiserror`.
+`tokio-util` (`CancellationToken`), `serde`, `windows` (DPAPI), `thiserror`.
 
 **Plugins:** `tauri-plugin-store`, `tauri-plugin-dialog`, `tauri-plugin-fs`,
 `tauri-plugin-opener`, `tauri-plugin-updater`.
@@ -202,9 +204,12 @@ standard OIDC scope needing no registration, to obtain a refresh token.
    cancellable `invoke('cancel_login')` cover abandoned logins.
 6. Rust POSTs to `/oauth2/v2.0/token` with the code and verifier. No CORS
    constraint applies here — this is the reason auth moves to Rust.
-7. Refresh token → Windows Credential Manager via `keyring`. Access token and
-   expiry stay in memory in Tauri state, never serialized to disk, never sent to
-   the frontend.
+7. Refresh token → a DPAPI-encrypted file at
+   `%APPDATA%/com.triowfs.calendarmanager/refresh-token.bin`, bound to the
+   current user. (Originally Windows Credential Manager via `keyring`; see
+   "Resolved during the auth milestone" for why that could not work.) Access
+   token and expiry stay in memory in Tauri state, never serialized to disk,
+   never sent to the frontend.
 8. Rust calls Graph `/me` for display name and email. Using `/me` rather than
    decoding the `id_token` avoids a JWT crate for two fields.
 
@@ -217,7 +222,7 @@ lifecycle to manage.
 
 ### Session restore
 
-On startup, if a refresh token exists in Credential Manager, attempt a refresh;
+On startup, if a stored refresh token exists, attempt a refresh;
 success goes straight to `dashboard`. Replaces MSAL's `localStorage` cache.
 
 **One-time cost:** the existing MSAL cache is abandoned, so the user signs in
@@ -225,9 +230,9 @@ once more after migration. Calendar data is unaffected.
 
 ### Fallback
 
-If Credential Manager access proves unreliable under some profile
-configurations, fall back to an encrypted file in the app data dir. Validate at
-M3, not M6.
+**Resolved:** Credential Manager could not hold a token this long, so the
+encrypted-file fallback became the primary mechanism during the auth milestone.
+See "Resolved during the auth milestone".
 
 ### Frontend impact
 
@@ -498,7 +503,7 @@ it runnable.
 | # | Milestone | Done when |
 | --- | --- | --- |
 | **M1** | Shell — scaffold `src-tauri`, strip electron plugins from `vite.config.js`, `tauri.conf.json` (decorations off, CSP, `zoomHotkeysEnabled: false`), port TitleBar + drag region | Window opens, custom titlebar minimises/maximises/closes, React renders to the setup screen |
-| **M2** | Auth — loopback PKCE, keyring, session restore, simplified `App.tsx` state machine, MSAL deleted | Sign in, restart, still signed in |
+| **M2** | Auth — loopback PKCE, DPAPI token storage, session restore, simplified `App.tsx` state machine, MSAL deleted | Sign in, restart, still signed in |
 | **M3** | Data layer — migration runner, app-data DB path + legacy copy, the 20 DB commands | Full app works against the real 30MB DB; everything but sync |
 | **M4** | Sync — reqwest Graph pipeline, `sync-status` / `sync-complete`, cancellation, SyncModal rewrite | Sync works and is cancellable; ~675 lines leave `calendar.ts` |
 | **M5** | Polish — Save-As for the Excel export, delete `electron/`, drop dead deps, retarget tests, update CLAUDE.md | `npm run test:run` and `cargo test` both green, no Electron references remain |
@@ -514,9 +519,9 @@ Most dangerous first.
 2. **`AADSTS7000218` at the auth milestone** — the token endpoint rejecting PKCE because
    *Allow public client flows* was not enabled. Highest-probability blocker,
    trivial fix once recognised.
-3. **`keyring` on Windows.** Credential Manager access is reliable, but the
-   encrypted-file fallback must be validated at M3 rather than discovered at M6.
-4. **WebView2 runtime** on machines lacking it. A non-issue on Windows 11;
+3. **~~`keyring` on Windows~~ — FIRED AND RESOLVED.** Credential Manager could
+   not store a token this long; the encrypted-file fallback is now the primary
+   mechanism. See "Resolved during the auth milestone".
    the download bootstrapper covers clean Windows 10.
 5. **Dev-server port.** `tauri dev` defaults to 1420; Vite is on 3000. `devUrl`
    and `beforeDevCommand` must match `vite.config.js` or the window loads blank.

@@ -6,7 +6,15 @@
 
 **Architecture:** Rust generates a PKCE verifier and challenge, binds an ephemeral loopback listener on `127.0.0.1:0`, opens the Entra authorize URL in the system browser, catches the redirect, and exchanges the code for tokens server-side where no CORS policy applies. The refresh token goes to Windows Credential Manager; the access token stays in memory in Tauri state. The frontend gets five commands and never sees a token.
 
-**Tech Stack:** Rust (`reqwest`, `tiny_http`, `keyring`, `sha2`, `base64`, `uuid`, `serde`), Tauri v2, `tauri-plugin-opener`, React 19.
+**Tech Stack:** Rust (`reqwest`, `tiny_http`, `sha2`, `base64`, `uuid`, `serde`, `windows` for DPAPI), Tauri v2, `tauri-plugin-opener`, React 19.
+
+> **Superseded during execution:** this plan specified `keyring` for the refresh
+> token. Windows Credential Manager caps a credential blob at 2560 bytes and
+> `keyring` encodes as UTF-16, so Entra's refresh tokens did not fit — it failed
+> at the manual gate. Storage is now a DPAPI-encrypted file in the app data dir
+> (`auth/secret_store.rs`), matching what MSAL's own Windows token cache does.
+> The auth flow also moved from `commands/auth.rs` to `auth/flow.rs`, leaving
+> `commands/` as the IPC surface the spec's architecture describes.
 
 ## Global Constraints
 
