@@ -28,11 +28,13 @@ async fn establish_session<R: Runtime>(
     app: &AppHandle<R>,
     response: tokens::TokenResponse,
 ) -> AuthResult<tokens::Account> {
-    let account = tokens::fetch_account(&response.access_token).await?;
-
+    // Persist before the profile read: a transient Graph failure must not cost
+    // the user a refresh token Entra has already rotated and accepted.
     if let Some(refresh_token) = response.refresh_token.as_deref() {
         tokens::store_refresh_token(refresh_token)?;
     }
+
+    let account = tokens::fetch_account(&response.access_token).await?;
 
     app.state::<AuthState>().set_session(
         tokens::AccessToken::new(response.access_token, response.expires_in),
@@ -54,7 +56,23 @@ pub async fn ensure_access_token<R: Runtime>(app: &AppHandle<R>) -> AuthResult<S
 
     let client_id = client_id(app)?;
     let refresh_token = tokens::load_refresh_token()?.ok_or(AuthError::NoSession)?;
-    let response = tokens::refresh(&client_id, &refresh_token).await?;
+
+    let response = match tokens::refresh(&client_id, &refresh_token).await {
+        Ok(response) => response,
+        Err(error) => {
+            // Only the token endpoint rejecting the grant proves the refresh
+            // token is worthless. A network failure leaves it perfectly valid,
+            // and discarding it there would force a re-login just because the
+            // app started offline. This decision deliberately sits next to the
+            // refresh call: any later failure — notably the Graph /me read in
+            // establish_session — says nothing about the refresh token and must
+            // never reach it.
+            if matches!(error, AuthError::Provider(_)) {
+                let _ = tokens::clear_refresh_token();
+            }
+            return Err(error);
+        }
+    };
 
     // Clone before establish_session consumes the response.
     let access_token = response.access_token.clone();
@@ -134,21 +152,10 @@ pub fn get_account(state: State<'_, AuthState>) -> Option<tokens::Account> {
 
 /// Reports whether there is a usable session, restoring one from the stored
 /// refresh token when possible so a returning user goes straight to the
-/// dashboard. Replaces MSAL's localStorage cache.
+/// dashboard. Replaces MSAL's localStorage cache. The decision to discard a
+/// rejected refresh token belongs to ensure_access_token, next to the call
+/// that can actually prove it invalid.
 #[tauri::command]
 pub async fn has_session<R: Runtime>(app: AppHandle<R>) -> bool {
-    match ensure_access_token(&app).await {
-        Ok(_) => true,
-        // Entra rejected the refresh token, so it is revoked or expired and
-        // worth nothing: discard it and make the user sign in again.
-        Err(AuthError::Provider(_)) => {
-            let _ = tokens::clear_refresh_token();
-            false
-        }
-        // Anything else is transient or unrelated — no network, no client ID
-        // configured, Credential Manager unavailable. Keep the stored token;
-        // deleting it here would force a full re-login just because the app
-        // started offline.
-        Err(_) => false,
-    }
+    ensure_access_token(&app).await.is_ok()
 }
