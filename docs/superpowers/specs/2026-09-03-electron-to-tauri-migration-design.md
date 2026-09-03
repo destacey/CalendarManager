@@ -616,6 +616,23 @@ restore the corruption or leave the user blocked, `delete_event_type` reassigns
 affected events to the default type and removes rules targeting it, in one
 transaction, and reports how many events moved.
 
+**The same foreign-key surprise applies to rule create/update — the UI must
+handle it.** `event_type_rules.target_type_id` also carries a `REFERENCES`
+clause, so `create_event_type_rule` and `update_event_type_rule` now fail with a
+raw `FOREIGN KEY constraint failed` when given a `target_type_id` that does not
+exist, where Electron silently stored the dangling reference. Low practical risk
+— the Settings form only offers ids from an existing-types dropdown — but the
+frontend milestone must not surface that raw message to the user. Either
+validate the id before the call or map the constraint error to something
+readable.
+
+**A latent invariant hole, faithfully ported.** `create_event_type` and
+`update_event_type` let a caller set `is_default: true` without clearing the
+flag on other rows, exactly as `main.js:496`/`515` did. That quietly violates
+the "exactly one default" invariant that `set_default_event_type` and
+`delete_event_type` both now depend on and carefully protect. Out of scope for
+the port; worth closing in whichever milestone touches the create/edit type form.
+
 **Resolved during the auth milestone:**
 
 - **The keyring fallback was needed, and is now the primary mechanism.** Risk #3
