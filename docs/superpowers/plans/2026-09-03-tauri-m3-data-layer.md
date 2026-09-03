@@ -1026,6 +1026,7 @@ return `Err(DbError)` instead so the frontend sees why.
 | `evaluate_event_type` | 626 | Fetch rules + default, delegate to `rules::evaluate` |
 | `set_event_type_manually` | 646 | Sets `type_id`, sets `type_manually_set = 1`, bumps `updated_at` |
 | `reprocess_event_types` | 656 | See below |
+| `reset_event_type_to_auto` | **new** | Fixes a pre-existing bug. See below. |
 
 `reprocess_event_types` is the only one with real logic. Port it exactly:
 
@@ -1043,9 +1044,34 @@ return `Err(DbError)` instead so the frontend sees why.
 - On error the original returned `{ success: false, error, message }` rather
   than throwing. Keep that shape so `DataManagement.tsx` still works.
 
-- [ ] **Step 1: Write failing tests.** Cover: reprocess leaves a manually-set event's type alone; reprocess updates an event whose rule now points elsewhere; `updatedCount` counts only actual changes, so a no-op run reports `processedCount > 0` and `updatedCount == 0`; `set_event_type_manually` sets the flag; `evaluate_event_type` returns the default when no rule matches.
+**`reset_event_type_to_auto` is new, and it fixes a bug the port uncovered.**
+`EventModal.tsx:90`'s "Reset to auto-assignment" calls `updateEvent` with
+`type_id` and `type_manually_set: false` — but `main.js:318`'s `updateEvent`
+only ever wrote eight columns and **never touched either field**. The reset
+silently did nothing beyond a success toast and a local state update; it looked
+like it worked until the next reload. Nothing does the inverse of
+`set_event_type_manually`, so this command adds it:
+
+```rust
+/// Re-evaluates the rules for one event and clears its manual override, so the
+/// event goes back to being auto-assigned. The inverse of
+/// set_event_type_manually.
+///
+/// This is deliberately a command rather than something the frontend composes
+/// out of update_event: update_event does not write type_id or
+/// type_manually_set, which is exactly why the old "reset to auto" button
+/// silently did nothing.
+pub async fn reset_event_type_to_auto(db: State<'_, Db>, event_id: i64) -> DbResult<Option<i64>>
+```
+
+It must, inside **one transaction**: load the event's fields, load the rules and
+default type, call `rules::evaluate`, then
+`UPDATE events SET type_id = ?, type_manually_set = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`.
+It returns the newly assigned type id, or `None` if the event does not exist.
+
+- [ ] **Step 1: Write failing tests.** For `reset_event_type_to_auto`: it clears `type_manually_set`; it writes the type the rules select; it returns that type id; it returns `None` for a missing event id; and — the regression guard — an event that was manually set to type A, whose rules select type B, ends up with type B **and** `type_manually_set = 0`. Then for the rest: reprocess leaves a manually-set event's type alone; reprocess updates an event whose rule now points elsewhere; `updatedCount` counts only actual changes, so a no-op run reports `processedCount > 0` and `updatedCount == 0`; `set_event_type_manually` sets the flag; `evaluate_event_type` returns the default when no rule matches.
 - [ ] **Step 2: Run to verify failure.**
-- [ ] **Step 3: Implement** and register. All 20 commands are now in `generate_handler!` — count them.
+- [ ] **Step 3: Implement** and register. All 21 commands are now in `generate_handler!` (the 20 ported plus `reset_event_type_to_auto`) — count them.
 - [ ] **Step 4: Run to verify pass.**
 - [ ] **Step 5: Verify the whole crate** and report the total.
 - [ ] **Step 6: Commit** with your own message, noting that the manual-override guard is the behaviour most worth preserving.
@@ -1071,6 +1097,14 @@ its calls will still fail at runtime. Everything else moves to `src/api/`.
 - [ ] **Step 1: Write the failing tests.** For each of the five components, retarget its existing test file's mocks from `window.electronAPI` to the relevant `src/api/` module, keeping the existing assertions. Run them and confirm they fail on the missing modules.
 - [ ] **Step 2: Create the three `src/api/` modules**, following `src/api/config.ts`'s established shape: one file per domain, typed functions over `invoke`, camelCase names wrapping the snake_case commands, and the existing types from `src/types/index.ts` for the data.
 - [ ] **Step 3: Update the five components** to import from `src/api/` instead of reaching for the global.
+
+  **`EventModal.tsx`'s `handleResetToAutoAssign` needs a real change, not just
+  an import swap.** It currently calls `evaluateEventType` and then
+  `updateEvent(id, { ...event, type_id, type_manually_set: false })`, which
+  never wrote either field. Replace the whole body with a single
+  `resetEventTypeToAuto(event.id)` call, use its returned type id for
+  `setSelectedTypeId`, and only show the success message when it returns a
+  type. Keep the existing catch and its error message.
 - [ ] **Step 4: Delete the `ElectronAPI` interface and the `declare global` block** from `src/types/index.ts`, keeping every domain type. Delete the `window.electronAPI` mock from `src/test/setup.ts`. Both existed only to keep the database surface compiling.
 - [ ] **Step 5: Run the tests.** `cd /d/Dev/CalendarManager && pwd && npm run test:run` — **the `pwd` check matters**: run from a lowercase `d:` and the suite collects zero tests and reports "No test suite found in file". It must show `D:/Dev/CalendarManager`.
 - [ ] **Step 6: Check the type-error count.** `npx tsc --noEmit 2>&1 | grep -c "error TS"` — expect **fewer than 111**, since deleting `ElectronAPI` removes the errors from components that used it. `calendar.ts` will gain errors where it referenced `window.electronAPI`; report the count and which file each new one is in.
@@ -1191,7 +1225,11 @@ mod tests {
 5. Settings → Event Type Rules: your rules are listed **in priority order**. Drag one to reorder and confirm it sticks after a restart.
 6. Find an event whose type you had set manually and confirm it **still has that type**.
 7. Run "Reprocess event types" from Data Management and confirm the counts look sane and manual overrides survive.
-8. Expected still broken: **sync**. That is M4.
+8. Set an event's type by hand, then use **"Reset to auto-assignment"** on it,
+   then **restart the app** and check the event again. It should still show the
+   auto-assigned type. This never worked before — the reset was silently a
+   no-op that reverted on reload — so this step is verifying a fix, not a port.
+9. Expected still broken: **sync**. That is M4.
 
 Step 6 is the one that matters most — manual overrides are the data Graph cannot recreate.
 
