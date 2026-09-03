@@ -1145,13 +1145,37 @@ npx vitest run src/components/TitleBar.test.tsx
 
 Expected: PASS. If a window-control test clicks the wrong button, check the index arithmetic — the last three `.ant-btn` elements are minimize, maximize, close in that order.
 
-- [ ] **Step 8: Verify TypeScript compiles**
+- [ ] **Step 8: Verify TypeScript introduces no new errors**
+
+**`tsc --noEmit` is not clean in this repo and never has been** — there are 110 pre-existing errors across 24 files, almost all unrelated to this migration (loose `any` handling in `calendar.ts`, unread variables in tests, `GraphEvent` index-signature gaps). Do **not** try to fix them; they are out of scope and fixing them would bury this task's diff.
+
+Judge against the baseline instead:
 
 ```bash
-npx tsc --noEmit
+npx tsc --noEmit 2>&1 | grep -E "TitleBar|WebkitAppRegion"
 ```
 
-Expected: no errors. Errors mentioning `WebkitAppRegion` mean a leftover `no-drag`; errors mentioning `electronAPI` members other than the database ones mean something was removed too eagerly.
+Expected: exactly two lines, both pre-existing, both in the sync test this task deliberately keeps:
+
+```
+src/components/TitleBar.test.tsx(344,16): error TS6133: 'syncProgress' is declared but its value is never read.
+src/components/TitleBar.test.tsx(348,27): error TS2345: Argument of type '{ type: string; current: number; total: number; }' is not assignable to parameter of type 'SetStateAction<null>'.
+```
+
+Two baseline errors should have **disappeared**, because this task deletes the code containing them — treat their absence as confirmation the right code was removed:
+
+- `src/components/TitleBar.tsx(56,38)` — `'event' is declared but its value is never read`, from the old `handleWindowStateChange(event, maximized)` signature.
+- `src/components/TitleBar.test.tsx(390,14)` — `The operand of a 'delete' operator must be optional`, from the deleted `handles missing removeAllListeners gracefully` test.
+
+Any **new** line mentioning `WebkitAppRegion` means a leftover `no-drag` that Step 5 missed. Any new line mentioning an `electronAPI` member other than a database one means something was removed too eagerly.
+
+For the record, confirm the total has not grown:
+
+```bash
+npx tsc --noEmit 2>&1 | grep -c "error TS"
+```
+
+Expected: 108 (110 baseline minus the two removed above).
 
 - [ ] **Step 9: Run the full frontend suite**
 
@@ -1207,7 +1231,7 @@ listener plumbing are removed as their intent is covered by new tests."
 - [ ] Titlebar drag, minimize, maximize/restore, double-click-to-maximize, and close all work.
 - [ ] The setup screen accepts a client ID, persists it to `%APPDATA%/com.triowfs.calendarmanager/config.json`, and does not reappear on restart.
 - [ ] `npm run test:run` is green, including the new `storage.test.ts`.
-- [ ] `npx tsc --noEmit` is clean.
+- [ ] `npx tsc --noEmit` shows no NEW errors versus the 110-error pre-existing baseline (108 expected after Task 3 removes two). A clean run was never achievable in this repo and is not a goal of M1.
 - [ ] `cd src-tauri && cargo check` is clean.
 - [ ] `electron/` is gone; `electron`, `better-sqlite3`, and `electron-store` are out of `package.json`.
 - [ ] `calendar.db` is backed up outside the repo.
