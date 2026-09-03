@@ -44,9 +44,12 @@ pub fn run() {
             // Where electron/main.js kept it: the repo root, i.e. the parent of
             // src-tauri during development. Also check beside the executable,
             // which is where a packaged Electron build would have left it.
+            // The bare working directory is checked last and least trusted:
+            // a packaged app's cwd is whatever launched it, so an unrelated
+            // file there is the most likely false match (see
+            // `migrate::looks_like_sqlite`, which guards against adopting one).
             let mut legacy = Vec::new();
             if let Ok(cwd) = std::env::current_dir() {
-                legacy.push(cwd.join("calendar.db"));
                 legacy.push(cwd.join("..").join("calendar.db"));
             }
             if let Ok(exe) = std::env::current_exe() {
@@ -54,8 +57,19 @@ pub fn run() {
                     legacy.push(dir.join("calendar.db"));
                 }
             }
+            if let Ok(cwd) = std::env::current_dir() {
+                legacy.push(cwd.join("calendar.db"));
+            }
 
-            app.manage(db::open(&app_data_dir, &legacy)?);
+            match db::open(&app_data_dir, &legacy) {
+                Ok(db) => {
+                    app.manage(db);
+                }
+                // Don't abort setup: this runs before the window is shown, so a
+                // failure here would leave the user with no window and nothing
+                // to diagnose. Database commands will fail with a clear error.
+                Err(error) => eprintln!("Could not open the database: {error}"),
+            }
 
             Ok(())
         })

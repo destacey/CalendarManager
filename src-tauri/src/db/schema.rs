@@ -1,3 +1,7 @@
+// This half of the split runs the *migrations* — DDL against an already-open
+// connection. `migrate.rs` is the other half: it copies the legacy *file*
+// into place before a connection is ever opened.
+
 use rusqlite::Connection;
 
 use super::error::DbError;
@@ -11,6 +15,11 @@ pub const SCHEMA_VERSION: i64 = 1;
 /// guarded by an actual pragma_table_info check rather than a swallowed
 /// exception — so the real database, which already has every column and a
 /// user_version of 0, passes through unchanged and is simply stamped.
+///
+/// It MUST stay idempotent: the ladder in `run_migrations` re-applies it in
+/// full for a v0 database rather than skipping it, so it needs to behave
+/// whether run against an empty database or the legacy one that already has
+/// every table and column.
 const MIGRATION_1: &str = r#"
     CREATE TABLE IF NOT EXISTS events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,8 +80,12 @@ const MIGRATION_1_COLUMNS: &[(&str, &str, &str)] = &[
     ("event_types", "is_billable", "BOOLEAN DEFAULT 0"),
 ];
 
-/// The schema exactly as electron/main.js produced it, for tests that need to
-/// simulate the real 30MB database's shape.
+/// The shape a database *aged through* electron/main.js's guarded `ALTER`s
+/// ends up with, for tests that need to simulate the real 30MB database.
+/// This is not a claim about physical column order: main.js's final
+/// `CREATE TABLE events` lists `location, organizer, attendees, is_meeting`
+/// before `created_at`, while this fixture appends them after `synced_at`
+/// instead — the real file's on-disk column order is unverified.
 #[cfg(test)]
 pub const LEGACY_SCHEMA_FOR_TESTS: &str = r#"
     CREATE TABLE events (
@@ -137,10 +150,46 @@ fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, DbEr
 pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
     let version: i64 = conn.query_row("SELECT * FROM pragma_user_version", [], |row| row.get(0))?;
 
-    if version >= SCHEMA_VERSION {
+    if version > SCHEMA_VERSION {
+        return Err(DbError::Other(format!(
+            "This database was created by a newer version of Calendar Manager \
+             (schema v{version}, this build supports v{SCHEMA_VERSION}). \
+             Refusing to open it."
+        )));
+    }
+    if version == SCHEMA_VERSION {
         return Ok(());
     }
 
+    // version == 0 falls through: that's the legacy case, where main.js never
+    // stamped a version at all, and every pending migration must run.
+    let tx = conn.unchecked_transaction()?;
+
+    for next_version in (version + 1)..=SCHEMA_VERSION {
+        apply_migration(&tx, next_version)?;
+    }
+
+    // pragma_user_version cannot be parameterised via `?`; interpolating it
+    // is safe because SCHEMA_VERSION is a compile-time const i64, not a value
+    // that could carry untrusted input.
+    tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))?;
+
+    tx.commit()?;
+
+    Ok(())
+}
+
+/// Applies a single migration step. Each pending version between the
+/// database's current one and `SCHEMA_VERSION` is applied in turn, so adding
+/// migration 2 later does not re-run migration 1 against a v1 database.
+fn apply_migration(conn: &Connection, version: i64) -> Result<(), DbError> {
+    match version {
+        1 => apply_migration_1(conn),
+        other => Err(DbError::Other(format!("no migration defined for schema version {other}"))),
+    }
+}
+
+fn apply_migration_1(conn: &Connection) -> Result<(), DbError> {
     conn.execute_batch(MIGRATION_1)?;
 
     for (table, column, definition) in MIGRATION_1_COLUMNS {
@@ -148,9 +197,6 @@ pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
             conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition};"))?;
         }
     }
-
-    // pragma_user_version cannot be parameterised.
-    conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))?;
 
     Ok(())
 }
@@ -257,12 +303,48 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
         let before = columns(&conn, "events");
+        let type_count_before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM event_types", [], |r| r.get(0))
+            .unwrap();
 
+        // Reset the version stamp so the DDL genuinely re-executes against a
+        // fully-migrated database — otherwise the version guard short-circuits
+        // and this only proves the guard works, not that MIGRATION_1 is safe
+        // to run twice.
+        conn.execute_batch("PRAGMA user_version = 0;").unwrap();
         run_migrations(&conn).unwrap();
+        conn.execute_batch("PRAGMA user_version = 0;").unwrap();
         run_migrations(&conn).unwrap();
 
         assert_eq!(columns(&conn, "events"), before);
+        let type_count_after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM event_types", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(type_count_after, type_count_before);
         assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn a_database_from_a_newer_schema_version_is_refused() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO event_types (name, color, is_default, is_billable) VALUES ('Future', '#000000', 1, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch(&format!("PRAGMA user_version = {};", SCHEMA_VERSION + 1))
+            .unwrap();
+
+        let result = run_migrations(&conn);
+
+        assert!(result.is_err());
+        // Refusing to open it must not touch the data that's already there.
+        assert_eq!(user_version(&conn), SCHEMA_VERSION + 1);
+        let type_name: String = conn
+            .query_row("SELECT name FROM event_types WHERE name = 'Future'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(type_name, "Future");
     }
 
     /// The case that matters most: the real 30MB database has every column
@@ -276,6 +358,17 @@ mod tests {
         conn.execute_batch(LEGACY_SCHEMA_FOR_TESTS).unwrap();
         conn.execute(
             "INSERT INTO event_types (name, color, is_default, is_billable) VALUES ('Consulting', '#ff0000', 1, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO event_type_rules (name, priority, field_name, operator, value, target_type_id) \
+             VALUES ('Consulting keyword', 1, 'title', 'contains', 'Consulting', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO categories (name, color) VALUES ('Client Work', '#00ff00')",
             [],
         )
         .unwrap();
@@ -310,6 +403,23 @@ mod tests {
             .query_row("SELECT type_manually_set FROM events WHERE graph_id='g1'", [], |r| r.get(0))
             .unwrap();
         assert!(manual);
+
+        // The rule and the category survived too — neither is recreatable
+        // from Graph any more than the type or the override are.
+        let (rule_name, rule_target): (String, i64) = conn
+            .query_row(
+                "SELECT name, target_type_id FROM event_type_rules WHERE name = 'Consulting keyword'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(rule_name, "Consulting keyword");
+        assert_eq!(rule_target, 1);
+
+        let category_name: String = conn
+            .query_row("SELECT name FROM categories WHERE name = 'Client Work'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(category_name, "Client Work");
 
         assert_eq!(user_version(&conn), SCHEMA_VERSION);
     }
