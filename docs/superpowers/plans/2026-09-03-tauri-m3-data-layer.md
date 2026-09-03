@@ -993,13 +993,28 @@ model structs.
 | `get_event_types` | 485 | `ORDER BY name` |
 | `create_event_type` | 496 | |
 | `update_event_type` | 515 | Returns `null` when no row changed |
-| `delete_event_type` | 536 | Returns whether a row changed |
+| `delete_event_type` | 536 | **Behaviour change, user-approved.** See below. |
 | `set_default_event_type` | 542 | **In one transaction:** clear all `is_default`, then set this one |
 | `get_event_type_rules` | 564 | `ORDER BY priority ASC` |
 | `create_event_type_rule` | 569 | |
 | `update_event_type_rule` | 585 | Returns `null` when no row changed |
 | `delete_event_type_rule` | 603 | |
 | `update_rule_priorities` | 609 | **In one transaction:** priority = index + 1, in the given order |
+
+**`delete_event_type` is no longer a literal port.** `rusqlite`'s bundled SQLite
+is compiled with `-DSQLITE_DEFAULT_FOREIGN_KEYS=1`, so foreign keys are enforced
+where `better-sqlite3` left them off. A bare `DELETE FROM event_types` therefore
+now *fails* when events or rules still reference the type, rather than silently
+orphaning them as Electron did. Measured against the real database: all 8,924
+events carry a valid `type_id`, so with only 3 types every delete would fail.
+
+Neither prior behaviour is right — Electron corrupted silently, and a bare error
+just blocks the user with no way forward. So, in **one transaction**: reassign
+affected events to the default type, delete rules targeting the type, then
+delete the type. Return how many events were reassigned so the UI can say what
+happened. If the type being deleted *is* the default and another type exists,
+promote one to default first; if it is the only type, refuse with a clear error
+rather than leaving the database with no default.
 
 Both transactional commands must use a real `rusqlite` transaction so a partial
 update cannot leave two default types or a broken priority ordering. The

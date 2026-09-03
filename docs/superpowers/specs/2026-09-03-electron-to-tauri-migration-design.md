@@ -597,6 +597,25 @@ Added after the whole-branch review of M1, with the milestone that owns each.
   the config from the repo root fails with a misleading "must be a semver
   string". Worth knowing before `tauri-action` is wired up.
 
+**Measured facts about the real database** (probed on a copy during the data-layer
+milestone, so the numbers behind these decisions are recorded rather than assumed):
+
+- 8,924 events, 3 event types, 2 event-type rules, **0 manual type overrides**,
+  `user_version` 0, and **0 dangling `type_id`/`target_type_id` references**.
+- This corrects a claim repeated earlier in this document: manual overrides were
+  cited as data Graph cannot recreate, and there are none. What is actually
+  irreplaceable is the 3 event types and 2 rules — still worth protecting, but a
+  much smaller surface than implied.
+- Zero dangling references is why enabling foreign-key enforcement is safe.
+
+**Foreign keys are enforced in the Rust build and were not under Electron.**
+`libsqlite3-sys`'s bundled build compiles with `-DSQLITE_DEFAULT_FOREIGN_KEYS=1`;
+`better-sqlite3` left them off. Deleting an in-use event type therefore fails
+where it used to silently orphan events into a typeless state. Rather than
+restore the corruption or leave the user blocked, `delete_event_type` reassigns
+affected events to the default type and removes rules targeting it, in one
+transaction, and reports how many events moved.
+
 **Resolved during the auth milestone:**
 
 - **The keyring fallback was needed, and is now the primary mechanism.** Risk #3
