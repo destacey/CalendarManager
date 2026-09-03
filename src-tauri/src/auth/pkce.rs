@@ -17,9 +17,12 @@ pub struct PkcePair {
     pub challenge: String,
 }
 
-/// Two UUIDs give 256 bits of entropy across 64 unreserved characters, inside
-/// RFC 7636's 43-128 range. `Uuid::new_v4` is a stabler source than `rand`,
-/// whose API has shifted across major versions.
+/// Two UUIDs give ~244 bits of entropy across 64 unreserved characters, inside
+/// RFC 7636's 43-128 range. (A v4 UUID has 6 of its 128 bits fixed as version
+/// and variant markers, so each contributes 122 random bits, not 128.)
+/// `Uuid::new_v4` is a stabler source than `rand`, whose API has shifted across
+/// major versions, and the uuid crate's v4 feature already draws from
+/// getrandom, so the randomness is OS-CSPRNG quality either way.
 pub fn generate_pkce() -> PkcePair {
     let verifier = format!(
         "{}{}",
@@ -134,13 +137,22 @@ mod tests {
     }
 
     #[test]
-    fn authorize_url_percent_encodes_the_redirect_and_scopes() {
+    fn authorize_url_encodes_the_redirect_and_scopes() {
         let url = authorize_url("c", "http://localhost:1234", "ch", "st");
 
-        // A raw "http://localhost:1234" or spaces between scopes would be a
-        // malformed query string.
+        // The redirect URI is percent-encoded.
         assert!(url.contains("redirect_uri=http%3A%2F%2Flocalhost%3A1234"));
-        assert!(url.contains("offline_access"));
-        assert!(!url.contains("offline_access User.Read"));
+
+        // Scope spaces become '+', not '%20'. RFC 6749 section 3.1 specifies
+        // the authorization request query in application/x-www-form-urlencoded
+        // form, which is what Url::query_pairs_mut emits; Entra accepts it.
+        // Asserting the exact encoding means a silent change gets caught here
+        // rather than against the live endpoint.
+        assert!(url.contains(
+            "scope=offline_access+User.Read+Calendars.Read+Calendars.ReadWrite"
+        ));
+
+        // What must never appear is a raw, unencoded space anywhere in the URL.
+        assert!(!url.contains(' '), "authorize URL contained a raw space: {url}");
     }
 }
