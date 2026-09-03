@@ -592,6 +592,30 @@ Added after the whole-branch review of M1, with the milestone that owns each.
   the config from the repo root fails with a misleading "must be a semver
   string". Worth knowing before `tauri-action` is wired up.
 
+**Resolved during the auth milestone:**
+
+- **The keyring fallback was needed, and is now the primary mechanism.** Risk #3
+  fired exactly where the spec asked it to. Windows Credential Manager caps a
+  credential blob at 2560 bytes and `keyring`'s `set_password` encodes as UTF-16,
+  so any refresh token over ~1280 characters failed with `Attribute 'password'
+  encoded as UTF-16 is longer than platform limit of 2560 chars`. Entra's
+  routinely exceed that. Raising the ceiling was rejected as a fix: Microsoft
+  documents that clients must not assume a maximum token length, so any fixed
+  limit is a latent login failure at an unpredictable date. The token is now
+  stored DPAPI-encrypted in `%APPDATA%/com.triowfs.calendarmanager/refresh-token.bin`,
+  matching what MSAL's own Windows token cache does and for the same reason.
+  `keyring` is removed entirely.
+
+**Environment trap worth knowing:**
+
+- **The Vitest suite's behaviour depends on the drive letter's case.** Run from
+  `d:\Dev\CalendarManager` every test file reports "No test suite found in file"
+  and zero tests are collected; run the identical command from
+  `D:\Dev\CalendarManager` and all 368 pass. Presumably module identity differs
+  between the setup file and the test files under the two casings, so the
+  globals injection and the collector disagree. It looks exactly like a broken
+  test suite, so check `pwd` before diagnosing anything else.
+
 **Unowned, worth a look:**
 
 - **The CSP lives in two files that must be edited in pairs** —
