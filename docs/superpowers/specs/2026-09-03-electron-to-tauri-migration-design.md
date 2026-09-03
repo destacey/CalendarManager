@@ -355,7 +355,7 @@ rather than smeared across 73 call sites.
 | `openFile`, `saveFile`, `onMenuAction`, `removeAllListeners` | 4 | Deleted — no handler, no call site |
 
 That is 23 custom Rust commands, plus `login` / `logout` / `get_account` /
-`has_session` from M3 and `start_sync` / `cancel_sync` from M4.
+`has_session` from the auth milestone and `start_sync` / `cancel_sync` from M4.
 
 ## Dependency and script cleanup (M5)
 
@@ -366,7 +366,7 @@ That is 23 custom Rust commands, plus `login` / `logout` / `get_account` /
 `cross-env`, `wait-on`.
 
 `@microsoft/microsoft-graph-client` is only imported by `services/auth.ts` for
-`getGraphClient`, which is deleted in M3, so it leaves with MSAL.
+`getGraphClient`, which is deleted by the auth milestone, so it leaves with MSAL.
 
 **Kept:** `exceljs` (still generates the workbook in the frontend), `dayjs`,
 `antd`, `@dnd-kit/*`, React, and the whole Vitest toolchain.
@@ -485,11 +485,21 @@ Ordering is constrained by the clean break: the app cannot run until config and
 DB commands exist. These are sequenced to reach a runnable app quickly and keep
 it runnable.
 
+> **Reordered after M1 shipped: auth now comes before the data layer.**
+> As originally written, the data-layer milestone was "done" when "the full app
+> works against the real 30MB DB" — but the dashboard is unreachable without a
+> login, so its acceptance criterion depended on a milestone that came after it.
+> Auth depends only on the config M1 delivers, never on the database, so the
+> swap costs nothing and removes the gap. It also ends the interim state where
+> the app cannot be signed into at all: M1 strips the Entra domains from the CSP
+> (see the CSP reduction note above), which blocks `msal-browser`'s token POST
+> and leaves the login screen looping back to setup.
+
 | # | Milestone | Done when |
 | --- | --- | --- |
 | **M1** | Shell — scaffold `src-tauri`, strip electron plugins from `vite.config.js`, `tauri.conf.json` (decorations off, CSP, `zoomHotkeysEnabled: false`), port TitleBar + drag region | Window opens, custom titlebar minimises/maximises/closes, React renders to the setup screen |
-| **M2** | Data layer — migration runner, app-data DB path + legacy copy, all 23 DB/config commands, `tauri-plugin-store` | Full app works against the real 30MB DB; everything but auth and sync |
-| **M3** | Auth — loopback PKCE, keyring, session restore, simplified `App.tsx` state machine, MSAL deleted | Sign in, restart, still signed in |
+| **M2** | Auth — loopback PKCE, keyring, session restore, simplified `App.tsx` state machine, MSAL deleted | Sign in, restart, still signed in |
+| **M3** | Data layer — migration runner, app-data DB path + legacy copy, the 20 DB commands | Full app works against the real 30MB DB; everything but sync |
 | **M4** | Sync — reqwest Graph pipeline, `sync-status` / `sync-complete`, cancellation, SyncModal rewrite | Sync works and is cancellable; ~675 lines leave `calendar.ts` |
 | **M5** | Polish — Save-As for the Excel export, delete `electron/`, drop dead deps, retarget tests, update CLAUDE.md | `npm run test:run` and `cargo test` both green, no Electron references remain |
 | **M6** | Distribution — bundle config, signing keypair, GitHub Actions + `tauri-action`, updater UI | A tagged release installs, then updates itself |
@@ -501,7 +511,7 @@ Most dangerous first.
 1. **The 30MB database.** Back up `calendar.db` outside the repo before M2 runs
    for the first time. The migration is idempotent and tested, but a manual
    backup covers the one failure mode with no undo.
-2. **`AADSTS7000218` at M3** — the token endpoint rejecting PKCE because
+2. **`AADSTS7000218` at the auth milestone** — the token endpoint rejecting PKCE because
    *Allow public client flows* was not enabled. Highest-probability blocker,
    trivial fix once recognised.
 3. **`keyring` on Windows.** Credential Manager access is reliable, but the
@@ -529,7 +539,7 @@ Tracked as follow-ups, deliberately excluded:
 
 Added after the whole-branch review of M1, with the milestone that owns each.
 
-**M2 must handle:**
+**The data-layer milestone must handle:**
 
 - **A corrupt `config.json` is silently swallowed, then destroyed.**
   `tauri-plugin-store`'s `build()` discards the deserialize error, so an
