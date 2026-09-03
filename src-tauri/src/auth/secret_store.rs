@@ -38,17 +38,17 @@ pub fn store(path: &Path, secret: &str) -> AuthResult<()> {
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
-            .map_err(|e| AuthError::Keyring(format!("could not create {}: {e}", parent.display())))?;
+            .map_err(|e| AuthError::SecretStore(format!("could not create {}: {e}", parent.display())))?;
     }
 
     let temp_path = sibling_temp_path(path);
     fs::write(&temp_path, &ciphertext).map_err(|e| {
-        AuthError::Keyring(format!("could not write {}: {e}", temp_path.display()))
+        AuthError::SecretStore(format!("could not write {}: {e}", temp_path.display()))
     })?;
     fs::rename(&temp_path, path).map_err(|e| {
         // Best-effort cleanup of the temp file; the write error is what matters.
         let _ = fs::remove_file(&temp_path);
-        AuthError::Keyring(format!(
+        AuthError::SecretStore(format!(
             "could not replace {} with {}: {e}",
             path.display(),
             temp_path.display()
@@ -60,15 +60,20 @@ pub fn store(path: &Path, secret: &str) -> AuthResult<()> {
 ///
 /// `Ok(None)` means "no usable secret is stored": the file is absent, or it
 /// exists but cannot be decrypted (corrupted, or written by a different
-/// Windows account — DPAPI ties the key to the user). In the latter case the
-/// unreadable file is deleted so it doesn't keep failing identically forever;
-/// this is logged to stderr without ever printing file content.
+/// Windows account — DPAPI ties the key to the user, and a roamed master key
+/// can also be transiently unreachable). In the latter case the file is
+/// preserved by renaming it to `<name>.corrupt` rather than deleted, so a
+/// transient DPAPI failure can't destroy a perfectly good credential and the
+/// bytes remain available for diagnosis. This app builds with
+/// `windows_subsystem = "windows"` in release, so there is no console for
+/// `eprintln!` to reach; the renamed file, not stderr, is what a developer
+/// actually has to go on.
 pub fn load(path: &Path) -> AuthResult<Option<String>> {
     let ciphertext = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => {
-            return Err(AuthError::Keyring(format!(
+            return Err(AuthError::SecretStore(format!(
                 "could not read {}: {e}",
                 path.display()
             )))
@@ -78,7 +83,7 @@ pub fn load(path: &Path) -> AuthResult<Option<String>> {
     match decrypt(&ciphertext) {
         Ok(plaintext) => {
             let secret = String::from_utf8(plaintext).map_err(|_| {
-                AuthError::Keyring("decrypted secret was not valid UTF-8".into())
+                AuthError::SecretStore("decrypted secret was not valid UTF-8".into())
             });
             match secret {
                 Ok(secret) => Ok(Some(secret)),
@@ -95,13 +100,26 @@ pub fn load(path: &Path) -> AuthResult<Option<String>> {
         Err(_) => {
             eprintln!(
                 "secret_store: {} could not be decrypted (corrupt, or written by a different \
-                 account); discarding it",
+                 account); preserving it as {}.corrupt for diagnosis",
+                path.display(),
                 path.display()
             );
-            let _ = fs::remove_file(path);
+            let _ = fs::rename(path, corrupt_path(path));
             Ok(None)
         }
     }
+}
+
+/// The sibling path a corrupt secret file is renamed to, so it can be
+/// inspected rather than lost. A fixed name (not a fresh UUID each time) so
+/// repeated failures overwrite the same file instead of littering the
+/// directory.
+fn corrupt_path(path: &Path) -> std::path::PathBuf {
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "secret".into());
+    path.with_file_name(format!("{file_name}.corrupt"))
 }
 
 /// Remove the stored secret. Already-absent is success, not a failure.
@@ -109,7 +127,7 @@ pub fn clear(path: &Path) -> AuthResult<()> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(AuthError::Keyring(format!(
+        Err(e) => Err(AuthError::SecretStore(format!(
             "could not remove {}: {e}",
             path.display()
         ))),
@@ -166,7 +184,7 @@ fn encrypt(plaintext: &[u8]) -> AuthResult<Vec<u8>> {
     };
 
     if ok.is_err() {
-        return Err(AuthError::Keyring(format!(
+        return Err(AuthError::SecretStore(format!(
             "CryptProtectData failed: {}",
             std::io::Error::last_os_error()
         )));
@@ -209,7 +227,7 @@ fn decrypt(ciphertext: &[u8]) -> AuthResult<Vec<u8>> {
     };
 
     if ok.is_err() {
-        return Err(AuthError::Keyring(format!(
+        return Err(AuthError::SecretStore(format!(
             "CryptUnprotectData failed: {}",
             std::io::Error::last_os_error()
         )));
@@ -272,6 +290,7 @@ mod tests {
     impl Drop for TempPath {
         fn drop(&mut self) {
             let _ = fs::remove_file(&self.0);
+            let _ = fs::remove_file(corrupt_path(&self.0));
         }
     }
 
@@ -319,14 +338,37 @@ mod tests {
     }
 
     #[test]
-    fn a_corrupt_file_makes_load_return_none_and_removes_it() {
+    fn a_corrupt_file_makes_load_return_none_and_preserves_it_as_dot_corrupt() {
         let path = TempPath(unique_temp_path("corrupt"));
-        fs::write(&path.0, b"not a valid DPAPI blob at all").unwrap();
+        let bytes: &[u8] = b"not a valid DPAPI blob at all";
+        fs::write(&path.0, bytes).unwrap();
 
         let loaded = load(&path.0).unwrap();
 
         assert_eq!(loaded, None);
         assert!(!path.0.exists());
+
+        let corrupt = corrupt_path(&path.0);
+        assert!(corrupt.exists());
+        assert_eq!(fs::read(&corrupt).unwrap(), bytes);
+    }
+
+    #[test]
+    fn a_second_corrupt_load_overwrites_the_existing_dot_corrupt_file() {
+        let path = TempPath(unique_temp_path("corrupt-overwrite"));
+        fs::write(&path.0, b"first corrupt payload").unwrap();
+        assert_eq!(load(&path.0).unwrap(), None);
+        assert!(corrupt_path(&path.0).exists());
+
+        // A fresh corrupt file at the same original path, decrypted a second time.
+        fs::write(&path.0, b"second corrupt payload").unwrap();
+        let loaded = load(&path.0).unwrap();
+
+        assert_eq!(loaded, None);
+        assert!(!path.0.exists());
+        let corrupt = corrupt_path(&path.0);
+        assert!(corrupt.exists());
+        assert_eq!(fs::read(&corrupt).unwrap(), b"second corrupt payload");
     }
 
     #[test]

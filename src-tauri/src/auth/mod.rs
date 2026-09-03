@@ -1,10 +1,13 @@
 pub mod error;
+pub mod flow;
 pub mod loopback;
 pub mod pkce;
 pub mod secret_store;
 pub mod tokens;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+pub use flow::{client_id, ensure_access_token, refresh_token_path, run_login};
+
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use error::{AuthError, AuthResult};
@@ -19,6 +22,15 @@ pub struct AuthState {
     /// An Arc so a clone can move into the blocking listener thread while
     /// `cancel_login` still reaches the same flag from the command.
     cancelled: Arc<AtomicBool>,
+    /// Bumped every time the session is cleared. A refresh in flight when a
+    /// logout happens captures the generation beforehand and checks it again
+    /// before writing the result back, so a logout can't be silently undone
+    /// by a refresh that was already underway.
+    generation: AtomicU64,
+    /// Serializes concurrent refreshes so two callers that both miss the
+    /// fresh-token fast path don't each mint (and race to persist) a
+    /// different rotated refresh token.
+    refresh_lock: tokio::sync::Mutex<()>,
 }
 
 struct Session {
@@ -46,6 +58,33 @@ impl AuthState {
 
     pub fn clear_session(&self) {
         *self.session.lock().expect("auth state poisoned") = None;
+        self.generation.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// The current session generation. A caller that is about to do
+    /// something slow (a network refresh) should capture this beforehand and
+    /// pass it to `set_session_if_current` afterward, so a `clear_session` in
+    /// between is not silently undone.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
+    }
+
+    /// Sets the session, but only if `generation` still matches the current
+    /// generation. Returns `true` if the session was set, `false` if a
+    /// `clear_session` happened in the meantime and the caller's result is
+    /// therefore stale and must not be applied.
+    pub fn set_session_if_current(
+        &self,
+        generation: u64,
+        token: AccessToken,
+        account: Account,
+    ) -> bool {
+        let mut guard = self.session.lock().expect("auth state poisoned");
+        if self.generation.load(Ordering::SeqCst) != generation {
+            return false;
+        }
+        *guard = Some(Session { token, account });
+        true
     }
 
     /// Returns the current access token if it is still fresh enough to use.
@@ -86,6 +125,13 @@ impl AuthState {
     /// the flag, is what lets the blocking thread and `cancel_login` share it.
     pub fn cancel_flag(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.cancelled)
+    }
+
+    /// The lock a refresh must hold while it talks to the token endpoint, so
+    /// two callers that both find no fresh token don't each mint a different
+    /// rotated refresh token and stomp on one another.
+    pub fn refresh_lock(&self) -> &tokio::sync::Mutex<()> {
+        &self.refresh_lock
     }
 }
 
@@ -167,5 +213,69 @@ mod tests {
         state.begin_login().unwrap();
 
         assert!(!state.is_cancelled());
+    }
+
+    #[test]
+    fn a_new_states_generation_is_stable_across_set_session() {
+        let state = AuthState::default();
+        let generation = state.generation();
+
+        state.set_session(
+            tokens::AccessToken::new("at".into(), 3600),
+            tokens::Account {
+                name: "Ada".into(),
+                username: "ada@example.com".into(),
+            },
+        );
+
+        assert_eq!(state.generation(), generation);
+    }
+
+    #[test]
+    fn clearing_the_session_increments_the_generation() {
+        let state = AuthState::default();
+        let generation = state.generation();
+
+        state.clear_session();
+
+        assert_eq!(state.generation(), generation + 1);
+    }
+
+    #[test]
+    fn set_session_if_current_succeeds_with_the_current_generation() {
+        let state = AuthState::default();
+        let generation = state.generation();
+
+        let applied = state.set_session_if_current(
+            generation,
+            tokens::AccessToken::new("at".into(), 3600),
+            tokens::Account {
+                name: "Ada".into(),
+                username: "ada@example.com".into(),
+            },
+        );
+
+        assert!(applied);
+        assert!(state.has_session());
+        assert_eq!(state.account().unwrap().username, "ada@example.com");
+    }
+
+    #[test]
+    fn set_session_if_current_fails_with_a_stale_generation_and_leaves_no_session() {
+        let state = AuthState::default();
+        let generation = state.generation();
+        state.clear_session(); // bumps the generation past what we captured
+
+        let applied = state.set_session_if_current(
+            generation,
+            tokens::AccessToken::new("at".into(), 3600),
+            tokens::Account {
+                name: "Ada".into(),
+                username: "ada@example.com".into(),
+            },
+        );
+
+        assert!(!applied);
+        assert!(!state.has_session());
     }
 }

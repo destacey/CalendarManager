@@ -26,11 +26,16 @@ pub enum AuthError {
     #[error("Microsoft rejected the sign-in: {0}")]
     Provider(String),
 
+    /// The refresh token itself is invalid, revoked or expired. Distinct from
+    /// Provider so that only this discards the stored credential.
+    #[error("Your sign-in has expired: {0}")]
+    InvalidGrant(String),
+
     #[error("Network error talking to Microsoft: {0}")]
     Network(String),
 
-    #[error("Could not access the Windows Credential Manager: {0}")]
-    Keyring(String),
+    #[error("Could not access secure storage: {0}")]
+    SecretStore(String),
 
     #[error("{0}")]
     Other(String),
