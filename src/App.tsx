@@ -45,30 +45,18 @@ function AppContent() {
     const initializeApp = async () => {
       try {
         const appRegistrationId = await storageService.getAppRegistrationId()
-        
+
         if (!appRegistrationId) {
           setAppState('setup')
           return
         }
 
-        // Only initialize auth service if we have a valid client ID
-        await authService.initialize(appRegistrationId)
-        
-        // Give MSAL a moment to fully initialize before handling redirects
-        if (window.location.hash.includes('code=') || window.location.hash.includes('error=')) {
-          // Small delay to ensure MSAL is fully ready
-          await new Promise(resolve => setTimeout(resolve, 100))
-          await authService.handleRedirectPromise()
-        }
-        
-        if (authService.isLoggedIn()) {
-          setAppState('dashboard')
-        } else {
-          setAppState('login')
-        }
+        // Rust restores a session from the stored refresh token if it can, so
+        // there is no redirect to handle and no MSAL cache to prime.
+        setAppState((await authService.isLoggedIn()) ? 'dashboard' : 'login')
       } catch (error) {
         console.error('Error initializing app:', error)
-        setAppState('setup')
+        setAppState('login')
       }
     }
 
@@ -78,7 +66,6 @@ function AppContent() {
   const handleSetupComplete = async (appRegistrationId: string) => {
     try {
       await storageService.setAppRegistrationId(appRegistrationId)
-      await authService.initialize(appRegistrationId)
       setAppState('login')
     } catch (error) {
       console.error('Error completing setup:', error)

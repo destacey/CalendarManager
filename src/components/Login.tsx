@@ -9,7 +9,7 @@ interface LoginProps {
   onLoginError: (error: string) => void;
 }
 
-const Login: React.FC<LoginProps> = ({ onLoginSuccess: _onLoginSuccess, onLoginError }) => {
+const Login: React.FC<LoginProps> = ({ onLoginSuccess, onLoginError }) => {
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -17,10 +17,10 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess: _onLoginSuccess, onLoginE
     try {
       const { authService } = await import('../services/auth');
       await authService.login();
-      // Note: loginRedirect will cause a page navigation, so onLoginSuccess won't be called immediately
+      onLoginSuccess();
     } catch (error) {
       console.error('Login failed:', error);
-      onLoginError(error instanceof Error ? error.message : 'Login failed');
+      onLoginError(typeof error === 'string' ? error : 'Login failed');
       setLoading(false);
     }
   };
@@ -45,7 +45,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess: _onLoginSuccess, onLoginE
 
           <Alert
             title="Microsoft Account Required"
-            description="You'll need to sign in with your Microsoft work or school account to access Microsoft Graph services."
+            description="Your browser will open so you can sign in with your Microsoft work or school account."
             type="info"
             showIcon
           />
