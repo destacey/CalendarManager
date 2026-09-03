@@ -42,6 +42,27 @@ async fn establish_session<R: Runtime>(
     Ok(account)
 }
 
+/// Returns a usable access token, refreshing or restoring from the Credential
+/// Manager as needed. This is the single entry point for anything that needs
+/// to call Graph — the sync milestone calls this rather than reaching into
+/// AuthState, so the refresh rules live in exactly one place.
+pub async fn ensure_access_token<R: Runtime>(app: &AppHandle<R>) -> AuthResult<String> {
+    // Still-fresh in-memory token: the common case, no network needed.
+    if let Some(token) = app.state::<AuthState>().fresh_token() {
+        return Ok(token);
+    }
+
+    let client_id = client_id(app)?;
+    let refresh_token = tokens::load_refresh_token()?.ok_or(AuthError::NoSession)?;
+    let response = tokens::refresh(&client_id, &refresh_token).await?;
+
+    // Clone before establish_session consumes the response.
+    let access_token = response.access_token.clone();
+    establish_session(app, response).await?;
+
+    Ok(access_token)
+}
+
 #[tauri::command]
 pub async fn login<R: Runtime>(app: AppHandle<R>) -> AuthResult<tokens::Account> {
     let client_id = client_id(&app)?;
@@ -111,26 +132,23 @@ pub fn get_account(state: State<'_, AuthState>) -> Option<tokens::Account> {
     state.account()
 }
 
-/// Restores a session from the stored refresh token when possible, so a
-/// returning user goes straight to the dashboard. Replaces MSAL's
-/// localStorage cache.
+/// Reports whether there is a usable session, restoring one from the stored
+/// refresh token when possible so a returning user goes straight to the
+/// dashboard. Replaces MSAL's localStorage cache.
 #[tauri::command]
 pub async fn has_session<R: Runtime>(app: AppHandle<R>) -> bool {
-    if app.state::<AuthState>().has_session() {
-        return true;
+    match ensure_access_token(&app).await {
+        Ok(_) => true,
+        // Entra rejected the refresh token, so it is revoked or expired and
+        // worth nothing: discard it and make the user sign in again.
+        Err(AuthError::Provider(_)) => {
+            let _ = tokens::clear_refresh_token();
+            false
+        }
+        // Anything else is transient or unrelated — no network, no client ID
+        // configured, Credential Manager unavailable. Keep the stored token;
+        // deleting it here would force a full re-login just because the app
+        // started offline.
+        Err(_) => false,
     }
-
-    let Ok(client_id) = client_id(&app) else {
-        return false;
-    };
-    let Ok(Some(refresh_token)) = tokens::load_refresh_token() else {
-        return false;
-    };
-    let Ok(response) = tokens::refresh(&client_id, &refresh_token).await else {
-        // A revoked or expired refresh token means a real sign-in is needed.
-        let _ = tokens::clear_refresh_token();
-        return false;
-    };
-
-    establish_session(&app, response).await.is_ok()
 }
