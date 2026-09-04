@@ -9,6 +9,7 @@ pub mod migrate;
 pub mod models;
 pub mod rules;
 pub mod schema;
+pub mod sync;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
