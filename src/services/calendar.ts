@@ -1,7 +1,7 @@
 import dayjs from 'dayjs'
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 import { storageService } from './storage'
-import { onSyncComplete, type SyncConfig, type SyncResult } from '../api/sync'
+import type { SyncConfig, SyncResult } from '../api/sync'
 
 dayjs.extend(isSameOrBefore)
 
@@ -42,18 +42,4 @@ export async function getCurrentSyncConfig(): Promise<SyncConfig> {
 export async function setSyncConfig(config: SyncConfig): Promise<void> {
   if (!validateSyncConfig(config)) throw new Error('Invalid sync configuration')
   await storageService.setSyncConfig(config)
-}
-
-// Compat shim: src/hooks/{useCalendarEvents,useCalendarViewEvents}.ts (out of scope here)
-// still call the old callback-registry API; new code should use onSyncComplete/onSyncStatus above.
-type Unlisten = () => void
-const unlistenByCallback = new Map<(result: SyncResult) => void, Unlisten>()
-
-export const calendarService = {
-  addSyncCallbacks(_progress?: unknown, onComplete?: (result: SyncResult) => void): void {
-    if (onComplete) onSyncComplete(onComplete).then((u) => unlistenByCallback.set(onComplete, u))
-  },
-  removeSyncCallbacks(_progress?: unknown, onComplete?: (result: SyncResult) => void): void {
-    if (onComplete) { unlistenByCallback.get(onComplete)?.(); unlistenByCallback.delete(onComplete) }
-  },
 }

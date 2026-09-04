@@ -3,7 +3,7 @@ import dayjs, { Dayjs } from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { Event } from '../types'
-import { calendarService } from '../services/calendar'
+import { onSyncComplete } from '../api/sync'
 import { storageService } from '../services/storage'
 import { useMessage } from '../contexts/MessageContext'
 import { getEventsInRange } from '../api/events'
@@ -81,8 +81,20 @@ export const useCalendarViewEvents = (viewStart: Dayjs, viewEnd: Dayjs) => {
       }
     }
 
-    calendarService.addSyncCallbacks(undefined, handleSyncComplete)
-    return () => calendarService.removeSyncCallbacks(undefined, handleSyncComplete)
+    // onSyncComplete resolves asynchronously, so an unmount before it settles
+    // would otherwise leak a listener that nothing ever removes.
+    let cancelled = false
+    let unlisten: (() => void) | undefined
+
+    onSyncComplete(handleSyncComplete).then((off) => {
+      if (cancelled) off()
+      else unlisten = off
+    })
+
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
   }, [viewStart, viewEnd, loadEventsInRange])
 
   // Optimized event date map - only process events we actually loaded
