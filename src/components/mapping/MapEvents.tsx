@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Typography, Space, Button, Empty, Spin, Switch, Flex, Tag, theme } from 'antd'
+import { Typography, Space, Button, Empty, Spin, Switch, Flex, Tag, theme, Splitter } from 'antd'
 import { HolderOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons'
 import {
   DndContext,
@@ -252,65 +252,79 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
   const remaining = groups.reduce((n, g) => n + g.eventCount, 0)
 
   return (
-    <div style={{ padding: 24, height: '100%', overflow: 'auto' }}>
-      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-        <Flex align="baseline" gap={12} wrap>
-          <Title level={2} style={{ marginBottom: 0 }}>
-            Map events
-          </Title>
-          <Text type="secondary">
-            {remaining} unmapped event{remaining === 1 ? '' : 's'} in {groups.length} group
-            {groups.length === 1 ? '' : 's'}
+    <div
+      style={{
+        padding: 24,
+        height: '100%',
+        // The page itself must not scroll: each splitter panel owns its own
+        // scrollbar, so the header and the drag handle stay put while a long
+        // list moves underneath them.
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16
+      }}
+    >
+      <Flex align="baseline" gap={12} wrap style={{ flexShrink: 0 }}>
+        <Title level={2} style={{ marginBottom: 0 }}>
+          Map events
+        </Title>
+        <Text type="secondary">
+          {remaining} unmapped event{remaining === 1 ? '' : 's'} in {groups.length} group
+          {groups.length === 1 ? '' : 's'}
+        </Text>
+        <div style={{ flexGrow: 1 }} />
+        {/* Prev/next rather than a DatePicker: stepping months is the only
+            thing needed here, and it is one click instead of three. */}
+        <Space size={4}>
+          <Button
+            icon={<LeftOutlined />}
+            size="small"
+            aria-label="Previous month"
+            onClick={() => setMonth(m => m.subtract(1, 'month'))}
+          />
+          <Text style={{ minWidth: 110, textAlign: 'center' }}>{month.format('MMMM YYYY')}</Text>
+          <Button
+            icon={<RightOutlined />}
+            size="small"
+            aria-label="Next month"
+            onClick={() => setMonth(m => m.add(1, 'month'))}
+          />
+        </Space>
+        <Space size={6}>
+          <Switch
+            size="small"
+            checked={billableOnly}
+            onChange={setBillableOnly}
+            aria-label="Billable types only"
+          />
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            Billable types only
           </Text>
-          <div style={{ flexGrow: 1 }} />
-          {/* Prev/next rather than a DatePicker: stepping months is the only
-              thing needed here, and it is one click instead of three. */}
-          <Space size={4}>
-            <Button
-              icon={<LeftOutlined />}
-              size="small"
-              aria-label="Previous month"
-              onClick={() => setMonth(m => m.subtract(1, 'month'))}
-            />
-            <Text style={{ minWidth: 110, textAlign: 'center' }}>
-              {month.format('MMMM YYYY')}
-            </Text>
-            <Button
-              icon={<RightOutlined />}
-              size="small"
-              aria-label="Next month"
-              onClick={() => setMonth(m => m.add(1, 'month'))}
-            />
-          </Space>
-          <Space size={6}>
-            <Switch
-              size="small"
-              checked={billableOnly}
-              onChange={setBillableOnly}
-              aria-label="Billable types only"
-            />
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              Billable types only
-            </Text>
-          </Space>
-        </Flex>
+        </Space>
+      </Flex>
 
-        {loading ? (
-          <Flex justify="center" style={{ padding: 48 }}>
-            <Spin />
-          </Flex>
-        ) : (
-          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'minmax(0, 400px) minmax(0, 1fr)',
-                gap: 20,
-                alignItems: 'start'
-              }}
-            >
-              <Space orientation="vertical" size={10} style={{ width: '100%' }}>
-                <Flex align="center" gap={8}>
+      {loading ? (
+        <Flex justify="center" style={{ padding: 48 }}>
+          <Spin />
+        </Flex>
+      ) : (
+        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <Splitter style={{ flexGrow: 1, minHeight: 0 }}>
+            {/* Bounded so neither side can be dragged away entirely — the
+                board only works when both halves are visible. */}
+            <Splitter.Panel defaultSize="38%" min="25%" max="65%">
+              <div
+                style={{
+                  height: '100%',
+                  overflowY: 'auto',
+                  paddingRight: 12,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10
+                }}
+              >
+                <Flex align="center" gap={8} style={{ flexShrink: 0 }}>
                   <Text strong style={{ fontSize: 13 }}>
                     Unmapped
                   </Text>
@@ -339,10 +353,21 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
                     ))}
                   </Space>
                 )}
-              </Space>
+              </div>
+            </Splitter.Panel>
 
-              <Space orientation="vertical" size={10} style={{ width: '100%' }}>
-                <Flex align="center" gap={8}>
+            <Splitter.Panel>
+              <div
+                style={{
+                  height: '100%',
+                  overflowY: 'auto',
+                  paddingLeft: 12,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10
+                }}
+              >
+                <Flex align="center" gap={8} style={{ flexShrink: 0 }}>
                   <Text strong style={{ fontSize: 13 }}>
                     Projects
                   </Text>
@@ -361,40 +386,39 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
                     ))}
                   </Space>
                 )}
-              </Space>
-            </div>
+              </div>
+            </Splitter.Panel>
+          </Splitter>
 
-            <DragOverlay>
-              {dragging && (
-                <div
-                  style={{
-                    border: `1px solid ${token.colorPrimary}`,
-                    borderRadius: token.borderRadius,
-                    background: token.colorBgElevated,
-                    padding: '9px 11px',
-                    boxShadow: token.boxShadowSecondary,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    width: 216
-                  }}
-                >
-                  <HolderOutlined style={{ color: token.colorPrimary }} />
-                  <Text strong style={{ fontSize: 13 }}>
-                    {selectedGroups.length > 1
-                      ? `${selectedGroups.length} groups`
-                      : dragging.title}
-                  </Text>
-                  <div style={{ flexGrow: 1 }} />
-                  <Tag color="blue" style={{ marginInlineEnd: 0 }}>
-                    {selectedGroups.length > 1 ? totalSelectedEvents : dragging.eventCount}
-                  </Tag>
-                </div>
-              )}
-            </DragOverlay>
-          </DndContext>
-        )}
-      </Space>
+          <DragOverlay>
+            {dragging && (
+              <div
+                style={{
+                  border: `1px solid ${token.colorPrimary}`,
+                  borderRadius: token.borderRadius,
+                  background: token.colorBgElevated,
+                  padding: '9px 11px',
+                  boxShadow: token.boxShadowSecondary,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  width: 216
+                }}
+              >
+                <HolderOutlined style={{ color: token.colorPrimary }} />
+                <Text strong style={{ fontSize: 13 }}>
+                  {selectedGroups.length > 1 ? `${selectedGroups.length} groups` : dragging.title}
+                </Text>
+                <div style={{ flexGrow: 1 }} />
+                <Tag color="blue" style={{ marginInlineEnd: 0 }}>
+                  {selectedGroups.length > 1 ? totalSelectedEvents : dragging.eventCount}
+                </Tag>
+              </div>
+            )}
+          </DragOverlay>
+        </DndContext>
+      )}
+
 
       {picker && (
         <ActivityPicker

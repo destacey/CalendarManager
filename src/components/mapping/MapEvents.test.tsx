@@ -192,6 +192,27 @@ describe('MapEvents', () => {
     })
   })
 
+  /* The two halves are a splitter rather than a fixed grid: with a long
+     project list you want to give that side more room, and each side has to
+     scroll on its own rather than the whole page moving. */
+  describe('layout', () => {
+    it('puts the two lists in separate resizable panels', async () => {
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+
+      // antd renders one draggable bar between two panels.
+      expect(document.querySelectorAll('.ant-splitter-panel')).toHaveLength(2)
+      expect(document.querySelector('.ant-splitter-bar')).toBeInTheDocument()
+    })
+
+    it('gives the drag handle a keyboard-reachable control', async () => {
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+
+      expect(screen.getByRole('separator')).toBeInTheDocument()
+    })
+  })
+
   it('tells the user when there is nothing left to map', async () => {
     vi.mocked(getUnmappedGroups).mockResolvedValue([])
     render(<MapEvents />)
