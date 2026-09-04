@@ -50,6 +50,23 @@ const EventTable: React.FC<EventTableProps> = ({
 }) => {
   const tableRef = useRef<TableRef>(null)
   const [filteredData, setFilteredData] = useState<TableEvent[]>([])
+
+  /* A virtual table needs `scroll.y` as a number — antd warns and falls back
+     to unvirtualised rendering when given a CSS `calc()` string, which is how
+     the first attempt at this silently only half-worked. Same 280px chrome
+     allowance as the original calc(), just resolved in JS and kept in step
+     with the window. */
+  const TABLE_CHROME_PX = 280
+  const [bodyHeight, setBodyHeight] = useState(() =>
+    Math.max(200, window.innerHeight - TABLE_CHROME_PX)
+  )
+
+  React.useEffect(() => {
+    const onResize = () =>
+      setBodyHeight(Math.max(200, window.innerHeight - TABLE_CHROME_PX))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
   const messageApi = useMessage()
 
   const handleTableChange = useCallback((pagination: any, filters: any, sorter: any, extra: any) => {
@@ -589,7 +606,7 @@ const EventTable: React.FC<EventTableProps> = ({
           columns={columns}
           dataSource={tableEvents}
           size="small"
-          scroll={{ y: 'calc(100vh - 280px)', x: 800 }}
+          scroll={{ y: bodyHeight, x: 800 }}
           components={{
             header: {
               cell: (props: any) => (
