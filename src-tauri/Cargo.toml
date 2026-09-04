@@ -27,6 +27,9 @@ thiserror = "2"
 tauri-plugin-opener = "2"
 tokio = { version = "1", features = ["sync"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+chrono-tz = "0.10"
+tokio-util = "0.7"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }

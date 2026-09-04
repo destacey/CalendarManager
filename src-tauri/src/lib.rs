@@ -1,6 +1,7 @@
 mod auth;
 mod commands;
 mod db;
+mod graph;
 
 use std::time::Duration;
 
