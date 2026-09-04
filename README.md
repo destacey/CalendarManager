@@ -24,7 +24,7 @@ A Windows desktop calendar application built with Tauri v2, React, and TypeScrip
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v18 or higher)
+- [Node.js](https://nodejs.org/) (v20.19+ or v22.12+, per Vite 7's requirement)
 - [Rust toolchain](https://www.rust-lang.org/tools/install) (stable; via `rustup`)
 - [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) — included with modern Windows, but Tauri needs it present to render the app
 
