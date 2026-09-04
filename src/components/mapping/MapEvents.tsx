@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Typography, Space, Button, Empty, Spin, Switch, Flex, Tag, theme, Splitter } from 'antd'
-import { HolderOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons'
+import { Typography, Space, Button, Empty, Spin, Switch, Flex, Tag, theme, Splitter, Input } from 'antd'
+import { HolderOutlined, LeftOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons'
 import {
   DndContext,
   DragOverlay,
@@ -162,6 +162,7 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
   const [loading, setLoading] = useState(true)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [billableOnly, setBillableOnly] = useState(true)
+  const [search, setSearch] = useState('')
   const [month, setMonth] = useState<Dayjs>(dayjs())
   const [dragging, setDragging] = useState<UnmappedGroup | null>(null)
   const [picker, setPicker] = useState<PickerState | null>(null)
@@ -208,10 +209,28 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
     load()
   }, [load])
 
+  /* Matches the title and the categories, because a group is identified by
+     both — "Scrum" should find the standups even though no title contains it. */
+  const visibleGroups = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    if (!term) return groups
+    return groups.filter(
+      g =>
+        g.title.toLowerCase().includes(term) || g.categories.toLowerCase().includes(term)
+    )
+  }, [groups, search])
+
+  /* Deliberately over ALL groups, not the visible ones: a selection made
+     before a search is still a selection, and dropping maps it in full. The
+     header count keeps that honest by never hiding what is selected. */
   const selectedGroups = useMemo(
     () => groups.filter(g => selectedKeys.includes(g.key)),
     [groups, selectedKeys]
   )
+
+  const hiddenSelectedCount = selectedGroups.filter(
+    g => !visibleGroups.some(v => v.key === g.key)
+  ).length
 
   const totalSelectedEvents = selectedGroups.reduce((n, g) => n + g.eventCount, 0)
 
@@ -339,11 +358,32 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
                   </Text>
                 </Flex>
 
+                <Input
+                  allowClear
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search events and categories"
+                  prefix={<SearchOutlined style={{ color: token.colorTextQuaternary }} />}
+                  style={{ flexShrink: 0 }}
+                />
+
+                {/* Says which selected groups the search is hiding, so the
+                    count above can never look like it came from nowhere. */}
+                {hiddenSelectedCount > 0 && (
+                  <Text type="warning" style={{ fontSize: 11, flexShrink: 0 }}>
+                    {hiddenSelectedCount} selected group
+                    {hiddenSelectedCount === 1 ? ' is' : 's are'} hidden by this search, and will
+                    still be mapped
+                  </Text>
+                )}
+
                 {groups.length === 0 ? (
                   <Empty description="Nothing left to map for this month" />
+                ) : visibleGroups.length === 0 ? (
+                  <Empty description={`No events match "${search.trim()}"`} />
                 ) : (
                   <Space orientation="vertical" size={7} style={{ width: '100%' }}>
-                    {groups.map(group => (
+                    {visibleGroups.map(group => (
                       <GroupCard
                         key={group.key}
                         group={group}

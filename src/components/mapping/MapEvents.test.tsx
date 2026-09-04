@@ -192,6 +192,72 @@ describe('MapEvents', () => {
     })
   })
 
+  describe('search', () => {
+    it('filters the queue by event title', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+
+      await user.type(screen.getByPlaceholderText('Search events and categories'), 'sprint')
+
+      expect(screen.getByText('Sprint Planning')).toBeInTheDocument()
+      expect(screen.queryByText('Daily Standup')).not.toBeInTheDocument()
+    })
+
+    /* A group is identified by title AND categories, so "Scrum" should find
+       the standups even though no title contains it. */
+    it('also matches categories', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('PTO')).toBeInTheDocument())
+
+      await user.type(screen.getByPlaceholderText('Search events and categories'), 'scrum')
+
+      expect(screen.getByText('Daily Standup')).toBeInTheDocument()
+      expect(screen.getByText('Sprint Planning')).toBeInTheDocument()
+      expect(screen.queryByText('PTO')).not.toBeInTheDocument()
+    })
+
+    it('distinguishes no matches from nothing left to map', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+
+      await user.type(screen.getByPlaceholderText('Search events and categories'), 'nothing here')
+
+      expect(screen.getByText('No events match "nothing here"')).toBeInTheDocument()
+      expect(screen.queryByText('Nothing left to map for this month')).not.toBeInTheDocument()
+    })
+
+    /* Search filters the view; it does not silently discard a selection made
+       before it. Dropping still maps everything selected, so the user has to
+       be told what they can no longer see. */
+    it('keeps a selection the search has hidden, and says so', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+
+      await user.click(screen.getByRole('button', { name: /Daily Standup, 23 events/ }))
+      await user.type(screen.getByPlaceholderText('Search events and categories'), 'sprint')
+
+      expect(screen.getByText('1 selected · 23 events')).toBeInTheDocument()
+      expect(
+        screen.getByText(/1 selected group is hidden by this search, and will still be mapped/)
+      ).toBeInTheDocument()
+    })
+
+    it('says nothing about hidden groups when none are hidden', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+
+      await user.click(screen.getByRole('button', { name: /Daily Standup, 23 events/ }))
+      await user.type(screen.getByPlaceholderText('Search events and categories'), 'standup')
+
+      expect(screen.queryByText(/hidden by this search/)).not.toBeInTheDocument()
+    })
+  })
+
   /* The two halves are a splitter rather than a fixed grid: with a long
      project list you want to give that side more room, and each side has to
      scroll on its own rather than the whole page moving. */
