@@ -8,7 +8,7 @@ use super::error::DbError;
 
 /// Bumped whenever a migration is added. Stored in SQLite's built-in
 /// PRAGMA user_version, so no bookkeeping table is needed.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 /// Migration 1 is the complete schema as electron/main.js left it. It is
 /// written to be idempotent — CREATE TABLE IF NOT EXISTS, and column adds
@@ -138,6 +138,41 @@ pub const LEGACY_SCHEMA_FOR_TESTS: &str = r#"
     CREATE INDEX idx_events_date_range ON events(start_date, end_date);
 "#;
 
+/// Migration 2 adds the `activities` table and seeds it.
+///
+/// Idempotent for the same reason migration 1 is: `run_migrations` re-applies
+/// every migration from `version + 1` for a `user_version` 0 database, which
+/// is exactly what the real legacy database still is. `CREATE TABLE IF NOT
+/// EXISTS` plus `INSERT OR IGNORE` (against the UNIQUE name) means running it
+/// twice is a no-op rather than a duplicate-key failure.
+///
+/// The seed also runs against that existing database, which is the intended
+/// outcome — the alternative is a user staring at an empty list on the one
+/// install that matters. A row deleted afterwards does not come back: once
+/// `user_version` reaches 2 this never runs again.
+const MIGRATION_2: &str = r#"
+    CREATE TABLE IF NOT EXISTS activities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      color TEXT NOT NULL DEFAULT '#1890ff',
+      is_active BOOLEAN NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    INSERT OR IGNORE INTO activities (name, color) VALUES
+      ('Architecture',         '#2f54eb'),
+      ('Customer Support',     '#13c2c2'),
+      ('DevOps',               '#52c41a'),
+      ('Leadership',           '#f5222d'),
+      ('Maintenance',          '#fa8c16'),
+      ('Manual Testing',       '#a0d911'),
+      ('PI Planning',          '#faad14'),
+      ('Product Management',   '#fa541c'),
+      ('Software Development', '#1890ff'),
+      ('Solution Design',      '#722ed1'),
+      ('UX Design',            '#eb2f96');
+"#;
+
 fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, DbError> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
@@ -185,6 +220,7 @@ pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
 fn apply_migration(conn: &Connection, version: i64) -> Result<(), DbError> {
     match version {
         1 => apply_migration_1(conn),
+        2 => apply_migration_2(conn),
         other => Err(DbError::Other(format!("no migration defined for schema version {other}"))),
     }
 }
@@ -198,6 +234,11 @@ fn apply_migration_1(conn: &Connection) -> Result<(), DbError> {
         }
     }
 
+    Ok(())
+}
+
+fn apply_migration_2(conn: &Connection) -> Result<(), DbError> {
+    conn.execute_batch(MIGRATION_2)?;
     Ok(())
 }
 
@@ -260,6 +301,61 @@ mod tests {
             err.is_err(),
             "a rule targeting a non-existent event type must be rejected by the FK"
         );
+    }
+
+    /// The eleven starter activities, in the order `list_activities` will
+    /// return them (alphabetical). Kept here rather than in the migration
+    /// string so a typo in the seed shows up as a test failure naming the
+    /// exact row, not a silent difference in a blob of SQL.
+    const EXPECTED_ACTIVITIES: [&str; 11] = [
+        "Architecture",
+        "Customer Support",
+        "DevOps",
+        "Leadership",
+        "Maintenance",
+        "Manual Testing",
+        "PI Planning",
+        "Product Management",
+        "Software Development",
+        "Solution Design",
+        "UX Design",
+    ];
+
+    #[test]
+    fn migration_2_creates_and_seeds_the_activities_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let mut stmt = conn
+            .prepare("SELECT name FROM activities ORDER BY name COLLATE NOCASE")
+            .unwrap();
+        let names: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert_eq!(names, EXPECTED_ACTIVITIES, "seeded activities do not match");
+    }
+
+    /// Every seeded row must have a colour and be active, because the
+    /// Settings screen renders a swatch per row and `Activity::color` is a
+    /// non-Option String on the Rust side.
+    #[test]
+    fn seeded_activities_all_have_a_colour_and_are_active() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let bad: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM activities
+                 WHERE color IS NULL OR color = '' OR is_active != 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(bad, 0, "every seeded activity needs a colour and is_active = 1");
     }
 
     #[test]
@@ -334,6 +430,9 @@ mod tests {
         let type_count_before: i64 = conn
             .query_row("SELECT COUNT(*) FROM event_types", [], |r| r.get(0))
             .unwrap();
+        let activity_count_before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM activities", [], |r| r.get(0))
+            .unwrap();
 
         // Reset the version stamp so the DDL genuinely re-executes against a
         // fully-migrated database — otherwise the version guard short-circuits
@@ -349,6 +448,13 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM event_types", [], |r| r.get(0))
             .unwrap();
         assert_eq!(type_count_after, type_count_before);
+        let activity_count_after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM activities", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            activity_count_after, activity_count_before,
+            "re-running the ladder must not duplicate seeded activities"
+        );
         assert_eq!(user_version(&conn), SCHEMA_VERSION);
     }
 
