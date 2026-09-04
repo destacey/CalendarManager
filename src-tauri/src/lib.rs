@@ -209,6 +209,7 @@ pub fn run() {
             commands::db::create_event,
             commands::db::update_event,
             commands::db::delete_event,
+            commands::db::delete_all_events,
             commands::db::get_categories,
             commands::db::create_category,
             commands::db::get_event_types,

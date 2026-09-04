@@ -45,6 +45,11 @@ pub async fn delete_event(db: State<'_, Db>, id: i64) -> DbResult<bool> {
 }
 
 #[tauri::command]
+pub async fn delete_all_events(db: State<'_, Db>) -> DbResult<u32> {
+    db.call(events::delete_all_events).await
+}
+
+#[tauri::command]
 pub async fn get_categories(db: State<'_, Db>) -> DbResult<Vec<Category>> {
     db.call(categories::get_categories).await
 }

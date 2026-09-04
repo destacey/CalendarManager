@@ -52,3 +52,15 @@ export function updateEvent(id: number, event: EventUpdate): Promise<Event | nul
 export function deleteEvent(id: number): Promise<boolean> {
   return invoke<boolean>('delete_event', { id })
 }
+
+/**
+ * Deletes every row in `events` in one statement (`db::events::delete_all_events`),
+ * rather than the old approach of fetching every event and awaiting
+ * `deleteEvent(id)` in a loop — against the real database that was
+ * thousands of individual IPC round trips, each its own transaction, and a
+ * failure partway through left a half-emptied table with no way to tell how
+ * far it got. Returns the number of rows actually deleted.
+ */
+export function deleteAllEvents(): Promise<number> {
+  return invoke<number>('delete_all_events')
+}

@@ -4,7 +4,7 @@ import { DeleteOutlined, ExclamationCircleOutlined, ReloadOutlined, DatabaseOutl
 import { storageService } from '../services/storage'
 import { useTheme } from '../contexts/ThemeContext'
 import { useMessage } from '../contexts/MessageContext'
-import { getEvents, deleteEvent } from '../api/events'
+import { getEvents, deleteAllEvents } from '../api/events'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -54,20 +54,8 @@ const DataManagement: React.FC = () => {
       setClearing(true)
       setClearDataModalVisible(false)
 
-      // Since deleteAllEvents might not be implemented yet,
-      // we'll use the existing API to delete events one by one
-      const events = await getEvents()
-      let deletedCount = 0
+      const deletedCount = await deleteAllEvents()
 
-      for (const event of events) {
-        if (event.id) {
-          const success = await deleteEvent(event.id)
-          if (success) {
-            deletedCount++
-          }
-        }
-      }
-      
       // Clear sync metadata since data is no longer in sync
       storageService.setSyncMetadata({
         deltaToken: undefined,

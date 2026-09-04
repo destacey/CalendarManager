@@ -166,6 +166,25 @@ pub fn delete_event(conn: &Connection, id: i64) -> DbResult<bool> {
     Ok(changed > 0)
 }
 
+/// Replaces `DataManagement.tsx`'s old "fetch every event, then await
+/// `deleteEvent(id)` in a loop" — against the real database that was 8,924
+/// IPC round trips, each its own transaction and fsync, and a failure
+/// partway through left a half-emptied table with no way to tell how far it
+/// got. A single `DELETE FROM events` is one statement, so SQLite already
+/// runs it atomically; no `BEGIN`/`COMMIT` wrapper is needed (and none
+/// should be added — one statement is already all-or-nothing).
+///
+/// The foreign key in this schema points `events.type_id` ->
+/// `event_types(id)`, not the other way around, so deleting every event
+/// never cascades into `event_types`, `event_type_rules` or `categories` —
+/// verified explicitly in this module's tests rather than assumed, because
+/// those three tables hold the user's local-only types and rules that
+/// Microsoft Graph cannot recreate.
+pub fn delete_all_events(conn: &Connection) -> DbResult<u32> {
+    let changed = conn.execute("DELETE FROM events", [])?;
+    Ok(changed as u32)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,6 +282,101 @@ mod tests {
         assert!(!event.is_all_day, "NULL is_all_day must coalesce to false");
         assert_eq!(event.show_as, "busy", "NULL show_as must coalesce to 'busy'");
         assert_eq!(event.categories, "", "NULL categories must coalesce to an empty string");
+    }
+
+    #[test]
+    fn delete_all_events_returns_count_and_empties_the_table() {
+        let conn = setup();
+        insert(&conn, "a", "2026-01-01T00:00:00", None);
+        insert(&conn, "b", "2026-01-02T00:00:00", None);
+        insert(&conn, "c", "2026-01-03T00:00:00", None);
+
+        let deleted = delete_all_events(&conn).unwrap();
+
+        assert_eq!(deleted, 3);
+        assert!(get_events(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_all_events_returns_zero_on_an_already_empty_table() {
+        let conn = setup();
+
+        let deleted = delete_all_events(&conn).unwrap();
+
+        assert_eq!(deleted, 0);
+    }
+
+    /// The guard that matters most: the user's 3 event types and 2 rules
+    /// exist only locally and cannot be re-synced from Microsoft Graph the
+    /// way events can. Foreign keys are enforced in this build
+    /// (`-DSQLITE_DEFAULT_FOREIGN_KEYS=1`), and the reference runs
+    /// `events.type_id` -> `event_types.id` — the opposite direction from
+    /// what a cascading delete would need to touch `event_types` — so
+    /// clearing every event must leave `event_types`, `event_type_rules`
+    /// and `categories` completely untouched. Asserted explicitly rather
+    /// than assumed, per the task brief: a wrong table name or a stray
+    /// cascade here would silently destroy data Graph cannot recreate,
+    /// while `delete_all_events`'s own return value would still look fine.
+    #[test]
+    fn delete_all_events_leaves_event_types_rules_and_categories_untouched() {
+        use crate::db::categories::{create_category, NewCategory};
+        use crate::db::event_types::{create_event_type, create_event_type_rule, NewEventType, NewEventTypeRule};
+
+        let conn = setup();
+
+        let event_type = create_event_type(
+            &conn,
+            &NewEventType {
+                name: "Consulting".to_string(),
+                color: "#ff0000".to_string(),
+                is_default: false,
+                is_billable: true,
+            },
+        )
+        .unwrap();
+        create_event_type_rule(
+            &conn,
+            &NewEventTypeRule {
+                name: "Consulting keyword".to_string(),
+                priority: 1,
+                field_name: "title".to_string(),
+                operator: "contains".to_string(),
+                value: Some("Consulting".to_string()),
+                target_type_id: event_type.id.unwrap(),
+            },
+        )
+        .unwrap();
+        create_category(
+            &conn,
+            &NewCategory { name: "Client Work".to_string(), color: "#00ff00".to_string() },
+        )
+        .unwrap();
+
+        // An event that actually references the type, so a foreign key
+        // violation (if the delete somehow ran in the wrong direction)
+        // would surface immediately rather than being masked by an empty
+        // events table.
+        let created = insert(&conn, "Consulting call", "2026-01-01T00:00:00", None);
+        conn.execute(
+            "UPDATE events SET type_id = ?1, type_manually_set = 1 WHERE id = ?2",
+            params![event_type.id.unwrap(), created.id.unwrap()],
+        )
+        .unwrap();
+
+        let deleted = delete_all_events(&conn).unwrap();
+        assert_eq!(deleted, 1);
+
+        let type_count: i64 = conn.query_row("SELECT COUNT(*) FROM event_types", [], |r| r.get(0)).unwrap();
+        assert_eq!(type_count, 1, "event_types must survive deleting all events");
+
+        let rule_count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM event_type_rules", [], |r| r.get(0)).unwrap();
+        assert_eq!(rule_count, 1, "event_type_rules must survive deleting all events");
+
+        let category_count: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0)).unwrap();
+        assert_eq!(category_count, 1, "categories must survive deleting all events");
+
+        assert!(get_events(&conn).unwrap().is_empty());
     }
 
     #[test]
