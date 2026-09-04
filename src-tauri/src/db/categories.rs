@@ -7,7 +7,13 @@ use serde::Deserialize;
 use super::error::{DbError, DbResult};
 use super::models::Category;
 
-const CATEGORY_COLUMNS: &str = "id, name, color, created_at";
+/// `color` is wrapped in `COALESCE`: same reasoning as
+/// `event_types::EVENT_TYPE_COLUMNS` — `categories.color` isn't `NOT NULL`
+/// in `schema.rs`, but `Category::color` is a non-`Option` `String`, and a
+/// NULL there would otherwise fail the whole `get_categories` query rather
+/// than just one row. The default matches the column's own `DEFAULT
+/// '#1890ff'`.
+const CATEGORY_COLUMNS: &str = "id, name, COALESCE(color, '#1890ff') AS color, created_at";
 
 /// What a caller supplies to create a category: no `id` (assigned by
 /// SQLite) and no `created_at` (defaulted by the column).
@@ -64,6 +70,24 @@ mod tests {
         assert_eq!(created.name, "Client Work");
         assert_eq!(created.color, "#112233");
         assert!(created.created_at.is_some());
+    }
+
+    /// The regression guard for the `COALESCE` fix on `color`:
+    /// `categories.color` isn't `NOT NULL` in `schema.rs`, but
+    /// `Category::color` is a non-`Option` `String`. A row with an explicit
+    /// NULL color, inserted directly (bypassing `create_category`, which
+    /// always supplies one), must not fail the whole `get_categories` query
+    /// — it must come back as the column's own default instead.
+    #[test]
+    fn get_categories_survives_a_row_with_null_color() {
+        let conn = setup();
+        conn.execute("INSERT INTO categories (name, color) VALUES ('Nully', NULL)", [])
+            .unwrap();
+
+        let categories = get_categories(&conn).unwrap();
+
+        assert_eq!(categories.len(), 1);
+        assert_eq!(categories[0].color, "#1890ff", "NULL color must coalesce to the schema's default");
     }
 
     #[test]

@@ -66,7 +66,13 @@ fn evaluate_rule(rule: &EventTypeRule, fields: &EventFields) -> bool {
 pub fn evaluate(rules: &[EventTypeRule], fields: &EventFields, default_type_id: Option<i64>) -> Option<i64> {
     for rule in rules {
         if evaluate_rule(rule, fields) {
-            return Some(rule.target_type_id);
+            // `target_type_id` is `Option<i64>` (see `models.rs`'s doc
+            // comment on the field: the column has no `NOT NULL`), so a
+            // matching rule with no target still stops evaluation here
+            // rather than falling through to a later rule or the default —
+            // the same "first match wins" behaviour as a rule with a real
+            // target, just carrying no type.
+            return rule.target_type_id;
         }
     }
     default_type_id
@@ -87,7 +93,7 @@ mod tests {
             field_name: field_name.to_string(),
             operator: operator.to_string(),
             value: value.map(|v| v.to_string()),
-            target_type_id,
+            target_type_id: Some(target_type_id),
             created_at: None,
         }
     }

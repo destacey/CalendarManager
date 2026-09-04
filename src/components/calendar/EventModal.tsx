@@ -81,11 +81,20 @@ const EventModal: React.FC<EventModalProps> = ({
 
     try {
       const autoTypeId = await resetEventTypeToAuto(event.id)
+      // `reset_event_type_to_auto` returns `null` when the reset itself
+      // succeeded but no rule matched and there's no default type to fall
+      // back to — the write still happened (type_id cleared, the manual
+      // flag reset), so this is not a failure. Only a thrown error is.
+      // Treating `null` as failure silently dropped the success message and
+      // never called `onEventUpdated`, resurrecting the "button does
+      // nothing" impression this command exists to cure.
+      setSelectedTypeId(autoTypeId ?? undefined)
       if (autoTypeId) {
-        setSelectedTypeId(autoTypeId)
         messageApi.success('Event type reset to auto-assignment')
-        onEventUpdated?.()
+      } else {
+        messageApi.info('Event type reset, but no rule matched — no type assigned')
       }
+      onEventUpdated?.()
     } catch (error) {
       console.error('Error resetting event type:', error)
       messageApi.error('Failed to reset event type')

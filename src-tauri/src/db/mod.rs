@@ -54,17 +54,35 @@ pub fn open(app_data_dir: &Path, legacy_candidates: &[PathBuf]) -> DbResult<Db> 
     }
 
     let conn = Connection::open(&target)?;
+
+    // Lock contention — a second instance, a backup agent, a transient
+    // SQLITE_BUSY on the file this session just renamed into place — should
+    // make SQLite retry for a while rather than fail the very next
+    // statement instantly.
+    if let Err(e) = conn.execute_batch("PRAGMA busy_timeout = 5000;") {
+        eprintln!("Warning: could not set busy_timeout for {}: {e}", target.display());
+    }
+
     // query_row, not pragma_update or execute_batch: PRAGMA journal_mode
     // returns the mode SQLite actually entered, and that's worth reading back
     // — a network share or a read-only volume can silently refuse WAL, and
     // failing to notice would be silent. Not an error: the app still works
-    // in `delete` mode, just without WAL's concurrency benefits.
-    let journal_mode: String = conn.query_row("PRAGMA journal_mode = WAL;", [], |row| row.get(0))?;
-    if !journal_mode.eq_ignore_ascii_case("wal") {
-        eprintln!(
-            "Warning: expected WAL journal mode for {}, got '{journal_mode}' instead",
-            target.display()
-        );
+    // in `delete` mode, just without WAL's concurrency benefits. The query
+    // itself failing (e.g. a transient SQLITE_BUSY on the freshly renamed
+    // file) must not be an error either — that would kill `db::open` for the
+    // entire session over what a retry (now backed by the busy_timeout just
+    // set) would have ridden out.
+    match conn.query_row::<String, _, _>("PRAGMA journal_mode = WAL;", [], |row| row.get(0)) {
+        Ok(journal_mode) if journal_mode.eq_ignore_ascii_case("wal") => {}
+        Ok(journal_mode) => {
+            eprintln!(
+                "Warning: expected WAL journal mode for {}, got '{journal_mode}' instead",
+                target.display()
+            );
+        }
+        Err(e) => {
+            eprintln!("Warning: could not enter WAL journal mode for {}: {e}", target.display());
+        }
     }
     schema::run_migrations(&conn)?;
     schema::seed_default_event_type(&conn)?;

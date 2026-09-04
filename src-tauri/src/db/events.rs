@@ -14,8 +14,20 @@ use super::models::Event;
 /// `SELECT *`: the real 30MB database's on-disk column order is unverified
 /// (see `schema.rs`'s `LEGACY_SCHEMA_FOR_TESTS` comment), so this must never
 /// become positional.
+///
+/// `is_all_day`, `show_as` and `categories` are wrapped in `COALESCE`: none
+/// of the three is `NOT NULL` in `schema.rs` (`categories` has no column
+/// default at all), but `Event` declares them as non-`Option` `bool`/
+/// `String`. `row.get::<_, T>` on a NULL returns `InvalidColumnType`, and
+/// because `from_row` runs inside `query_map(...).collect::<Result<Vec<_>,
+/// _>>()`, a single NULL row would fail the *entire* query rather than just
+/// that row — the calendar goes dark for one bad row among thousands. The
+/// `COALESCE` defaults match the schema's own column defaults (`is_all_day`
+/// -> 0, `show_as` -> 'busy') or the empty string electron/main.js's
+/// `categories.join(',')` would have produced for no categories.
 const EVENT_COLUMNS: &str = "id, graph_id, title, description, start_date, end_date, \
-     is_all_day, show_as, categories, location, organizer, attendees, is_meeting, \
+     COALESCE(is_all_day, 0) AS is_all_day, COALESCE(show_as, 'busy') AS show_as, \
+     COALESCE(categories, '') AS categories, location, organizer, attendees, is_meeting, \
      type_id, type_manually_set, created_at, updated_at, synced_at";
 
 /// The subset of `Event` a caller supplies to create one. No `id` (assigned
@@ -220,6 +232,37 @@ mod tests {
 
         let titles: Vec<_> = events.iter().map(|e| e.title.clone()).collect();
         assert_eq!(titles, vec!["a", "b", "c"]);
+    }
+
+    /// The regression guard for the `COALESCE` fix: none of `is_all_day`,
+    /// `show_as` or `categories` is `NOT NULL` in `schema.rs`, but `Event`
+    /// declares them as non-`Option` `bool`/`String`. Before the `COALESCE`
+    /// was added to `EVENT_COLUMNS`, a single row with an explicit NULL in
+    /// any of these columns made `row.get::<_, T>` return
+    /// `InvalidColumnType`, and because `from_row` runs inside
+    /// `query_map(...).collect::<Result<Vec<_>, _>>()`, that failed the
+    /// *entire* `get_events` call — not just the one row. This inserts a row
+    /// with all three explicitly NULL (bypassing `create_event`, which never
+    /// writes NULL into any of them) and asserts the query still succeeds,
+    /// with the same defaults the schema's own column defaults declare.
+    #[test]
+    fn get_events_survives_a_row_with_null_is_all_day_show_as_and_categories() {
+        let conn = setup();
+        conn.execute(
+            "INSERT INTO events (title, start_date, is_all_day, show_as, categories) \
+             VALUES ('Nully', '2026-01-01T00:00:00', NULL, NULL, NULL)",
+            [],
+        )
+        .unwrap();
+
+        let events = get_events(&conn).unwrap();
+
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(event.title, "Nully");
+        assert!(!event.is_all_day, "NULL is_all_day must coalesce to false");
+        assert_eq!(event.show_as, "busy", "NULL show_as must coalesce to 'busy'");
+        assert_eq!(event.categories, "", "NULL categories must coalesce to an empty string");
     }
 
     #[test]

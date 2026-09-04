@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Card, Button, Typography, Space, Statistic, Row, Col, Modal, Alert, Divider } from 'antd'
 import { DeleteOutlined, ExclamationCircleOutlined, ReloadOutlined, DatabaseOutlined } from '@ant-design/icons'
-import { calendarService } from '../services/calendar'
 import { storageService } from '../services/storage'
 import { useTheme } from '../contexts/ThemeContext'
 import { useMessage } from '../contexts/MessageContext'
@@ -27,7 +26,7 @@ const DataManagement: React.FC = () => {
   const loadEventCount = async () => {
     try {
       setLoading(true)
-      const events = await calendarService.getLocalEvents()
+      const events = await getEvents()
       setEventCount(events.length)
     } catch (error) {
       console.error('Error loading event count:', error)

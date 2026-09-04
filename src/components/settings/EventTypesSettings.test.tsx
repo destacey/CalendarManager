@@ -10,7 +10,8 @@ vi.mock('../../api/eventTypes', () => ({
   getEventTypes: vi.fn(),
   createEventType: vi.fn(),
   updateEventType: vi.fn(),
-  deleteEventType: vi.fn()
+  deleteEventType: vi.fn(),
+  setDefaultEventType: vi.fn()
 }))
 
 const mockEventTypesApi = vi.mocked(eventTypesApi)
@@ -44,6 +45,7 @@ describe('EventTypesSettings', () => {
     mockEventTypesApi.createEventType.mockResolvedValue({ id: 3, name: 'New Type', color: '#000000', is_billable: false })
     mockEventTypesApi.updateEventType.mockResolvedValue(mockEventTypes[0])
     mockEventTypesApi.deleteEventType.mockResolvedValue({ deleted: true, eventsReassigned: 0, rulesRemoved: 0, reassignedTo: null })
+    mockEventTypesApi.setDefaultEventType.mockResolvedValue(true)
   })
 
   it('renders the component with basic elements', async () => {

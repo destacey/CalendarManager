@@ -6,6 +6,7 @@ import { Event } from '../types'
 import { calendarService } from '../services/calendar'
 import { storageService } from '../services/storage'
 import { useMessage } from '../contexts/MessageContext'
+import { getEventsInRange } from '../api/events'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -34,7 +35,7 @@ export const useCalendarViewEvents = (viewStart: Dayjs, viewEnd: Dayjs) => {
     try {
       console.log('Loading events in range:', startDate, 'to', endDate)
       setLoading(true)
-      const eventsData = await calendarService.getLocalEventsInRange(startDate, endDate)
+      const eventsData = await getEventsInRange(startDate, endDate)
       console.log('Loaded', eventsData.length, 'events in range')
       setEvents(eventsData)
     } catch (error) {

@@ -129,7 +129,15 @@ pub struct EventTypeRule {
     pub field_name: String,
     pub operator: String,
     pub value: Option<String>,
-    pub target_type_id: i64,
+    /// `Option<i64>`, not a bare `i64`: `event_type_rules.target_type_id`
+    /// has no `NOT NULL` in `schema.rs` (it's a plain, nullable
+    /// `FOREIGN KEY`). Unlike `events.is_all_day`/`show_as`/`categories` or
+    /// `event_types.color`/`categories.color`, there is no safe default to
+    /// `COALESCE` a foreign key to — every existing type id is a real,
+    /// meaningful type, so coalescing to one would silently misattribute a
+    /// rule. Widening to `Option` is the honest reflection of what the
+    /// schema actually allows.
+    pub target_type_id: Option<i64>,
     pub created_at: Option<String>,
 }
 

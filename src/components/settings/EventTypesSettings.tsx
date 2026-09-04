@@ -208,7 +208,11 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
           />
           <Popconfirm
             title="Are you sure?"
-            description="This will remove the type from all events using it."
+            description={
+              reassignmentTargetName(record)
+                ? `Events using this type will be moved to "${reassignmentTargetName(record)}".`
+                : 'Events using this type will be moved to the default type.'
+            }
             onConfirm={() => handleDelete(record)}
           >
             <Button
@@ -221,6 +225,26 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
       ),
     },
   ]
+
+  /**
+   * The name of the type events will land on if `record` is deleted, for
+   * the delete confirmation. `delete_event_type` (event_types.rs) reassigns
+   * referencing events to the default type — or, if `record` is itself the
+   * default, promotes another type (lowest id among the rest) to default
+   * first and reassigns there instead. Mirrors that same "lowest id among
+   * the rest" rule so the name shown here matches what the backend will
+   * actually do.
+   */
+  const reassignmentTargetName = (record: EventType): string | undefined => {
+    const candidates = record.is_default
+      ? eventTypes.filter(t => t.id !== record.id)
+      : eventTypes.filter(t => t.is_default)
+    const target = candidates.reduce<EventType | undefined>((lowest, t) => {
+      if (!lowest) return t
+      return (t.id ?? Infinity) < (lowest.id ?? Infinity) ? t : lowest
+    }, undefined)
+    return target?.name
+  }
 
   // Filter types based on search term
   const filteredTypes = eventTypes.filter(type =>

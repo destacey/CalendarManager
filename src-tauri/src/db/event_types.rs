@@ -30,8 +30,12 @@ use super::models::{EventType, EventTypeRule};
 
 /// Named explicitly rather than `SELECT *` for the same reason
 /// `events::EVENT_COLUMNS` is: the real database's on-disk column order is
-/// unverified.
-const EVENT_TYPE_COLUMNS: &str = "id, name, color, is_default, is_billable, created_at";
+/// unverified. `color` is wrapped in `COALESCE`: `event_types.color` is not
+/// `NOT NULL` in `schema.rs`, but `EventType::color` is a non-`Option`
+/// `String` — see `events::EVENT_COLUMNS`'s doc comment for why a NULL there
+/// would otherwise fail the whole query, not just one row. The default
+/// matches the column's own `DEFAULT '#1890ff'`.
+const EVENT_TYPE_COLUMNS: &str = "id, name, COALESCE(color, '#1890ff') AS color, is_default, is_billable, created_at";
 const EVENT_TYPE_RULE_COLUMNS: &str =
     "id, name, priority, field_name, operator, value, target_type_id, created_at";
 
@@ -41,6 +45,15 @@ const EVENT_TYPE_RULE_COLUMNS: &str =
 pub struct NewEventType {
     pub name: String,
     pub color: String,
+    /// `#[serde(default)]`: `EventTypesSettings.tsx`'s modal only registers
+    /// `Form.Item`s for `name`, `color` and `is_billable` — `is_default` is
+    /// never in the payload `form.validateFields()` collects, even when
+    /// editing a type that has it set. Without a serde default, a missing
+    /// field is rejected outright with `missing field 'is_default'`, so
+    /// every create/update failed. This restores the Electron original's
+    /// accidental tolerance (`main.js:496`'s `eventTypeData.is_default ? 1 :
+    /// 0` silently turned `undefined` into `0`/false).
+    #[serde(default)]
     pub is_default: bool,
     pub is_billable: bool,
 }
@@ -50,6 +63,9 @@ pub struct NewEventType {
 pub struct EventTypeUpdate {
     pub name: String,
     pub color: String,
+    /// See `NewEventType::is_default`'s doc comment: same missing-field
+    /// problem, same fix.
+    #[serde(default)]
     pub is_default: bool,
     pub is_billable: bool,
 }
@@ -206,8 +222,14 @@ pub fn delete_event_type(conn: &Connection, id: i64) -> DbResult<DeleteEventType
     let default_name: String =
         tx.query_row("SELECT name FROM event_types WHERE id = ?1", params![default_id], |row| row.get(0))?;
 
+    // `type_manually_set = 0` alongside the reassignment: without it, an
+    // event the user had pinned to the deleted type lands on the default
+    // type still flagged as manually set — a manual choice the user never
+    // made, and one that permanently excludes the event from
+    // `reprocess_event_types` (its `WHERE type_manually_set = 0 OR ... IS
+    // NULL` guard would never pick it back up).
     let events_reassigned = tx.execute(
-        "UPDATE events SET type_id = ?1, updated_at = CURRENT_TIMESTAMP WHERE type_id = ?2",
+        "UPDATE events SET type_id = ?1, type_manually_set = 0, updated_at = CURRENT_TIMESTAMP WHERE type_id = ?2",
         params![default_id, id],
     )? as i64;
 
@@ -326,6 +348,35 @@ mod tests {
         conn
     }
 
+    /// The regression guard for the bug this task exists to fix:
+    /// `EventTypesSettings.tsx`'s modal only ever registers `Form.Item`s for
+    /// `name`, `color` and `is_billable`, so `form.validateFields()` never
+    /// includes `is_default` in the payload — not even when editing a type
+    /// that has it set. Without `#[serde(default)]` on the field, serde
+    /// rejected every create with `missing field 'is_default'`. This proves
+    /// the field absent from the JSON deserializes to `false` instead.
+    #[test]
+    fn new_event_type_defaults_is_default_to_false_when_absent_from_payload() {
+        let json = r##"{"name":"Consulting","color":"#123456","is_billable":true}"##;
+        let parsed: NewEventType = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.is_default, false);
+        assert_eq!(parsed.name, "Consulting");
+        assert!(parsed.is_billable);
+    }
+
+    /// Same bug, same fix, but for the update payload `handleSave` sends when
+    /// editing an existing type — the one place this actually bit the user,
+    /// since editing a type that already has `is_default: true` still omits
+    /// it from the form's collected values.
+    #[test]
+    fn event_type_update_defaults_is_default_to_false_when_absent_from_payload() {
+        let json = r##"{"name":"Consulting","color":"#123456","is_billable":false}"##;
+        let parsed: EventTypeUpdate = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.is_default, false);
+        assert_eq!(parsed.name, "Consulting");
+        assert!(!parsed.is_billable);
+    }
+
     fn new_type(name: &str, is_default: bool, is_billable: bool) -> NewEventType {
         NewEventType {
             name: name.to_string(),
@@ -347,6 +398,27 @@ mod tests {
     }
 
     // --- Event types ---
+
+    /// The regression guard for the `COALESCE` fix on `color`:
+    /// `event_types.color` isn't `NOT NULL` in `schema.rs`, but
+    /// `EventType::color` is a non-`Option` `String`. A row with an explicit
+    /// NULL color, inserted directly (bypassing `create_event_type`, which
+    /// always supplies one), must not fail the whole `get_event_types` query —
+    /// it must come back as the column's own default instead.
+    #[test]
+    fn get_event_types_survives_a_row_with_null_color() {
+        let conn = setup();
+        conn.execute(
+            "INSERT INTO event_types (name, color, is_default, is_billable) VALUES ('Nully', NULL, 0, 0)",
+            [],
+        )
+        .unwrap();
+
+        let types = get_event_types(&conn).unwrap();
+
+        assert_eq!(types.len(), 1);
+        assert_eq!(types[0].color, "#1890ff", "NULL color must coalesce to the schema's default");
+    }
 
     /// Enumerated case: creating a type round-trips `is_default`/`is_billable`
     /// as booleans, in both directions (true and false), not just truthy
@@ -440,6 +512,19 @@ mod tests {
         .unwrap()
     }
 
+    fn type_manually_set(conn: &Connection, event_id: i64) -> bool {
+        conn.query_row(
+            "SELECT type_manually_set FROM events WHERE id = ?1",
+            params![event_id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    fn mark_manually_set(conn: &Connection, event_id: i64) {
+        conn.execute("UPDATE events SET type_manually_set = 1 WHERE id = ?1", params![event_id]).unwrap();
+    }
+
     /// 1. Deleting an unused, non-default type deletes it outright and
     /// reports nothing else was touched.
     #[test]
@@ -469,6 +554,11 @@ mod tests {
         let e1 = insert_event_with_type(&conn, "Standup", to_delete_id);
         let e2 = insert_event_with_type(&conn, "Client call", to_delete_id);
         let e3 = insert_event_with_type(&conn, "Review", to_delete_id);
+        // e1 is a manual override the user made — the case this test's
+        // second assertion exists for: reassignment must clear it, not just
+        // move type_id, or the event ends up permanently excluded from
+        // reprocess_event_types with a "manual" choice the user never made.
+        mark_manually_set(&conn, e1);
 
         let outcome = delete_event_type(&conn, to_delete_id).unwrap();
 
@@ -478,6 +568,10 @@ mod tests {
         for event_id in [e1, e2, e3] {
             let (type_id, _) = event_type_id_and_updated_at(&conn, event_id);
             assert_eq!(type_id, Some(default_id));
+            assert!(
+                !type_manually_set(&conn, event_id),
+                "type_manually_set must be cleared by reassignment, even for an event that had it set"
+            );
         }
     }
 
@@ -698,8 +792,30 @@ mod tests {
         assert_eq!(created.field_name, "title");
         assert_eq!(created.operator, "contains");
         assert_eq!(created.value.as_deref(), Some("Consulting"));
-        assert_eq!(created.target_type_id, target_id);
+        assert_eq!(created.target_type_id, Some(target_id));
         assert!(created.created_at.is_some());
+    }
+
+    /// The regression guard for widening `target_type_id` to `Option<i64>`:
+    /// `event_type_rules.target_type_id` has no `NOT NULL` in `schema.rs`.
+    /// Unlike `color` above, there is no safe default to `COALESCE` a
+    /// foreign key to, so the model was widened instead — this proves a row
+    /// with an explicit NULL there reads back as `None` rather than failing
+    /// the whole `get_event_type_rules` query.
+    #[test]
+    fn get_event_type_rules_survives_a_row_with_null_target_type_id() {
+        let conn = setup();
+        conn.execute(
+            "INSERT INTO event_type_rules (name, priority, field_name, operator, value, target_type_id) \
+             VALUES ('Orphaned', 1, 'title', 'contains', 'x', NULL)",
+            [],
+        )
+        .unwrap();
+
+        let rules = get_event_type_rules(&conn).unwrap();
+
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].target_type_id, None);
     }
 
     /// Enumerated case: rules come back ordered by priority.
@@ -765,7 +881,7 @@ mod tests {
         assert_eq!(updated.field_name, "location");
         assert_eq!(updated.operator, "is_empty");
         assert_eq!(updated.value, None);
-        assert_eq!(updated.target_type_id, other_target.id.unwrap());
+        assert_eq!(updated.target_type_id, Some(other_target.id.unwrap()));
     }
 
     #[test]

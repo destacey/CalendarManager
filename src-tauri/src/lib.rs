@@ -85,11 +85,17 @@ pub fn run() {
                     }
 
                     // One-time carry-over from the abandoned electron-store
-                    // config. Only when the new store hasn't already been
-                    // populated (by the user re-entering their client ID, or
-                    // a previous carry-over) — never overwrite config the
-                    // user has already set in the new app.
-                    if config_store.get("appRegistrationId").is_none() {
+                    // config. Gated per-key, not on the store as a whole:
+                    // `appRegistrationId`, `timezone` and `syncConfig` are
+                    // each carried only if that particular key is still
+                    // absent from the new store — never overwriting a key
+                    // the user (or a previous carry-over) already set. This
+                    // matters because the user signing in during the auth
+                    // milestone already populates `appRegistrationId` alone;
+                    // gating the whole block on that one key (as an earlier
+                    // version of this code did) meant `timezone` and
+                    // `syncConfig` were never carried over at all.
+                    {
                         // Electron's config lived at
                         // `%APPDATA%/calendarmanager/config.json`; the Tauri
                         // app's app-data dir is
@@ -102,12 +108,14 @@ pub fn run() {
                                 Ok(bytes) => {
                                     match serde_json::from_slice::<serde_json::Value>(&bytes) {
                                         Ok(legacy) => {
-                                            let carried =
-                                                commands::config::keys_to_carry_over(&legacy);
+                                            let carried = commands::config::keys_to_carry_over(
+                                                &legacy,
+                                                |key| config_store.get(key).is_some(),
+                                            );
                                             if carried.is_empty() {
                                                 eprintln!(
                                                     "Legacy config at {} had none of the keys we \
-                                                     carry over",
+                                                     carry over that aren't already set",
                                                     legacy_config_path.display()
                                                 );
                                             } else {

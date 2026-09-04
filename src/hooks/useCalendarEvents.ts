@@ -5,6 +5,7 @@ import utc from 'dayjs/plugin/utc'
 import { Event } from '../types'
 import { calendarService } from '../services/calendar'
 import { storageService } from '../services/storage'
+import { getEvents } from '../api/events'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -20,7 +21,7 @@ export const useCalendarEvents = () => {
     try {
       setLoading(true)
       setError(null)
-      const eventsData = await calendarService.getLocalEvents()
+      const eventsData = await getEvents()
       setEvents(eventsData)
     } catch (error) {
       setError('Failed to load events')
