@@ -10,7 +10,6 @@ import { Event, EventType } from '../../types'
 import { calculateEventDuration } from '../../utils/eventUtils'
 import { useMessage } from '../../contexts/MessageContext'
 import { saveFile } from '../../api/files'
-import { timedSync, reportBlocking } from '../../utils/perfLog'
 
 const { Text } = Typography
 
@@ -80,7 +79,7 @@ const EventTable: React.FC<EventTableProps> = ({
   ], [currentDate])
 
   // Generate all events for the date range
-  const tableEvents = useMemo(() => timedSync('tableEvents memo', () => {
+  const tableEvents = useMemo(() => {
     const events: TableEvent[] = []
     const [startDate, endDate] = dateRange
     
@@ -138,7 +137,7 @@ const EventTable: React.FC<EventTableProps> = ({
     
     // Sort events by start date/time
     return events.sort((a, b) => a.startDateTime.valueOf() - b.startDateTime.valueOf())
-  }), [dateRange, getEventsForDate, userTimezone, eventTypes])
+  }, [dateRange, getEventsForDate, userTimezone, eventTypes])
 
   // Generate filter options based on actual data
   const filterOptions = useMemo(() => {
@@ -625,13 +624,7 @@ const EventTable: React.FC<EventTableProps> = ({
           virtual
           onChange={handleTableChange}
           rowClassName={(record) => 'table-row-clickable'}
-          onRow={(record, index) => ({
-            /* TEMPORARY: pagination={false} means every row is in the DOM.
-               Firing on the first row tells us how long the thread stays
-               wedged once the table starts committing. */
-            ...(index === 0
-              ? { ref: () => reportBlocking(`table render (${tableEvents.length} rows)`) }
-              : {}),
+          onRow={(record) => ({
             onClick: () => {
               setSelectedEvent(record)
               setIsModalVisible(true)

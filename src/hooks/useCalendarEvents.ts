@@ -4,7 +4,6 @@ import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { Event } from '../types'
 import { onSyncComplete } from '../api/sync'
-import { timed, reportBlocking, payloadSize } from '../utils/perfLog'
 import { storageService } from '../services/storage'
 import { getEvents } from '../api/events'
 
@@ -22,11 +21,8 @@ export const useCalendarEvents = () => {
     try {
       setLoading(true)
       setError(null)
-      const eventsData = await timed('getEvents (IPC + parse)', () => getEvents())
-      payloadSize('getEvents', eventsData)
-      console.log(`[perf] event count: ${eventsData.length}`)
+      const eventsData = await getEvents()
       setEvents(eventsData)
-      reportBlocking('setEvents')
     } catch (error) {
       setError('Failed to load events')
       console.error('Error loading events:', error)
@@ -87,7 +83,6 @@ export const useCalendarEvents = () => {
     // Use setTimeout to defer heavy computation and prevent UI blocking
     const timeoutId = setTimeout(() => {
       startTransition(() => {
-        const buildStarted = performance.now()
         const dateMap = new Map<string, Event[]>()
         
         if (events.length === 0) {
@@ -151,12 +146,7 @@ export const useCalendarEvents = () => {
           })
         }
         
-        console.log(
-          `[perf] eventsByDate build: ${Math.round(performance.now() - buildStarted)}ms ` +
-            `(${events.length} events -> ${dateMap.size} days)`
-        )
         setEventsByDate(dateMap)
-        reportBlocking('setEventsByDate')
       })
     }, 10) // Small delay to allow UI to render first
 
