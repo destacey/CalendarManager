@@ -90,7 +90,41 @@ Picking this up means rewriting those 24 tests against the real component.
 
 ---
 
-## 3. `get_events_in_range` compares ISO date strings lexicographically
+## 3. Calendar performance: what's left after the post-sync freeze fix
+
+A large sync used to leave the window unresponsive for ~30 seconds. Measured in
+the running app, the cause was the event table: `pagination={false}` put every
+matching row in the DOM, and committing that tree blocked the main thread for
+**3459ms at a time, repeatedly**. Virtualising it (plus a numeric `scroll.y`,
+which antd requires or it silently renders every row anyway) took the worst
+block to **61ms**. Dropping 8.2MB of never-read `description` from the bulk
+reads cut the payload from ~9MB to 3.21MB and the load from 1271ms to 191ms.
+
+Two residuals were left deliberately:
+
+- **`eventsByDate` build: 360-490ms** for 3,686 events. The cost is
+  `dayjs.utc().tz()` per event — benchmarked at **14× the non-timezone path**,
+  because dayjs's tz plugin constructs a fresh `Intl.DateTimeFormat` on every
+  call. Creating one formatter and reusing it should cut this by close to an
+  order of magnitude. **Not done because `src/hooks/useCalendarEvents.ts` has
+  no tests at all**, and that loop decides which events land on which day — a
+  timezone regression there would silently misplace events, which is far worse
+  than 400ms. Write tests for the date grouping first, then optimise.
+
+- **`tableEvents` recomputes several times per load, ~85ms each.** It repeats
+  the same timezone conversions the map builder already did, so the formatter
+  fix above would shrink these too. The churn itself is amplified by
+  `App.tsx`'s `<CalendarView key={eventsRefreshKey} />`: using `key` to force a
+  refresh **destroys and rebuilds the whole calendar subtree** rather than
+  reloading data, which is visible in React's `commitDeletionEffectsOnFiber`
+  frames. Replacing that with a data reload is the cheaper fix.
+
+Also worth knowing: `App.tsx` switches screens with `display: none`, so
+`CalendarView` is always mounted. Its sync-complete listener fires while the
+user is on Settings — which is why the original freeze began before they had
+even opened the calendar.
+
+## 4. `get_events_in_range` compares ISO date strings lexicographically
 
 `src-tauri/src/db/events.rs`. Ported faithfully from `electron/main.js:272` **on
 purpose**, so that a behaviour change could not be mistaken for a Tauri
@@ -104,7 +138,7 @@ normalising stored dates, which is a data migration.
 
 ---
 
-## 4. Smaller recorded follow-ups
+## 5. Smaller recorded follow-ups
 
 Each was reviewed, judged non-blocking, and left deliberately.
 
@@ -141,7 +175,7 @@ Each was reviewed, judged non-blocking, and left deliberately.
 
 ---
 
-## 5. Environment traps worth knowing
+## 6. Environment traps worth knowing
 
 Not bugs, but each cost real diagnosis time.
 

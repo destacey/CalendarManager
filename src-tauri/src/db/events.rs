@@ -30,6 +30,30 @@ const EVENT_COLUMNS: &str = "id, graph_id, title, description, start_date, end_d
      COALESCE(categories, '') AS categories, location, organizer, attendees, is_meeting, \
      type_id, type_manually_set, created_at, updated_at, synced_at";
 
+/// The same shape as `EVENT_COLUMNS`, but `description` comes back as NULL
+/// instead of being read from the row.
+///
+/// `description` holds the event body, and Outlook sends full HTML. On a real
+/// database it averages ~2.2KB per event and totals 8.2MB across 3,685 events
+/// — yet nothing in the frontend reads it. A grep across every `.ts` and
+/// `.tsx` finds no reader: not the calendar, not the table, not even
+/// `EventModal`. So every bulk read was serialising 8.2MB in Rust, pushing it
+/// over IPC, JSON-parsing it, and holding it in React state for no one —
+/// roughly 90% of the payload, and the direct cause of a multi-second stall
+/// after a large sync.
+///
+/// It is selected as `NULL AS description` rather than dropped from the list so
+/// `Event`'s shape does not change: the struct and the TypeScript `Event`
+/// interface both still carry the field, and the column is still written by
+/// `create_event`, `update_event` and the sync upsert. Only bulk *reads* skip
+/// it — `get_event_by_id` still returns the real value. If a feature ever needs
+/// to display the body, fetch it for the single event being shown rather than
+/// adding it back here.
+const EVENT_LIST_COLUMNS: &str = "id, graph_id, title, NULL AS description, start_date, end_date, \
+     COALESCE(is_all_day, 0) AS is_all_day, COALESCE(show_as, 'busy') AS show_as, \
+     COALESCE(categories, '') AS categories, location, organizer, attendees, is_meeting, \
+     type_id, type_manually_set, created_at, updated_at, synced_at";
+
 /// The subset of `Event` a caller supplies to create one. No `id` (assigned
 /// by SQLite), and no `location`/`organizer`/`attendees`/`is_meeting`/
 /// `type_id`/`type_manually_set` — `db:createEvent` never wrote those either;
@@ -64,7 +88,7 @@ pub struct EventUpdate {
 }
 
 pub fn get_events(conn: &Connection) -> DbResult<Vec<Event>> {
-    let sql = format!("SELECT {EVENT_COLUMNS} FROM events ORDER BY start_date");
+    let sql = format!("SELECT {EVENT_LIST_COLUMNS} FROM events ORDER BY start_date");
     let mut stmt = conn.prepare(&sql)?;
     let events = stmt.query_map([], Event::from_row)?.collect::<Result<Vec<_>, _>>()?;
     Ok(events)
@@ -86,7 +110,7 @@ pub fn get_events(conn: &Connection) -> DbResult<Vec<Event>> {
 /// inside the range.
 pub fn get_events_in_range(conn: &Connection, start_date: &str, end_date: &str) -> DbResult<Vec<Event>> {
     let sql = format!(
-        "SELECT {EVENT_COLUMNS} FROM events \
+        "SELECT {EVENT_LIST_COLUMNS} FROM events \
          WHERE ( \
            (start_date >= ?1 AND start_date <= ?2) OR \
            (end_date >= ?3 AND end_date <= ?4) OR \
@@ -211,6 +235,51 @@ mod tests {
             },
         )
         .unwrap()
+    }
+
+    /// The bulk reads must not carry `description`. It is 8.2MB across a real
+    /// 3,685-event database, no frontend code reads it, and shipping it over
+    /// IPC on every list load was the direct cause of a multi-second stall
+    /// after a sync. This test fails the moment someone points `get_events` or
+    /// `get_events_in_range` back at `EVENT_COLUMNS`.
+    #[test]
+    fn bulk_reads_omit_the_event_body_but_a_single_fetch_still_returns_it() {
+        let conn = setup();
+        let created = insert(&conn, "Standup", "2026-03-15T09:00:00", Some("2026-03-15T09:30:00"));
+        let id = created.id.unwrap();
+        conn.execute(
+            "UPDATE events SET description = ?1 WHERE id = ?2",
+            rusqlite::params!["<html>a long Outlook body</html>", id],
+        )
+        .unwrap();
+
+        // Bulk: body withheld.
+        let all = get_events(&conn).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(
+            all[0].description, None,
+            "get_events must not ship the event body"
+        );
+
+        let in_range =
+            get_events_in_range(&conn, "2026-03-01T00:00:00", "2026-03-31T23:59:59").unwrap();
+        assert_eq!(in_range.len(), 1);
+        assert_eq!(
+            in_range[0].description, None,
+            "get_events_in_range must not ship the event body"
+        );
+
+        // Everything else still comes through, so this is not a blanket drop.
+        assert_eq!(all[0].title, "Standup");
+        assert_eq!(all[0].show_as, "busy");
+
+        // Single fetch: body intact, so the data is stored and retrievable.
+        let one = get_event_by_id(&conn, id).unwrap().unwrap();
+        assert_eq!(
+            one.description.as_deref(),
+            Some("<html>a long Outlook body</html>"),
+            "the body must still be stored and fetchable for one event"
+        );
     }
 
     #[test]
