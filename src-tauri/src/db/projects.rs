@@ -3,7 +3,7 @@
 // active flag. Nothing references projects yet; see `delete_project`.
 
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::error::DbResult;
 use super::models::Project;
@@ -97,16 +97,48 @@ pub fn update_project(conn: &Connection, id: i64, input: &ProjectInput) -> DbRes
     Ok(conn.query_row(&sql, params![id], Project::from_row).optional()?)
 }
 
-/// A bare `DELETE`, safe only because nothing references projects yet.
+/// What deleting a project actually did.
 ///
-/// When events (or anything else) gain a `project_id`, this needs the
-/// treatment `event_types::delete_event_type` already got: reassign or clear
-/// referencing rows inside one transaction before deleting. Foreign keys are
-/// enforced in this build, so the failure would be loud rather than silently
-/// orphaning rows — but it would still be a failure the user sees.
-pub fn delete_project(conn: &Connection, id: i64) -> DbResult<bool> {
-    let changed = conn.execute("DELETE FROM projects WHERE id = ?1", params![id])?;
-    Ok(changed > 0)
+/// Migration 4 gave `events` and `mapping_rules` a `project_id`, and foreign
+/// keys are enforced in this build, so a bare `DELETE` now fails outright the
+/// moment anything references the project. Clearing the references first is
+/// the deliberate replacement - the same shape as
+/// `event_types::DeleteEventTypeOutcome`, and the Settings screen reports it
+/// rather than showing a bare success.
+///
+/// Events are *unmapped* rather than moved to another project: there is no
+/// sensible default to reassign work to, and silently re-filing someone's
+/// time would be worse than handing it back to the queue.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteProjectOutcome {
+    pub deleted: bool,
+    pub events_unmapped: usize,
+    pub rules_removed: usize,
+}
+
+pub fn delete_project(conn: &Connection, id: i64) -> DbResult<DeleteProjectOutcome> {
+    let tx = conn.unchecked_transaction()?;
+
+    let events_unmapped = tx.execute(
+        "UPDATE events SET project_id = NULL, activity_id = NULL, mapping_manually_set = 0
+         WHERE project_id = ?1",
+        params![id],
+    )?;
+
+    // A rule cannot survive losing its target: project_id is NOT NULL, and a
+    // rule pointing nowhere would be worse than no rule.
+    let rules_removed = tx.execute("DELETE FROM mapping_rules WHERE project_id = ?1", params![id])?;
+
+    let deleted = tx.execute("DELETE FROM projects WHERE id = ?1", params![id])? > 0;
+
+    tx.commit()?;
+
+    Ok(DeleteProjectOutcome {
+        deleted,
+        events_unmapped,
+        rules_removed,
+    })
 }
 
 #[cfg(test)]
@@ -228,12 +260,58 @@ mod tests {
         let conn = setup();
         let created = create_project(&conn, &input("Scrapped", "PRJ-001", None, true)).unwrap();
 
-        assert!(delete_project(&conn, created.id.unwrap()).unwrap());
+        assert!(delete_project(&conn, created.id.unwrap()).unwrap().deleted);
         assert_eq!(list_projects(&conn).unwrap().len(), 0);
         assert!(
-            !delete_project(&conn, created.id.unwrap()).unwrap(),
+            !delete_project(&conn, created.id.unwrap()).unwrap().deleted,
             "a second delete is a no-op"
         );
+    }
+
+    /// Foreign keys are enforced, so this would fail outright as a bare
+    /// DELETE the moment an event referenced the project.
+    #[test]
+    fn deleting_a_project_in_use_unmaps_its_events_rather_than_failing() {
+        let conn = setup();
+        let project = create_project(&conn, &input("Doomed", "PRJ-001", None, true)).unwrap();
+        let pid = project.id.unwrap();
+        conn.execute(
+            "INSERT INTO events (id, title, start_date, project_id, mapping_manually_set)
+             VALUES (1, 'A', '2026-10-01T09:00:00', ?1, 1), (2, 'B', '2026-10-02T09:00:00', ?1, 1)",
+            params![pid],
+        )
+        .unwrap();
+
+        let outcome = delete_project(&conn, pid).unwrap();
+
+        assert!(outcome.deleted);
+        assert_eq!(outcome.events_unmapped, 2);
+        let still_mapped: i64 = conn
+            .query_row("SELECT COUNT(*) FROM events WHERE project_id IS NOT NULL", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(still_mapped, 0, "the events survive, unmapped");
+        let surviving: i64 = conn.query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0)).unwrap();
+        assert_eq!(surviving, 2, "deleting a project must never delete events");
+    }
+
+    /// A rule's project_id is NOT NULL, so a rule cannot outlive its target.
+    #[test]
+    fn deleting_a_project_removes_the_rules_that_targeted_it() {
+        let conn = setup();
+        let project = create_project(&conn, &input("Doomed", "PRJ-001", None, true)).unwrap();
+        let pid = project.id.unwrap();
+        conn.execute(
+            "INSERT INTO mapping_rules (priority, name_operator, name_value, project_id)
+             VALUES (1, 'is', 'Standup', ?1)",
+            params![pid],
+        )
+        .unwrap();
+
+        let outcome = delete_project(&conn, pid).unwrap();
+
+        assert_eq!(outcome.rules_removed, 1);
+        let left: i64 = conn.query_row("SELECT COUNT(*) FROM mapping_rules", [], |r| r.get(0)).unwrap();
+        assert_eq!(left, 0);
     }
 
     /// A cleared program field arrives as `""` from an antd Input. Storing

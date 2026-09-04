@@ -5,9 +5,9 @@
 
 use tauri::State;
 
-use crate::db::activities::{self, ActivityInput};
+use crate::db::activities::{self, ActivityInput, DeleteActivityOutcome};
 use crate::db::project_import::{self, ProjectImportOutcome, ProjectImportPreview};
-use crate::db::projects::{self, ProjectInput};
+use crate::db::projects::{self, DeleteProjectOutcome, ProjectInput};
 use crate::db::assignment::{self, EventFieldsInput, ReprocessEventTypesResult};
 use crate::db::categories::{self, NewCategory};
 use crate::db::error::DbResult;
@@ -151,7 +151,7 @@ pub async fn update_project(
 }
 
 #[tauri::command]
-pub async fn delete_project(db: State<'_, Db>, id: i64) -> DbResult<bool> {
+pub async fn delete_project(db: State<'_, Db>, id: i64) -> DbResult<DeleteProjectOutcome> {
     db.call(move |conn| projects::delete_project(conn, id)).await
 }
 
@@ -175,7 +175,7 @@ pub async fn update_activity(
 }
 
 #[tauri::command]
-pub async fn delete_activity(db: State<'_, Db>, id: i64) -> DbResult<bool> {
+pub async fn delete_activity(db: State<'_, Db>, id: i64) -> DbResult<DeleteActivityOutcome> {
     db.call(move |conn| activities::delete_activity(conn, id)).await
 }
 

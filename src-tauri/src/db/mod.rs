@@ -6,6 +6,8 @@ pub mod categories;
 pub mod error;
 pub mod event_types;
 pub mod events;
+pub mod mapping;
+pub mod mapping_rules;
 pub mod migrate;
 pub mod models;
 pub mod project_import;

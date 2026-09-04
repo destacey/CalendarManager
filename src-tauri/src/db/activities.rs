@@ -4,7 +4,7 @@
 // activities yet — see `delete_activity`.
 
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::error::DbResult;
 use super::models::Activity;
@@ -78,17 +78,46 @@ pub fn update_activity(
     Ok(conn.query_row(&sql, params![id], Activity::from_row).optional()?)
 }
 
-/// A bare `DELETE`, which is only safe because nothing references activities
-/// yet.
+/// What deleting an activity actually did.
 ///
-/// When events gain an `activity_id`, this needs the treatment
-/// `event_types::delete_event_type` already got: reassign or clear
-/// referencing rows inside one transaction before deleting. Foreign keys are
-/// enforced in this build, so the failure would at least be loud rather than
-/// silently orphaning rows — but it would still be a failure the user sees.
-pub fn delete_activity(conn: &Connection, id: i64) -> DbResult<bool> {
-    let changed = conn.execute("DELETE FROM activities WHERE id = ?1", params![id])?;
-    Ok(changed > 0)
+/// Migration 4 gave `events` and `mapping_rules` an `activity_id`, and foreign
+/// keys are enforced, so a bare `DELETE` now fails once anything references
+/// the activity.
+///
+/// Unlike a project, losing an activity is survivable: `activity_id` is
+/// nullable on both tables and "this project, no activity" is a real answer.
+/// So events and rules keep their project and simply lose the activity,
+/// rather than being unmapped or deleted.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteActivityOutcome {
+    pub deleted: bool,
+    pub events_cleared: usize,
+    pub rules_cleared: usize,
+}
+
+pub fn delete_activity(conn: &Connection, id: i64) -> DbResult<DeleteActivityOutcome> {
+    let tx = conn.unchecked_transaction()?;
+
+    let events_cleared = tx.execute(
+        "UPDATE events SET activity_id = NULL WHERE activity_id = ?1",
+        params![id],
+    )?;
+
+    let rules_cleared = tx.execute(
+        "UPDATE mapping_rules SET activity_id = NULL WHERE activity_id = ?1",
+        params![id],
+    )?;
+
+    let deleted = tx.execute("DELETE FROM activities WHERE id = ?1", params![id])? > 0;
+
+    tx.commit()?;
+
+    Ok(DeleteActivityOutcome {
+        deleted,
+        events_cleared,
+        rules_cleared,
+    })
 }
 
 #[cfg(test)]
@@ -222,8 +251,53 @@ mod tests {
         let conn = setup();
         let created = create_activity(&conn, &input("Scrapped", "#f5222d", true)).unwrap();
 
-        assert!(delete_activity(&conn, created.id.unwrap()).unwrap());
+        assert!(delete_activity(&conn, created.id.unwrap()).unwrap().deleted);
         assert_eq!(list_activities(&conn).unwrap().len(), 0);
-        assert!(!delete_activity(&conn, created.id.unwrap()).unwrap(), "a second delete is a no-op");
+        assert!(!delete_activity(&conn, created.id.unwrap()).unwrap().deleted, "a second delete is a no-op");
+    }
+
+    /// Losing an activity is survivable in a way losing a project is not: the
+    /// event keeps its project and simply becomes "project, no activity".
+    #[test]
+    fn deleting_an_activity_in_use_clears_it_but_keeps_the_project() {
+        let conn = setup();
+        conn.execute(
+            "INSERT INTO projects (id, name, code) VALUES (1, 'Rebuild', 'PRJ-001')",
+            [],
+        )
+        .unwrap();
+        let activity = create_activity(&conn, &input("Doomed", "#1890ff", true)).unwrap();
+        let aid = activity.id.unwrap();
+        conn.execute(
+            "INSERT INTO events (id, title, start_date, project_id, activity_id)
+             VALUES (1, 'A', '2026-10-01T09:00:00', 1, ?1)",
+            params![aid],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO mapping_rules (priority, name_operator, name_value, project_id, activity_id)
+             VALUES (1, 'is', 'Standup', 1, ?1)",
+            params![aid],
+        )
+        .unwrap();
+
+        let outcome = delete_activity(&conn, aid).unwrap();
+
+        assert!(outcome.deleted);
+        assert_eq!(outcome.events_cleared, 1);
+        assert_eq!(outcome.rules_cleared, 1);
+
+        let (project_id, activity_id): (Option<i64>, Option<i64>) = conn
+            .query_row("SELECT project_id, activity_id FROM events WHERE id = 1", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(project_id, Some(1), "the project survives");
+        assert_eq!(activity_id, None);
+
+        let rules: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mapping_rules", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rules, 1, "the rule survives as project-only, it is not deleted");
     }
 }
