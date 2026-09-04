@@ -8,16 +8,6 @@ global.ResizeObserver = class ResizeObserver {
   disconnect() {}
 } as any
 
-// Mock electron API for components that use it
-Object.defineProperty(window, 'electronAPI', {
-  value: {
-    getEvents: vi.fn(() => Promise.resolve([])),
-    syncGraphEvents: vi.fn(() => Promise.resolve()),
-    // Add other electronAPI methods as needed
-  },
-  writable: true,
-})
-
 // Create a chainable mock dayjs object for module mocking
 const createChainableDayjs = () => {
   const mock = {

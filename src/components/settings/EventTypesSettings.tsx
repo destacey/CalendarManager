@@ -3,6 +3,7 @@ import { Typography, Space, Button, Table, Modal, Form, Input, ColorPicker, Swit
 import { PlusOutlined, EditOutlined, DeleteOutlined, StarOutlined, StarFilled } from '@ant-design/icons'
 import { EventType } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
+import { getEventTypes, createEventType, updateEventType, deleteEventType, setDefaultEventType } from '../../api/eventTypes'
 
 const { Text } = Typography
 
@@ -26,10 +27,8 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
   const loadEventTypes = async () => {
     try {
       setLoading(true)
-      if (window.electronAPI?.getEventTypes) {
-        const types = await window.electronAPI.getEventTypes()
-        setEventTypes(types)
-      }
+      const types = await getEventTypes()
+      setEventTypes(types)
     } catch (error) {
       console.error('Error loading event types:', error)
       messageApi.error('Failed to load event types')
@@ -60,11 +59,20 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
 
   const handleDelete = async (type: EventType) => {
     try {
-      if (!window.electronAPI?.deleteEventType) return
-      
-      const success = await window.electronAPI.deleteEventType(type.id!)
-      if (success) {
-        messageApi.success('Event type deleted')
+      const outcome = await deleteEventType(type.id!)
+      if (outcome.deleted) {
+        if (outcome.eventsReassigned > 0 || outcome.rulesRemoved > 0) {
+          const parts: string[] = []
+          if (outcome.eventsReassigned > 0) {
+            parts.push(`${outcome.eventsReassigned.toLocaleString()} event${outcome.eventsReassigned === 1 ? '' : 's'} moved to ${outcome.reassignedTo}`)
+          }
+          if (outcome.rulesRemoved > 0) {
+            parts.push(`${outcome.rulesRemoved} rule${outcome.rulesRemoved === 1 ? '' : 's'} removed`)
+          }
+          messageApi.success(`Deleted. ${parts.join(', ')}.`)
+        } else {
+          messageApi.success('Event type deleted')
+        }
         loadEventTypes()
       } else {
         messageApi.error('Failed to delete event type')
@@ -77,9 +85,7 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
 
   const handleSetDefault = async (type: EventType) => {
     try {
-      if (!window.electronAPI?.setDefaultEventType) return
-      
-      const success = await window.electronAPI.setDefaultEventType(type.id!)
+      const success = await setDefaultEventType(type.id!)
       if (success) {
         messageApi.success(`"${type.name}" set as default type`)
         loadEventTypes()
@@ -112,15 +118,13 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
       
       if (editingType) {
         // Update existing type
-        if (!window.electronAPI?.updateEventType) return
-        const updated = await window.electronAPI.updateEventType(editingType.id!, processedValues)
+        const updated = await updateEventType(editingType.id!, processedValues)
         if (updated) {
           messageApi.success('Event type updated')
         }
       } else {
         // Create new type
-        if (!window.electronAPI?.createEventType) return
-        const created = await window.electronAPI.createEventType(processedValues)
+        const created = await createEventType(processedValues)
         if (created) {
           messageApi.success('Event type created')
         }

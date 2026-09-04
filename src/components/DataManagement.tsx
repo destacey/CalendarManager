@@ -5,6 +5,7 @@ import { calendarService } from '../services/calendar'
 import { storageService } from '../services/storage'
 import { useTheme } from '../contexts/ThemeContext'
 import { useMessage } from '../contexts/MessageContext'
+import { getEvents, deleteEvent } from '../api/events'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -53,19 +54,15 @@ const DataManagement: React.FC = () => {
     try {
       setClearing(true)
       setClearDataModalVisible(false)
-      
-      if (!window.electronAPI) {
-        throw new Error('Electron API not available')
-      }
 
-      // Since deleteAllEvents might not be implemented yet, 
+      // Since deleteAllEvents might not be implemented yet,
       // we'll use the existing API to delete events one by one
-      const events = await window.electronAPI.getEvents()
+      const events = await getEvents()
       let deletedCount = 0
-      
+
       for (const event of events) {
         if (event.id) {
-          const success = await window.electronAPI.deleteEvent(event.id)
+          const success = await deleteEvent(event.id)
           if (success) {
             deletedCount++
           }
