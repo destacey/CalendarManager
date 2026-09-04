@@ -6,6 +6,7 @@
 use tauri::State;
 
 use crate::db::activities::{self, ActivityInput};
+use crate::db::project_import::{self, ProjectImportOutcome, ProjectImportPreview};
 use crate::db::projects::{self, ProjectInput};
 use crate::db::assignment::{self, EventFieldsInput, ReprocessEventTypesResult};
 use crate::db::categories::{self, NewCategory};
@@ -112,6 +113,22 @@ pub async fn update_event_type_rule(
 #[tauri::command]
 pub async fn delete_event_type_rule(db: State<'_, Db>, id: i64) -> DbResult<bool> {
     db.call(move |conn| event_types::delete_event_type_rule(conn, id)).await
+}
+
+#[tauri::command]
+pub async fn preview_project_import(
+    db: State<'_, Db>,
+    path: String,
+) -> DbResult<ProjectImportPreview> {
+    db.call(move |conn| project_import::preview_project_import(conn, &path)).await
+}
+
+#[tauri::command]
+pub async fn commit_project_import(
+    db: State<'_, Db>,
+    projects: Vec<ProjectInput>,
+) -> DbResult<ProjectImportOutcome> {
+    db.call(move |conn| project_import::commit_project_import(conn, &projects)).await
 }
 
 #[tauri::command]

@@ -12,6 +12,7 @@
     "core:window:allow-start-dragging",
     "opener:allow-open-url",
     "dialog:allow-save",
+    "dialog:allow-open",
     "fs:allow-write-file"
   ]
 }

@@ -221,6 +221,8 @@ pub fn run() {
             commands::db::create_event_type_rule,
             commands::db::update_event_type_rule,
             commands::db::delete_event_type_rule,
+            commands::db::preview_project_import,
+            commands::db::commit_project_import,
             commands::db::get_projects,
             commands::db::create_project,
             commands::db::update_project,

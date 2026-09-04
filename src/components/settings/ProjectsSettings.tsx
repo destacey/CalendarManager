@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Typography, Space, Button, Table, Modal, Form, Input, Switch, Popconfirm, Flex } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { Typography, Space, Button, Table, Modal, Form, Input, Switch, Popconfirm, Flex, Alert } from 'antd'
+import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons'
 import { Project } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
 import {
@@ -10,6 +10,12 @@ import {
   deleteProject,
   DuplicateProjectCodeError
 } from '../../api/projects'
+import {
+  pickProjectCsv,
+  previewProjectImport,
+  commitProjectImport,
+  ProjectImportPreview
+} from '../../api/projectImport'
 
 const { Text } = Typography
 
@@ -24,6 +30,8 @@ const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) 
   const [modalVisible, setModalVisible] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [form] = Form.useForm()
+  const [importPreview, setImportPreview] = useState<ProjectImportPreview | null>(null)
+  const [importing, setImporting] = useState(false)
 
   useEffect(() => {
     loadProjects()
@@ -54,6 +62,44 @@ const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) 
     // so null becomes '' going in and blank collapses back to null on save.
     form.setFieldsValue({ ...project, program: project.program ?? '' })
     setModalVisible(true)
+  }
+
+  /* Import is create-only and deliberately two-phase: pick a file, see
+     exactly what will be created and what will be skipped, then confirm.
+     Nothing is written until the confirm, because there is no undo. */
+  const handleChooseImportFile = async () => {
+    try {
+      const path = await pickProjectCsv()
+      if (!path) return // cancelled
+
+      const preview = await previewProjectImport(path)
+      setImportPreview(preview)
+    } catch (error) {
+      console.error('Error reading the import file:', error)
+      // The backend's messages here are already user-facing prose (a missing
+      // file, a CSV without Name/Code headers), so show them rather than a
+      // generic failure that would leave the user with nothing to act on.
+      messageApi.error(typeof error === 'string' ? error : 'Could not read that CSV')
+    }
+  }
+
+  const handleConfirmImport = async () => {
+    if (!importPreview) return
+
+    try {
+      setImporting(true)
+      const outcome = await commitProjectImport(importPreview.toCreate)
+      messageApi.success(
+        `Imported ${outcome.created} project${outcome.created === 1 ? '' : 's'}`
+      )
+      setImportPreview(null)
+      loadProjects()
+    } catch (error) {
+      console.error('Error importing projects:', error)
+      messageApi.error('Failed to import projects')
+    } finally {
+      setImporting(false)
+    }
   }
 
   const handleDelete = async (project: Project) => {
@@ -188,9 +234,14 @@ const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) 
     <Space orientation="vertical" style={{ width: '100%', marginBottom: 16 }}>
       <Flex justify="space-between" align="center">
         <Text strong>Projects</Text>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          Add Project
-        </Button>
+        <Space>
+          <Button icon={<UploadOutlined />} onClick={handleChooseImportFile}>
+            Import CSV
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            Add Project
+          </Button>
+        </Space>
       </Flex>
 
       <Text type="secondary">
@@ -206,6 +257,102 @@ const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) 
         pagination={false}
         size="small"
       />
+
+      {/* Import preview. Deliberately shows the skips as prominently as the
+          creates: the whole reason for a confirm step is that the user can
+          see what they are NOT getting before committing. */}
+      <Modal
+        title="Import projects from CSV"
+        open={importPreview !== null}
+        onOk={handleConfirmImport}
+        onCancel={() => setImportPreview(null)}
+        okText={
+          importPreview && importPreview.toCreate.length > 0
+            ? `Import ${importPreview.toCreate.length} project${importPreview.toCreate.length === 1 ? '' : 's'}`
+            : 'Import'
+        }
+        okButtonProps={{
+          disabled: !importPreview || importPreview.toCreate.length === 0,
+          loading: importing
+        }}
+        width={720}
+      >
+        {importPreview && (
+          <Space orientation="vertical" style={{ width: '100%' }} size="middle">
+            {importPreview.skipped.length > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                message={`${importPreview.skipped.length} row${importPreview.skipped.length === 1 ? '' : 's'} will be skipped`}
+                description={
+                  <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+                    {importPreview.skipped.map(row => (
+                      <div key={row.line} data-testid="skipped-row">
+                        <Text type="secondary">
+                          Line {row.line}: {row.name || row.code || '(blank)'} — {row.reason}
+                        </Text>
+                      </div>
+                    ))}
+                  </div>
+                }
+              />
+            )}
+
+            {importPreview.toCreate.length === 0 ? (
+              <Alert
+                type="info"
+                showIcon
+                message="Nothing to import"
+                description="Every row in this file was skipped. Existing projects are never changed by an import."
+              />
+            ) : (
+              <>
+                <Text>
+                  {importPreview.toCreate.length} new project
+                  {importPreview.toCreate.length === 1 ? '' : 's'} will be created. Existing
+                  projects are never changed.
+                </Text>
+                <Table
+                  columns={[
+                    { title: 'Line', dataIndex: 'line', key: 'line', width: 70 },
+                    { title: 'Name', dataIndex: 'name', key: 'name' },
+                    {
+                      title: 'Code',
+                      dataIndex: 'code',
+                      key: 'code',
+                      width: 140,
+                      render: (code: string) => <Text code>{code}</Text>
+                    },
+                    {
+                      title: 'Program',
+                      dataIndex: 'program',
+                      key: 'program',
+                      render: (program: string | null) =>
+                        program ? <Text>{program}</Text> : <Text type="secondary">—</Text>
+                    },
+                    {
+                      title: 'Active',
+                      dataIndex: 'isActive',
+                      key: 'isActive',
+                      width: 80,
+                      render: (isActive: boolean) => (
+                        <Text type={isActive ? 'success' : 'secondary'}>
+                          {isActive ? 'Yes' : 'No'}
+                        </Text>
+                      )
+                    }
+                  ]}
+                  dataSource={importPreview.toCreate}
+                  rowKey="line"
+                  pagination={false}
+                  size="small"
+                  scroll={{ y: 260 }}
+                />
+              </>
+            )}
+          </Space>
+        )}
+      </Modal>
 
       <Modal
         title={editingProject ? 'Edit Project' : 'Create Project'}
