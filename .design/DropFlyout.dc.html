@@ -1,0 +1,91 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+    body { margin: 0; font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif; }
+    a { color: #1677ff; } a:hover { color: #4096ff; }
+    .proj { border: 1px solid #d9d9d9; border-radius: 6px; padding: 11px 12px; display: flex; align-items: center; gap: 8px; background: #ffffff; }
+    .code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #fafafa; border: 1px solid #d9d9d9; border-radius: 4px; padding: 0 6px; font-size: 11px; color: rgba(0,0,0,0.65); }
+    .act { border-radius: 5px; padding: 7px 10px; display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  </style>
+</helmet>
+
+<div style="width: 620px; height: 560px; background: #ffffff; color: rgba(0,0,0,0.85); font-size: 14px; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; overflow: hidden;">
+
+  <div style="display: flex; flex-direction: column; gap: 3px;">
+    <span style="font-size: 15px; font-weight: 600;">2 &middot; Flyout beside the row</span>
+    <span style="font-size: 12px; color: rgba(0,0,0,0.45);">Hovering opens the activities in a floating panel. Nothing in the list moves.</span>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px; position: relative;">
+
+    <div class="proj">
+      <span class="code">PRJ-002</span>
+      <span style="font-weight: 500;">Billing Migration</span>
+      <div style="flex-grow: 1;"></div>
+      <span style="color: rgba(0,0,0,0.45); font-size: 12px;">41h</span>
+    </div>
+
+    <!-- hovered project: highlighted but SAME height -->
+    <div class="proj" style="border-color: #1677ff; background: #f0f8ff; box-shadow: 0 0 0 3px rgba(22,119,255,0.12);">
+      <span class="code" style="background: #ffffff;">PRJ-001</span>
+      <span style="font-weight: 500;">Website Rebuild</span>
+      <div style="flex-grow: 1;"></div>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#1677ff" stroke-width="1.5"><path d="M4 2.5l4 3.5-4 3.5"/></svg>
+    </div>
+
+    <div class="proj">
+      <span class="code">PRJ-004</span>
+      <span style="font-weight: 500;">Internal &amp; Overheads</span>
+      <div style="flex-grow: 1;"></div>
+      <span style="color: rgba(0,0,0,0.45); font-size: 12px;">18h</span>
+    </div>
+
+    <div class="proj">
+      <span class="code">PRJ-007</span>
+      <span style="font-weight: 500;">Discovery &amp; Pre-sales</span>
+      <div style="flex-grow: 1;"></div>
+      <span style="color: rgba(0,0,0,0.45); font-size: 12px;">6h</span>
+    </div>
+
+    <!-- flyout, floating over -->
+    <div style="position: absolute; top: 46px; left: 296px; width: 254px; border: 1px solid #d9d9d9; border-radius: 8px; background: #ffffff; box-shadow: 0 8px 24px rgba(0,0,0,0.16); padding: 6px; display: flex; flex-direction: column; gap: 2px;">
+      <div style="position: absolute; left: -6px; top: 14px; width: 10px; height: 10px; background: #ffffff; border-left: 1px solid #d9d9d9; border-bottom: 1px solid #d9d9d9; transform: rotate(45deg);"></div>
+      <div style="padding: 5px 10px 7px; font-size: 11px; color: rgba(0,0,0,0.45); text-transform: uppercase; letter-spacing: .04em;">Website Rebuild</div>
+      <div class="act" style="background: #e6f4ff; box-shadow: inset 0 0 0 1px #1677ff;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #1890ff;"></span><span style="font-weight: 500;">Software Development</span></div>
+      <div class="act"><span style="width: 8px; height: 8px; border-radius: 2px; background: #2f54eb;"></span>Architecture</div>
+      <div class="act"><span style="width: 8px; height: 8px; border-radius: 2px; background: #eb2f96;"></span>UX Design</div>
+      <div class="act"><span style="width: 8px; height: 8px; border-radius: 2px; background: #a0d911;"></span>Manual Testing</div>
+      <div class="act"><span style="width: 8px; height: 8px; border-radius: 2px; background: #52c41a;"></span>DevOps</div>
+      <div style="height: 1px; background: #f0f0f0; margin: 4px 6px;"></div>
+      <div class="act" style="color: rgba(0,0,0,0.45);"><span style="width: 8px; height: 8px; border-radius: 2px; background: #d9d9d9;"></span>Project only, no activity</div>
+    </div>
+
+    <!-- dragged card -->
+    <div style="position: absolute; top: 42px; left: 100px; width: 220px; border: 1px solid #1677ff; border-radius: 6px; padding: 8px 10px; background: #ffffff; box-shadow: 0 8px 20px rgba(0,0,0,0.18); transform: rotate(-1.5deg); display: flex; align-items: center; gap: 8px;">
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1.4"><circle cx="4" cy="4" r=".9"/><circle cx="8" cy="4" r=".9"/><circle cx="4" cy="8" r=".9"/><circle cx="8" cy="8" r=".9"/><circle cx="4" cy="12" r=".9"/><circle cx="8" cy="12" r=".9"/></svg>
+      <span style="font-weight: 500; font-size: 13px;">Daily Standup</span>
+      <span style="background: #e6f4ff; color: #1677ff; border-radius: 10px; padding: 0 7px; font-size: 11px; font-weight: 500;">23</span>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1;"></div>
+
+  <div style="border: 1px solid #b7eb8f; background: #f6ffed; border-radius: 6px; padding: 10px 12px; display: flex; gap: 9px; align-items: flex-start;">
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#389e0d" stroke-width="1.5" style="flex-shrink: 0; margin-top: 1px;"><path d="M3.5 7.8l2.6 2.6L11.5 5"/></svg>
+    <span style="font-size: 12px; color: rgba(0,0,0,0.65); line-height: 1.5;">
+      <strong style="color: rgba(0,0,0,0.85); font-weight: 500;">The project list never reflows.</strong>
+      Every project stays where it was, so you can keep dragging past this one. Costs a dwell delay and a panel that must flip when it would run off the bottom.
+    </span>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,151 @@
+{
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Directions"
+    },
+    {
+      "id": "page-2",
+      "name": "Drop interaction"
+    },
+    {
+      "id": "page-3",
+      "name": "Mapping rules"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "A - Mapping board (drag)",
+      "page": "page-1",
+      "x": 0,
+      "y": 0,
+      "w": 1180,
+      "h": 800
+    },
+    {
+      "file": "TriageQueue.dc.html",
+      "title": "B - Triage queue (one at a time)",
+      "page": "page-1",
+      "x": 1300,
+      "y": 0,
+      "w": 1180,
+      "h": 800
+    },
+    {
+      "file": "BulkTable.dc.html",
+      "title": "C - Bulk table (no drag)",
+      "page": "page-1",
+      "x": 2600,
+      "y": 0,
+      "w": 1180,
+      "h": 800
+    },
+    {
+      "file": "DropInline.dc.html",
+      "title": "1 - Spring-loaded inline",
+      "page": "page-2",
+      "x": 0,
+      "y": 0,
+      "w": 620,
+      "h": 560
+    },
+    {
+      "file": "DropFlyout.dc.html",
+      "title": "2 - Flyout beside the row",
+      "page": "page-2",
+      "x": 740,
+      "y": 0,
+      "w": 620,
+      "h": 560
+    },
+    {
+      "file": "DropThenPick.dc.html",
+      "title": "3 - Drop first, then pick",
+      "page": "page-2",
+      "x": 1480,
+      "y": 0,
+      "w": 620,
+      "h": 560
+    },
+    {
+      "file": "MappingRules.dc.html",
+      "title": "Settings > Mapping Rules",
+      "page": "page-3",
+      "x": 0,
+      "y": 0,
+      "w": 1180,
+      "h": 800
+    }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "page": "page-1",
+      "x": 0,
+      "y": -200,
+      "w": 460,
+      "text": "Mapping calendar events to projects + activities.\n\nEvents group by name + categories, with counts and total hours. Same data in all three - only the interaction differs.\n\nColours, type and chrome lifted from the real app: Inter, antd 6 light, #d9d9d9 borders, #f5f5f5 surfaces, and the actual activity colours from the seed migration."
+    },
+    {
+      "id": "note-a",
+      "page": "page-1",
+      "x": 0,
+      "y": 850,
+      "w": 460,
+      "text": "A - MAPPING BOARD\n\nWhat you asked for, literally: drag a group card onto a project, or onto one of its activities. Card shown mid-drag; the Software Development target is lit.\n\nFor: spatial, obvious, satisfying. You see project totals build up as you go.\n\nAgainst: dragging is slow past ~15 groups, and it needs a scroll in both panes at once - the classic two-list drag problem. @dnd-kit is already a dependency, so the mechanics are cheap.\n\nSee the 'Drop interaction' page for how the activity step works."
+    },
+    {
+      "id": "note-b",
+      "page": "page-1",
+      "x": 1300,
+      "y": 850,
+      "w": 460,
+      "text": "B - TRIAGE QUEUE\n\nOne group at a time, full width, with a filtered target list. Type 'soft', hit Enter, next group. No dragging at all.\n\nFor: fastest for a long backlog. Progress is unmissable. You see sample events before deciding, which the other two do not really give you.\n\nAgainst: no overview - you cannot see how the month is shaping up while you work, and you cannot skip around easily."
+    },
+    {
+      "id": "note-c",
+      "page": "page-1",
+      "x": 2600,
+      "y": 850,
+      "w": 460,
+      "text": "C - BULK TABLE\n\nGroups as rows, project and activity as inline dropdowns, checkboxes for multi-assign. Deliberately no drag.\n\nFor: fastest for the common case - tick the three Scrum groups, set both dropdowns once, apply. Sorts and filters like the event table you already have.\n\nAgainst: least discoverable, and it is the one that looks like every other admin screen. Included as an honest counterpoint: drag is fun, but a table may be what you actually want at 50 groups."
+    },
+    {
+      "id": "note-shared",
+      "page": "page-1",
+      "x": 1300,
+      "y": 1120,
+      "w": 460,
+      "text": "IN ALL THREE\n\n- 'Remember this' creates a rule so future events map themselves - the same idea as the existing event-type rules.\n- The PTO row shows a 5-day all-day event as 40h, not 120h. That depends on the all-day hours work we parked.\n- 'No activity' / 'Internal & Overheads' exist so time can be mapped to a project without pretending it was a discipline."
+    },
+    {
+      "id": "drop-brief",
+      "page": "page-2",
+      "x": 0,
+      "y": -230,
+      "w": 700,
+      "text": "HOW DOES THE ACTIVITY STEP WORK?\n\nThe question was whether activities expand on hover. They can - but the obvious version reflows the list while you are aiming at it. Three ways to handle it, worst to best.\n\nAll three show the same moment: dragging 'Daily Standup x23' at Website Rebuild."
+    },
+    {
+      "id": "drop-verdict",
+      "page": "page-2",
+      "x": 1480,
+      "y": 610,
+      "w": 620,
+      "text": "RECOMMENDED - and now built to your notes\n\nCtrl-click several groups, drag once, drop on the project, one click on the activity. Two gestures for 34 events.\n\nNo search box. 'Project only, no activity' sits first, not buried at the bottom.\n\nThe 'map future events here too' box is ALREADY TICKED, so it costs nothing - you only touch it when you do not want a rule. That is what fills the Rules tab."
+    },
+    {
+      "id": "rules-note",
+      "page": "page-3",
+      "x": 0,
+      "y": 850,
+      "w": 700,
+      "text": "SETTINGS > MAPPING RULES\n\nA fourth tab beside General, Activities and Projects. Same shell as the tabs already there - title, search box, tab strip.\n\nCONFIRMING THE RULE SHAPE\nWhen an event matches a NAME, or a CATEGORY, or both -> map it to a project, and to one of that project's activities or to no activity at all. Rule 6 shows the 'Project only' case.\n\nWHAT THE MOCKUP ADDS, EACH ARGUABLE:\n\n- Name needs an operator. 'is' would not catch '1:1 - Sarah Chen' and '1:1 - Tom', so rule 5 uses 'contains'. Two operators is the minimum that works; more is a form nobody fills in.\n\n- MATCHES column. A rule you cannot see the effect of is a rule you will not trust. Rule 4 shows 0 with a warning: rules 1 and 2 already catch every Scrum event, so it can never fire. That is the failure mode of an ordered list and it should be visible now, not discovered in three months.\n\n- Disable without deleting, so a rule can be parked (rule 7).\n\n- 'Rules never change an event you mapped by hand' - the promise type_manually_set already makes for event types.\n\nDROPPED SINCE LAST VERSION\nA rule matching on 'shown as Out of office'. It is outside name+category, so it is gone - but it is how a PTO block would map itself without being named 'PTO'."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-3"
+  }
+}

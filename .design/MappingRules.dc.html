@@ -1,0 +1,221 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+    body { margin: 0; font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif; }
+    a { color: #1677ff; } a:hover { color: #4096ff; }
+    .code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #fafafa; border: 1px solid #d9d9d9; border-radius: 4px; padding: 0 6px; font-size: 11px; color: rgba(0,0,0,0.65); }
+    .row { display: grid; grid-template-columns: 34px 34px minmax(0, 2.6fr) minmax(0, 2fr) 84px 56px 72px; align-items: center; border-bottom: 1px solid #f0f0f0; }
+    .c { padding: 10px 9px; display: flex; align-items: center; min-width: 0; }
+    .lit { background: #ffffff; border: 1px solid #d9d9d9; border-radius: 4px; padding: 1px 7px; font-size: 12px; color: rgba(0,0,0,0.85); }
+    .op { font-size: 12px; color: rgba(0,0,0,0.45); }
+    .toggle { width: 30px; height: 17px; border-radius: 9px; position: relative; display: inline-block; flex-shrink: 0; }
+    .knob { position: absolute; top: 2px; width: 13px; height: 13px; border-radius: 50%; background: #ffffff; }
+    .btn { width: 26px; height: 26px; border: 1px solid #d9d9d9; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: #ffffff; }
+    .grip { flex-shrink: 0; }
+  </style>
+</helmet>
+
+<div style="width: 1180px; height: 800px; display: flex; flex-direction: column; background: #ffffff; color: rgba(0,0,0,0.85); font-size: 14px; overflow: hidden;">
+
+  <div style="height: 32px; flex-shrink: 0; background: #f5f5f5; border-bottom: 1px solid #d9d9d9; display: flex; align-items: center; padding: 0 12px; gap: 8px;">
+    <div style="width: 14px; height: 14px; border-radius: 3px; background: #1677ff;"></div>
+    <span style="font-size: 12px; color: rgba(0,0,0,0.65);">Calendar Manager</span>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; gap: 14px; color: rgba(0,0,0,0.45);">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 6h8"/></svg>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.5" y="2.5" width="7" height="7"/></svg>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+
+    <div style="width: 180px; flex-shrink: 0; background: #f5f5f5; border-right: 1px solid #d9d9d9; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px;">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 6px; color: rgba(0,0,0,0.65);">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg>
+        <span>Calendar</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 6px; color: rgba(0,0,0,0.65);">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2 4h5l1.5 2H14v7H2z"/><path d="M6 9.5h4"/></svg>
+        <span>Map Events</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 6px; background: #e6f4ff; color: #1677ff; font-weight: 500;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>
+        <span>Settings</span>
+      </div>
+    </div>
+
+    <div style="flex-grow: 1; display: flex; flex-direction: column; min-width: 0; padding: 22px 24px 16px; gap: 16px;">
+
+      <!-- Settings header, as it exists today -->
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <span style="font-size: 24px; font-weight: 600;">Settings</span>
+        <div style="border: 1px solid #d9d9d9; border-radius: 6px; height: 32px; max-width: 400px; padding: 0 11px; display: flex; align-items: center; gap: 8px; color: rgba(0,0,0,0.25);">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="rgba(0,0,0,0.45)" stroke-width="1.4"><circle cx="6" cy="6" r="4.2"/><path d="M9.2 9.2L12 12"/></svg>
+          <span style="font-size: 14px;">Search settings...</span>
+        </div>
+      </div>
+
+      <!-- tabs: the new one on the end -->
+      <div style="display: flex; gap: 26px; border-bottom: 1px solid #d9d9d9;">
+        <div style="padding: 0 0 9px; color: rgba(0,0,0,0.65);">General</div>
+        <div style="padding: 0 0 9px; color: rgba(0,0,0,0.65);">Activities</div>
+        <div style="padding: 0 0 9px; color: rgba(0,0,0,0.65);">Projects</div>
+        <div style="padding: 0 0 9px; color: #1677ff; font-weight: 500; box-shadow: inset 0 -2px 0 #1677ff;">Mapping Rules</div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="rgba(0,0,0,0.45)" stroke-width="1.3"><circle cx="7.5" cy="7.5" r="6"/><path d="M7.5 4.4v3.8M7.5 10.2v.2"/></svg>
+        <span style="font-size: 13px; color: rgba(0,0,0,0.45);">Checked top to bottom &mdash; the first rule that matches wins. Drag to reorder.</span>
+        <div style="flex-grow: 1;"></div>
+        <div style="border: 1px solid #d9d9d9; border-radius: 6px; height: 30px; padding: 0 12px; display: flex; align-items: center; gap: 7px; font-size: 13px;">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="rgba(0,0,0,0.65)" stroke-width="1.4"><path d="M11 6.5a4.5 4.5 0 1 1-1.4-3.2"/><path d="M11 1.6v3.1H7.9"/></svg>
+          Re-run on all events
+        </div>
+        <div style="background: #1677ff; color: #ffffff; border-radius: 6px; height: 30px; padding: 0 13px; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500;">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="#ffffff" stroke-width="1.6"><path d="M6.5 2.5v8M2.5 6.5h8"/></svg>
+          Add rule
+        </div>
+      </div>
+
+      <div style="border: 1px solid #d9d9d9; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
+
+        <div class="row" style="background: #fafafa; border-bottom: 1px solid #d9d9d9; font-size: 12px; font-weight: 600; color: rgba(0,0,0,0.65);">
+          <div class="c"></div>
+          <div class="c">#</div>
+          <div class="c">When an event matches</div>
+          <div class="c">Map to</div>
+          <div class="c" style="justify-content: flex-end;">Matches</div>
+          <div class="c">Active</div>
+          <div class="c"></div>
+        </div>
+
+        <!-- 1 : name only -->
+        <div class="row">
+          <div class="c" style="justify-content: center;"><svg class="grip" width="11" height="15" viewBox="0 0 11 15" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1.4"><circle cx="3.5" cy="3.5" r=".85"/><circle cx="7.5" cy="3.5" r=".85"/><circle cx="3.5" cy="7.5" r=".85"/><circle cx="7.5" cy="7.5" r=".85"/><circle cx="3.5" cy="11.5" r=".85"/><circle cx="7.5" cy="11.5" r=".85"/></svg></div>
+          <div class="c" style="color: rgba(0,0,0,0.45); font-size: 12px;">1</div>
+          <div class="c" style="gap: 6px; flex-wrap: wrap;"><span class="op">name is</span><span class="lit">Daily Standup</span></div>
+          <div class="c" style="gap: 7px;"><span class="code">PRJ-001</span><span style="width: 8px; height: 8px; border-radius: 2px; background: #1890ff; flex-shrink: 0;"></span><span style="font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Software Development</span></div>
+          <div class="c" style="justify-content: flex-end; font-size: 13px;">23</div>
+          <div class="c"><span class="toggle" style="background: #1677ff;"><span class="knob" style="left: 15px;"></span></span></div>
+          <div class="c" style="gap: 6px;">
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="rgba(0,0,0,0.65)" stroke-width="1.3"><path d="M8.2 1.8l2 2L4 10H2V8z"/></svg></div>
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#ff4d4f" stroke-width="1.3"><path d="M2.5 3.5h7M4.8 3.5V2.2h2.4v1.3M3.6 3.5l.5 6h3.8l.5-6"/></svg></div>
+          </div>
+        </div>
+
+        <!-- 2 : name only -->
+        <div class="row">
+          <div class="c" style="justify-content: center;"><svg class="grip" width="11" height="15" viewBox="0 0 11 15" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1.4"><circle cx="3.5" cy="3.5" r=".85"/><circle cx="7.5" cy="3.5" r=".85"/><circle cx="3.5" cy="7.5" r=".85"/><circle cx="7.5" cy="7.5" r=".85"/><circle cx="3.5" cy="11.5" r=".85"/><circle cx="7.5" cy="11.5" r=".85"/></svg></div>
+          <div class="c" style="color: rgba(0,0,0,0.45); font-size: 12px;">2</div>
+          <div class="c" style="gap: 6px; flex-wrap: wrap;"><span class="op">name is</span><span class="lit">Sprint Planning</span></div>
+          <div class="c" style="gap: 7px;"><span class="code">PRJ-001</span><span style="width: 8px; height: 8px; border-radius: 2px; background: #1890ff; flex-shrink: 0;"></span><span style="font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Software Development</span></div>
+          <div class="c" style="justify-content: flex-end; font-size: 13px;">5</div>
+          <div class="c"><span class="toggle" style="background: #1677ff;"><span class="knob" style="left: 15px;"></span></span></div>
+          <div class="c" style="gap: 6px;">
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="rgba(0,0,0,0.65)" stroke-width="1.3"><path d="M8.2 1.8l2 2L4 10H2V8z"/></svg></div>
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#ff4d4f" stroke-width="1.3"><path d="M2.5 3.5h7M4.8 3.5V2.2h2.4v1.3M3.6 3.5l.5 6h3.8l.5-6"/></svg></div>
+          </div>
+        </div>
+
+        <!-- 3 : name AND category -->
+        <div class="row">
+          <div class="c" style="justify-content: center;"><svg class="grip" width="11" height="15" viewBox="0 0 11 15" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1.4"><circle cx="3.5" cy="3.5" r=".85"/><circle cx="7.5" cy="3.5" r=".85"/><circle cx="3.5" cy="7.5" r=".85"/><circle cx="7.5" cy="7.5" r=".85"/><circle cx="3.5" cy="11.5" r=".85"/><circle cx="7.5" cy="11.5" r=".85"/></svg></div>
+          <div class="c" style="color: rgba(0,0,0,0.45); font-size: 12px;">3</div>
+          <div class="c" style="gap: 6px; flex-wrap: wrap;"><span class="op">name contains</span><span class="lit">Escalation</span><span class="op">and category is</span><span class="lit">Support</span></div>
+          <div class="c" style="gap: 7px;"><span class="code">PRJ-002</span><span style="width: 8px; height: 8px; border-radius: 2px; background: #13c2c2; flex-shrink: 0;"></span><span style="font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Customer Support</span></div>
+          <div class="c" style="justify-content: flex-end; font-size: 13px;">3</div>
+          <div class="c"><span class="toggle" style="background: #1677ff;"><span class="knob" style="left: 15px;"></span></span></div>
+          <div class="c" style="gap: 6px;">
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="rgba(0,0,0,0.65)" stroke-width="1.3"><path d="M8.2 1.8l2 2L4 10H2V8z"/></svg></div>
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#ff4d4f" stroke-width="1.3"><path d="M2.5 3.5h7M4.8 3.5V2.2h2.4v1.3M3.6 3.5l.5 6h3.8l.5-6"/></svg></div>
+          </div>
+        </div>
+
+        <!-- 4 : category only, never fires -->
+        <div class="row" style="background: #fffbe6;">
+          <div class="c" style="justify-content: center;"><svg class="grip" width="11" height="15" viewBox="0 0 11 15" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1.4"><circle cx="3.5" cy="3.5" r=".85"/><circle cx="7.5" cy="3.5" r=".85"/><circle cx="3.5" cy="7.5" r=".85"/><circle cx="7.5" cy="7.5" r=".85"/><circle cx="3.5" cy="11.5" r=".85"/><circle cx="7.5" cy="11.5" r=".85"/></svg></div>
+          <div class="c" style="color: rgba(0,0,0,0.45); font-size: 12px;">4</div>
+          <div class="c" style="gap: 6px; flex-wrap: wrap;"><span class="op">category is</span><span class="lit">Scrum</span></div>
+          <div class="c" style="gap: 7px;"><span class="code">PRJ-001</span><span style="width: 8px; height: 8px; border-radius: 2px; background: #faad14; flex-shrink: 0;"></span><span style="font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">PI Planning</span></div>
+          <div class="c" style="justify-content: flex-end; font-size: 13px; gap: 6px;">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="#d48806" stroke-width="1.4"><path d="M6.5 1.6l5 8.9h-10z"/><path d="M6.5 5.2v2.4M6.5 8.9v.2"/></svg>
+            <span style="color: #d48806;">0</span>
+          </div>
+          <div class="c"><span class="toggle" style="background: #1677ff;"><span class="knob" style="left: 15px;"></span></span></div>
+          <div class="c" style="gap: 6px;">
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="rgba(0,0,0,0.65)" stroke-width="1.3"><path d="M8.2 1.8l2 2L4 10H2V8z"/></svg></div>
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#ff4d4f" stroke-width="1.3"><path d="M2.5 3.5h7M4.8 3.5V2.2h2.4v1.3M3.6 3.5l.5 6h3.8l.5-6"/></svg></div>
+          </div>
+        </div>
+
+        <div style="background: #fffbe6; border-bottom: 1px solid #f0f0f0; padding: 0 9px 10px 78px;">
+          <span style="font-size: 12px; color: #874d00;">Never matches &mdash; rules 1 and 2 already catch every Scrum event. Move it above them, or narrow it.</span>
+        </div>
+
+        <!-- 5 : name only -->
+        <div class="row">
+          <div class="c" style="justify-content: center;"><svg class="grip" width="11" height="15" viewBox="0 0 11 15" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1.4"><circle cx="3.5" cy="3.5" r=".85"/><circle cx="7.5" cy="3.5" r=".85"/><circle cx="3.5" cy="7.5" r=".85"/><circle cx="7.5" cy="7.5" r=".85"/><circle cx="3.5" cy="11.5" r=".85"/><circle cx="7.5" cy="11.5" r=".85"/></svg></div>
+          <div class="c" style="color: rgba(0,0,0,0.45); font-size: 12px;">5</div>
+          <div class="c" style="gap: 6px; flex-wrap: wrap;"><span class="op">name contains</span><span class="lit">1:1</span></div>
+          <div class="c" style="gap: 7px;"><span class="code">PRJ-004</span><span style="width: 8px; height: 8px; border-radius: 2px; background: #f5222d; flex-shrink: 0;"></span><span style="font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Leadership</span></div>
+          <div class="c" style="justify-content: flex-end; font-size: 13px;">12</div>
+          <div class="c"><span class="toggle" style="background: #1677ff;"><span class="knob" style="left: 15px;"></span></span></div>
+          <div class="c" style="gap: 6px;">
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="rgba(0,0,0,0.65)" stroke-width="1.3"><path d="M8.2 1.8l2 2L4 10H2V8z"/></svg></div>
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#ff4d4f" stroke-width="1.3"><path d="M2.5 3.5h7M4.8 3.5V2.2h2.4v1.3M3.6 3.5l.5 6h3.8l.5-6"/></svg></div>
+          </div>
+        </div>
+
+        <!-- 6 : project only, no activity -->
+        <div class="row">
+          <div class="c" style="justify-content: center;"><svg class="grip" width="11" height="15" viewBox="0 0 11 15" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1.4"><circle cx="3.5" cy="3.5" r=".85"/><circle cx="7.5" cy="3.5" r=".85"/><circle cx="3.5" cy="7.5" r=".85"/><circle cx="7.5" cy="7.5" r=".85"/><circle cx="3.5" cy="11.5" r=".85"/><circle cx="7.5" cy="11.5" r=".85"/></svg></div>
+          <div class="c" style="color: rgba(0,0,0,0.45); font-size: 12px;">6</div>
+          <div class="c" style="gap: 6px; flex-wrap: wrap;"><span class="op">name is</span><span class="lit">PTO</span></div>
+          <div class="c" style="gap: 7px;"><span class="code">PRJ-004</span><span style="width: 8px; height: 8px; border-radius: 2px; background: #d9d9d9; flex-shrink: 0;"></span><span style="font-size: 13px; color: rgba(0,0,0,0.45);">Project only</span></div>
+          <div class="c" style="justify-content: flex-end; font-size: 13px;">1</div>
+          <div class="c"><span class="toggle" style="background: #1677ff;"><span class="knob" style="left: 15px;"></span></span></div>
+          <div class="c" style="gap: 6px;">
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="rgba(0,0,0,0.65)" stroke-width="1.3"><path d="M8.2 1.8l2 2L4 10H2V8z"/></svg></div>
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#ff4d4f" stroke-width="1.3"><path d="M2.5 3.5h7M4.8 3.5V2.2h2.4v1.3M3.6 3.5l.5 6h3.8l.5-6"/></svg></div>
+          </div>
+        </div>
+
+        <!-- 7 : disabled, parked -->
+        <div class="row" style="border-bottom: none; opacity: .5;">
+          <div class="c" style="justify-content: center;"><svg class="grip" width="11" height="15" viewBox="0 0 11 15" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1.4"><circle cx="3.5" cy="3.5" r=".85"/><circle cx="7.5" cy="3.5" r=".85"/><circle cx="3.5" cy="7.5" r=".85"/><circle cx="7.5" cy="7.5" r=".85"/><circle cx="3.5" cy="11.5" r=".85"/><circle cx="7.5" cy="11.5" r=".85"/></svg></div>
+          <div class="c" style="color: rgba(0,0,0,0.45); font-size: 12px;">7</div>
+          <div class="c" style="gap: 6px; flex-wrap: wrap;"><span class="op">category is</span><span class="lit">Recruiting</span></div>
+          <div class="c" style="gap: 7px;"><span class="code">PRJ-004</span><span style="width: 8px; height: 8px; border-radius: 2px; background: #f5222d; flex-shrink: 0;"></span><span style="font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Leadership</span></div>
+          <div class="c" style="justify-content: flex-end; font-size: 13px;">0</div>
+          <div class="c"><span class="toggle" style="background: #d9d9d9;"><span class="knob" style="left: 2px;"></span></span></div>
+          <div class="c" style="gap: 6px;">
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="rgba(0,0,0,0.65)" stroke-width="1.3"><path d="M8.2 1.8l2 2L4 10H2V8z"/></svg></div>
+            <div class="btn"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#ff4d4f" stroke-width="1.3"><path d="M2.5 3.5h7M4.8 3.5V2.2h2.4v1.3M3.6 3.5l.5 6h3.8l.5-6"/></svg></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align: center; color: rgba(0,0,0,0.45); font-size: 12px;">5 more rules</div>
+
+      <div style="flex-grow: 1;"></div>
+
+      <div style="border-top: 1px solid #d9d9d9; padding-top: 11px; display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 12px; color: rgba(0,0,0,0.45);">12 rules map <strong style="color: rgba(0,0,0,0.85); font-weight: 500;">214 of 282</strong> events this month.</span>
+        <div style="flex-grow: 1;"></div>
+        <span style="font-size: 12px; color: rgba(0,0,0,0.45);">Rules never change an event you mapped by hand.</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

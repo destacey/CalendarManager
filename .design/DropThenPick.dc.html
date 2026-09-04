@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+    body { margin: 0; font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif; }
+    a { color: #1677ff; } a:hover { color: #4096ff; }
+    .proj { border: 1px solid #d9d9d9; border-radius: 6px; padding: 11px 12px; display: flex; align-items: center; gap: 8px; background: #ffffff; }
+    .code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #fafafa; border: 1px solid #d9d9d9; border-radius: 4px; padding: 0 6px; font-size: 11px; color: rgba(0,0,0,0.65); }
+    .act { border-radius: 5px; padding: 7px 10px; display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .key { border: 1px solid #d9d9d9; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: 10px; background: #fafafa; color: rgba(0,0,0,0.65); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  </style>
+</helmet>
+
+<div style="width: 620px; height: 560px; background: #ffffff; color: rgba(0,0,0,0.85); font-size: 14px; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; overflow: hidden;">
+
+  <div style="display: flex; flex-direction: column; gap: 3px;">
+    <span style="font-size: 15px; font-weight: 600;">3 &middot; Drop first, then one click</span>
+    <span style="font-size: 12px; color: rgba(0,0,0,0.45);">No search. &ldquo;Project only&rdquo; sits first. One click on an activity finishes it.</span>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px; position: relative;">
+
+    <div class="proj">
+      <span class="code">PRJ-002</span>
+      <span style="font-weight: 500;">Billing Migration</span>
+      <div style="flex-grow: 1;"></div>
+      <span style="color: rgba(0,0,0,0.45); font-size: 12px;">41h</span>
+    </div>
+
+    <!-- the project just dropped on -->
+    <div class="proj" style="border-color: #1677ff; background: #f0f8ff;">
+      <span class="code" style="background: #ffffff;">PRJ-001</span>
+      <span style="font-weight: 500;">Website Rebuild</span>
+      <div style="flex-grow: 1;"></div>
+      <span style="background: #e6f4ff; border: 1px solid #91caff; color: #1677ff; border-radius: 10px; padding: 1px 9px; font-size: 12px; font-weight: 500;">Daily Standup &middot; 23</span>
+    </div>
+
+    <div class="proj">
+      <span class="code">PRJ-004</span>
+      <span style="font-weight: 500;">Internal &amp; Overheads</span>
+      <div style="flex-grow: 1;"></div>
+      <span style="color: rgba(0,0,0,0.45); font-size: 12px;">18h</span>
+    </div>
+
+    <div class="proj">
+      <span class="code">PRJ-007</span>
+      <span style="font-weight: 500;">Discovery &amp; Pre-sales</span>
+      <div style="flex-grow: 1;"></div>
+      <span style="color: rgba(0,0,0,0.45); font-size: 12px;">6h</span>
+    </div>
+
+    <!-- the picker, anchored under the drop point -->
+    <div style="position: absolute; top: 92px; left: 118px; width: 292px; border: 1px solid #d9d9d9; border-radius: 8px; background: #ffffff; box-shadow: 0 10px 28px rgba(0,0,0,0.18); padding: 8px; display: flex; flex-direction: column; gap: 2px;">
+
+      <div style="padding: 5px 10px 9px; display: flex; align-items: baseline; gap: 6px;">
+        <span style="font-size: 12px; font-weight: 500;">Activity</span>
+        <span style="font-size: 11px; color: rgba(0,0,0,0.45);">&mdash; one click to finish</span>
+      </div>
+
+      <div class="act" style="color: rgba(0,0,0,0.45); padding: 9px 11px;"><span style="width: 9px; height: 9px; border-radius: 2px; background: #d9d9d9;"></span>Project only, no activity</div>
+      <div style="height: 1px; background: #f0f0f0; margin: 5px 8px;"></div>
+      <div class="act" style="background: #e6f4ff; box-shadow: inset 0 0 0 1px #1677ff; padding: 9px 11px;">
+        <span style="width: 9px; height: 9px; border-radius: 2px; background: #1890ff;"></span>
+        <span style="font-weight: 500;">Software Development</span>
+      </div>
+      <div class="act" style="padding: 9px 11px;"><span style="width: 9px; height: 9px; border-radius: 2px; background: #2f54eb;"></span>Architecture</div>
+      <div class="act" style="padding: 9px 11px;"><span style="width: 9px; height: 9px; border-radius: 2px; background: #eb2f96;"></span>UX Design</div>
+      <div class="act" style="padding: 9px 11px;"><span style="width: 9px; height: 9px; border-radius: 2px; background: #a0d911;"></span>Manual Testing</div>
+      <div class="act" style="padding: 9px 11px;"><span style="width: 9px; height: 9px; border-radius: 2px; background: #52c41a;"></span>DevOps</div>
+
+
+      <div style="height: 1px; background: #f0f0f0; margin: 6px 8px 5px;"></div>
+
+      <label style="display: flex; align-items: flex-start; gap: 8px; padding: 2px 10px 5px; cursor: pointer;">
+        <span style="width: 14px; height: 14px; border: 1px solid #1677ff; border-radius: 3px; background: #1677ff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;">
+          <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="#ffffff" stroke-width="1.6"><path d="M1.6 4.6l1.9 1.9L7.4 2.6"/></svg>
+        </span>
+        <span style="font-size: 12px; color: rgba(0,0,0,0.65); line-height: 1.45;">Map future &ldquo;Daily Standup&rdquo; events here too</span>
+      </label>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1;"></div>
+
+  <div style="border: 1px solid #b7eb8f; background: #f6ffed; border-radius: 6px; padding: 10px 12px; display: flex; gap: 9px; align-items: flex-start;">
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#389e0d" stroke-width="1.5" style="flex-shrink: 0; margin-top: 1px;"><path d="M3.5 7.8l2.6 2.6L11.5 5"/></svg>
+    <span style="font-size: 12px; color: rgba(0,0,0,0.65); line-height: 1.5;">
+      <strong style="color: rgba(0,0,0,0.85); font-weight: 500;">Two gestures for 34 events: one drag, one click.</strong>
+      The rule box is already ticked, so it costs nothing &mdash; untick it only when you do not want one.
+    </span>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,207 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+    body { margin: 0; font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif; }
+    a { color: #1677ff; } a:hover { color: #4096ff; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .key { border: 1px solid #d9d9d9; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: 11px; background: #fafafa; color: rgba(0,0,0,0.65); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  </style>
+</helmet>
+
+<div style="width: 1180px; height: 800px; display: flex; flex-direction: column; background: #ffffff; color: rgba(0,0,0,0.85); font-size: 14px; overflow: hidden;">
+
+  <div style="height: 32px; flex-shrink: 0; background: #f5f5f5; border-bottom: 1px solid #d9d9d9; display: flex; align-items: center; padding: 0 12px; gap: 8px;">
+    <div style="width: 14px; height: 14px; border-radius: 3px; background: #1677ff;"></div>
+    <span style="font-size: 12px; color: rgba(0,0,0,0.65);">Calendar Manager</span>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; gap: 14px; color: rgba(0,0,0,0.45);">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 6h8"/></svg>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.5" y="2.5" width="7" height="7"/></svg>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0; padding: 20px 32px; gap: 18px;">
+
+    <!-- progress header -->
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <span style="font-size: 20px; font-weight: 600;">Map events</span>
+      <div style="flex-grow: 1; max-width: 420px; display: flex; flex-direction: column; gap: 5px;">
+        <div style="height: 6px; border-radius: 3px; background: #f0f0f0; overflow: hidden;">
+          <div style="width: 34%; height: 100%; background: #1677ff;"></div>
+        </div>
+        <span style="font-size: 12px; color: rgba(0,0,0,0.45);">3 of 9 groups mapped &middot; 45 of 68 events remaining</span>
+      </div>
+      <div style="flex-grow: 1;"></div>
+      <span style="font-size: 12px; color: rgba(0,0,0,0.45);">October 2026</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 24px; flex-grow: 1; min-height: 0;">
+
+      <!-- the one group in focus -->
+      <div style="display: flex; flex-direction: column; gap: 16px; min-height: 0;">
+
+        <div style="border: 1px solid #d9d9d9; border-radius: 8px; padding: 20px; background: #fafafa;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+            <span style="font-size: 24px; font-weight: 600;">Daily Standup</span>
+            <span style="background: #e6f4ff; color: #1677ff; border-radius: 12px; padding: 2px 12px; font-size: 14px; font-weight: 500;">23 events</span>
+            <div style="flex-grow: 1;"></div>
+            <span style="font-size: 14px; color: rgba(0,0,0,0.65);">11h 30m total</span>
+          </div>
+
+          <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 16px;">
+            <span style="border: 1px solid #d9d9d9; background: #ffffff; border-radius: 4px; padding: 1px 8px; font-size: 12px; color: rgba(0,0,0,0.65);">Scrum</span>
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: #1890ff;"></span>
+            <span style="font-size: 12px; color: rgba(0,0,0,0.45);">Busy &middot; 15m each &middot; weekdays 09:15 &middot; 1 Oct &ndash; 31 Oct</span>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 4px; border-top: 1px solid #e8e8e8; padding-top: 12px;">
+            <div style="display: flex; gap: 12px; font-size: 12px; color: rgba(0,0,0,0.45);">
+              <span class="mono" style="width: 96px;">Thu 1 Oct</span><span>09:15 &ndash; 09:30</span><span>Daily Standup</span>
+            </div>
+            <div style="display: flex; gap: 12px; font-size: 12px; color: rgba(0,0,0,0.45);">
+              <span class="mono" style="width: 96px;">Fri 2 Oct</span><span>09:15 &ndash; 09:30</span><span>Daily Standup</span>
+            </div>
+            <div style="display: flex; gap: 12px; font-size: 12px; color: rgba(0,0,0,0.45);">
+              <span class="mono" style="width: 96px;">Mon 5 Oct</span><span>09:15 &ndash; 09:30</span><span>Daily Standup</span>
+            </div>
+            <div style="font-size: 12px; color: rgba(0,0,0,0.35); padding-top: 2px;">and 20 more</div>
+          </div>
+        </div>
+
+        <!-- target grid -->
+        <div style="display: flex; flex-direction: column; gap: 10px; min-height: 0;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-weight: 600; font-size: 13px;">Assign to</span>
+            <div style="flex-grow: 1;"></div>
+            <span style="font-size: 12px; color: rgba(0,0,0,0.45);">Type to filter, <span class="key">Enter</span> to assign</span>
+          </div>
+
+          <div style="border: 1px solid #d9d9d9; border-radius: 6px; padding: 7px 12px; display: flex; align-items: center; gap: 8px; background: #ffffff;">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="rgba(0,0,0,0.45)" stroke-width="1.4"><circle cx="6.2" cy="6.2" r="4.2"/><path d="M9.4 9.4L12 12"/></svg>
+            <span style="color: rgba(0,0,0,0.85);">soft</span>
+            <span style="width: 1px; height: 14px; background: #1677ff;"></span>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+            <div style="border: 2px solid #1677ff; border-radius: 6px; padding: 10px 12px; background: #f0f8ff; display: flex; align-items: center; gap: 10px;">
+              <span style="width: 9px; height: 9px; border-radius: 2px; background: #1890ff;"></span>
+              <div style="display: flex; flex-direction: column;">
+                <span style="font-size: 13px; font-weight: 500;">Software Development</span>
+                <span style="font-size: 11px; color: rgba(0,0,0,0.45);">Website Rebuild &middot; PRJ-001</span>
+              </div>
+              <div style="flex-grow: 1;"></div>
+              <span class="key">&crarr;</span>
+            </div>
+            <div style="border: 1px solid #d9d9d9; border-radius: 6px; padding: 10px 12px; display: flex; align-items: center; gap: 10px;">
+              <span style="width: 9px; height: 9px; border-radius: 2px; background: #1890ff;"></span>
+              <div style="display: flex; flex-direction: column;">
+                <span style="font-size: 13px;">Software Development</span>
+                <span style="font-size: 11px; color: rgba(0,0,0,0.45);">Billing Migration &middot; PRJ-002</span>
+              </div>
+            </div>
+            <div style="border: 1px solid #d9d9d9; border-radius: 6px; padding: 10px 12px; display: flex; align-items: center; gap: 10px;">
+              <span style="width: 9px; height: 9px; border-radius: 2px; background: #722ed1;"></span>
+              <div style="display: flex; flex-direction: column;">
+                <span style="font-size: 13px;">Solution Design</span>
+                <span style="font-size: 11px; color: rgba(0,0,0,0.45);">Website Rebuild &middot; PRJ-001</span>
+              </div>
+            </div>
+            <div style="border: 1px solid #d9d9d9; border-radius: 6px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; color: rgba(0,0,0,0.45);">
+              <span style="width: 9px; height: 9px; border-radius: 2px; background: #d9d9d9;"></span>
+              <span style="font-size: 13px;">Skip &mdash; not billable work</span>
+              <div style="flex-grow: 1;"></div>
+              <span class="key">S</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="flex-grow: 1;"></div>
+
+        <div style="display: flex; align-items: center; gap: 12px; border-top: 1px solid #d9d9d9; padding-top: 12px;">
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
+            <span style="width: 32px; height: 18px; border-radius: 9px; background: #1677ff; position: relative; display: inline-block;">
+              <span style="position: absolute; top: 2px; left: 16px; width: 14px; height: 14px; border-radius: 50%; background: #ffffff;"></span>
+            </span>
+            <span>Remember this &mdash; map future &ldquo;Daily Standup&rdquo; events automatically</span>
+          </label>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 12px; color: rgba(0,0,0,0.45);"><span class="key">&larr;</span> <span class="key">&rarr;</span> move between groups</span>
+        </div>
+      </div>
+
+      <!-- queue rail -->
+      <div style="border-left: 1px solid #d9d9d9; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; min-height: 0;">
+        <span style="font-weight: 600; font-size: 13px; margin-bottom: 2px;">Queue</span>
+
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; background: #f5f5f5; color: rgba(0,0,0,0.35);">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="#52c41a" stroke-width="1.6"><path d="M3 6.8l2.4 2.4L10 4.2"/></svg>
+          <span style="font-size: 13px; text-decoration: line-through;">Release Review</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 11px;">4</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; background: #f5f5f5; color: rgba(0,0,0,0.35);">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="#52c41a" stroke-width="1.6"><path d="M3 6.8l2.4 2.4L10 4.2"/></svg>
+          <span style="font-size: 13px; text-decoration: line-through;">PI Planning</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 11px;">1</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; background: #f5f5f5; color: rgba(0,0,0,0.35);">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="#52c41a" stroke-width="1.6"><path d="M3 6.8l2.4 2.4L10 4.2"/></svg>
+          <span style="font-size: 13px; text-decoration: line-through;">PTO</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 11px;">1</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; background: #e6f4ff; border: 1px solid #1677ff;">
+          <span style="width: 5px; height: 16px; border-radius: 2px; background: #1677ff;"></span>
+          <span style="font-size: 13px; font-weight: 500;">Daily Standup</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 11px; color: #1677ff; font-weight: 500;">23</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px;">
+          <span style="width: 5px; height: 16px;"></span>
+          <span style="font-size: 13px;">1:1 &ndash; Sarah Chen</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 11px; color: rgba(0,0,0,0.45);">12</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px;">
+          <span style="width: 5px; height: 16px;"></span>
+          <span style="font-size: 13px;">Architecture Review</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 11px; color: rgba(0,0,0,0.45);">6</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px;">
+          <span style="width: 5px; height: 16px;"></span>
+          <span style="font-size: 13px;">Backlog Refinement</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 11px; color: rgba(0,0,0,0.45);">5</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px;">
+          <span style="width: 5px; height: 16px;"></span>
+          <span style="font-size: 13px;">Sprint Planning</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 11px; color: rgba(0,0,0,0.45);">5</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px;">
+          <span style="width: 5px; height: 16px;"></span>
+          <span style="font-size: 13px;">Customer Escalation</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 11px; color: rgba(0,0,0,0.45);">3</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
