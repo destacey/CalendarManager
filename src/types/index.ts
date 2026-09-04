@@ -112,3 +112,18 @@ export interface Project {
   is_active: boolean
   created_at?: string
 }
+
+export interface MappingRule {
+  id?: number
+  priority: number
+  /** null when the rule does not test the name at all. */
+  name_operator?: 'is' | 'contains' | null
+  name_value?: string | null
+  category_value?: string | null
+  type_id?: number | null
+  project_id: number
+  /** null means "this project, no activity" — a real answer, not a gap. */
+  activity_id?: number | null
+  is_active: boolean
+  created_at?: string
+}

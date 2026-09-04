@@ -6,6 +6,8 @@
 use tauri::State;
 
 use crate::db::activities::{self, ActivityInput, DeleteActivityOutcome};
+use crate::db::mapping::{self, MappingRunResult, UnmappedGroup};
+use crate::db::mapping_rules::{self, MappingRule, MappingRuleInput};
 use crate::db::project_import::{self, ProjectImportOutcome, ProjectImportPreview};
 use crate::db::projects::{self, DeleteProjectOutcome, ProjectInput};
 use crate::db::assignment::{self, EventFieldsInput, ReprocessEventTypesResult};
@@ -113,6 +115,65 @@ pub async fn update_event_type_rule(
 #[tauri::command]
 pub async fn delete_event_type_rule(db: State<'_, Db>, id: i64) -> DbResult<bool> {
     db.call(move |conn| event_types::delete_event_type_rule(conn, id)).await
+}
+
+#[tauri::command]
+pub async fn get_mapping_rules(db: State<'_, Db>) -> DbResult<Vec<MappingRule>> {
+    db.call(mapping_rules::list_mapping_rules).await
+}
+
+#[tauri::command]
+pub async fn create_mapping_rule(db: State<'_, Db>, rule: MappingRuleInput) -> DbResult<MappingRule> {
+    db.call(move |conn| mapping_rules::create_mapping_rule(conn, &rule)).await
+}
+
+#[tauri::command]
+pub async fn update_mapping_rule(
+    db: State<'_, Db>,
+    id: i64,
+    rule: MappingRuleInput,
+) -> DbResult<Option<MappingRule>> {
+    db.call(move |conn| mapping_rules::update_mapping_rule(conn, id, &rule)).await
+}
+
+#[tauri::command]
+pub async fn delete_mapping_rule(db: State<'_, Db>, id: i64) -> DbResult<bool> {
+    db.call(move |conn| mapping_rules::delete_mapping_rule(conn, id)).await
+}
+
+#[tauri::command]
+pub async fn reorder_mapping_rules(db: State<'_, Db>, ids: Vec<i64>) -> DbResult<()> {
+    db.call(move |conn| mapping_rules::reorder_mapping_rules(conn, &ids)).await
+}
+
+#[tauri::command]
+pub async fn apply_mapping_rules(db: State<'_, Db>) -> DbResult<MappingRunResult> {
+    db.call(mapping::apply_rules).await
+}
+
+#[tauri::command]
+pub async fn get_unmapped_groups(
+    db: State<'_, Db>,
+    start: String,
+    end: String,
+    billable_only: bool,
+) -> DbResult<Vec<UnmappedGroup>> {
+    db.call(move |conn| mapping::unmapped_groups(conn, &start, &end, billable_only)).await
+}
+
+#[tauri::command]
+pub async fn map_events(
+    db: State<'_, Db>,
+    event_ids: Vec<i64>,
+    project_id: i64,
+    activity_id: Option<i64>,
+) -> DbResult<usize> {
+    db.call(move |conn| mapping::map_events(conn, &event_ids, project_id, activity_id)).await
+}
+
+#[tauri::command]
+pub async fn unmap_events(db: State<'_, Db>, event_ids: Vec<i64>) -> DbResult<usize> {
+    db.call(move |conn| mapping::unmap_events(conn, &event_ids)).await
 }
 
 #[tauri::command]

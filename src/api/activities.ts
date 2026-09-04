@@ -65,6 +65,18 @@ export async function updateActivity(
   }
 }
 
-export function deleteActivity(id: number): Promise<boolean> {
-  return invoke<boolean>('delete_activity', { id })
+/**
+ * What `deleteActivity` actually did. Unlike a project, losing an activity is
+ * survivable: `activity_id` is nullable on both events and mapping rules, and
+ * "this project, no activity" is a real answer — so both keep their project
+ * and simply lose the activity. Nothing is unmapped or deleted.
+ */
+export interface DeleteActivityOutcome {
+  deleted: boolean
+  eventsCleared: number
+  rulesCleared: number
+}
+
+export function deleteActivity(id: number): Promise<DeleteActivityOutcome> {
+  return invoke<DeleteActivityOutcome>('delete_activity', { id })
 }

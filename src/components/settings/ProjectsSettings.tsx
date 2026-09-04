@@ -104,8 +104,23 @@ const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) 
 
   const handleDelete = async (project: Project) => {
     try {
-      await deleteProject(project.id!)
-      messageApi.success('Project deleted')
+      const outcome = await deleteProject(project.id!)
+      // A bare "deleted" would hide that time came unmapped and rules went
+      // with it — both are things the user needs to know happened.
+      const consequences: string[] = []
+      if (outcome.eventsUnmapped > 0) {
+        consequences.push(
+          `${outcome.eventsUnmapped.toLocaleString()} event${outcome.eventsUnmapped === 1 ? '' : 's'} unmapped`
+        )
+      }
+      if (outcome.rulesRemoved > 0) {
+        consequences.push(`${outcome.rulesRemoved} rule${outcome.rulesRemoved === 1 ? '' : 's'} removed`)
+      }
+      messageApi.success(
+        consequences.length > 0
+          ? `Project deleted — ${consequences.join(', ')}`
+          : 'Project deleted'
+      )
       loadProjects()
     } catch (error) {
       console.error('Error deleting project:', error)
