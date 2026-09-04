@@ -61,3 +61,11 @@ nul
 # Tauri
 src-tauri/target/
 src-tauri/gen/
+
+# Update signing keys — never commit these. The Tauri updater's private key is
+# unrecoverable: if it leaks it must be rotated, and rotating it means every
+# existing install can no longer verify updates. See docs/backlog.md.
+*.key
+*.pem
+.tauri/
+src-tauri/*.key
