@@ -143,6 +143,11 @@ mod tests {
 
     /// A spring-forward day has no 00:00 in some zones; the window must still
     /// resolve rather than panicking or silently producing a wrong instant.
+    /// Europe/London's 2026 spring-forward gap is 01:00-01:59, so neither
+    /// instant this function resolves (00:00 and 23:59:59.999) actually falls
+    /// in it — this test passes through the ordinary `Single` path. It is kept
+    /// as a regression guard that a transition day resolves at all, but the
+    /// two tests below are the ones that exercise the awkward branches.
     #[test]
     fn a_dst_transition_day_still_resolves() {
         let window = sync_window("2026-03-29", "2026-03-29", "Europe/London").unwrap();
@@ -150,6 +155,39 @@ mod tests {
         assert!(window.start.ends_with("+00:00"), "start was {}", window.start);
         assert!(window.end.ends_with("+00:00"), "end was {}", window.end);
         assert!(window.start < window.end);
+    }
+
+    /// The `LocalResult::None` branch, end to end through the public API.
+    ///
+    /// Havana moves its clocks forward at midnight, so 2026-03-08 has no
+    /// 00:00 local at all — the day begins at 01:00 EDT, which is 05:00 UTC.
+    /// This is the only test that actually runs the step-forward loop; without
+    /// it, a wrong-direction step or a broken loop condition would go
+    /// unnoticed, because every other date resolves as `Single`.
+    #[test]
+    fn a_day_whose_midnight_does_not_exist_starts_at_the_first_real_instant() {
+        let window = sync_window("2026-03-08", "2026-03-08", "America/Havana").unwrap();
+
+        assert_eq!(window.start, "2026-03-08T05:00:00+00:00");
+    }
+
+    /// The `LocalResult::Ambiguous` branch, which no test reached before.
+    ///
+    /// London moves its clocks back on 2026-10-25, so 01:30 local happens
+    /// twice: once as BST (00:30 UTC) and again as GMT (01:30 UTC). `dayjs`
+    /// takes the earlier, so this must too — asserting the later instant is
+    /// how you would notice this arm silently flipped.
+    #[test]
+    fn an_ambiguous_local_time_resolves_to_the_earlier_instant() {
+        let naive = NaiveDate::from_ymd_opt(2026, 10, 25)
+            .unwrap()
+            .and_hms_opt(1, 30, 0)
+            .unwrap();
+        let tz: Tz = "Europe/London".parse().unwrap();
+
+        let resolved = resolve_earliest(naive, tz).with_timezone(&Utc);
+
+        assert_eq!(resolved.to_rfc3339(), "2026-10-25T00:30:00+00:00");
     }
 
     #[test]

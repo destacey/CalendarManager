@@ -217,8 +217,17 @@ mod tests {
         assert!(window.end.starts_with("2026-05-31T23:59:59"));
     }
 
-    /// A spring-forward day has no 00:00 in some zones; the window must still
-    /// resolve rather than panicking or silently producing a wrong instant.
+    /// NOTE (corrected after review): Europe/London's 2026 spring-forward gap
+    /// is 01:00-01:59, so neither instant this function resolves (00:00 and
+    /// 23:59:59.999) falls in it — this test passes through the ordinary
+    /// `Single` path and does NOT exercise the gap branch. Two extra tests
+    /// were added to cover the awkward arms for real: one using
+    /// America/Havana 2026-03-08, whose midnight genuinely does not exist
+    /// (asserting a start of 2026-03-08T05:00:00+00:00, which only holds if
+    /// the step-forward loop works), and one calling `resolve_earliest`
+    /// directly on Europe/London 2026-10-25T01:30 to pin the `Ambiguous` arm
+    /// to the earlier instant. Without those, the riskiest branch in the
+    /// milestone was green without ever running.
     #[test]
     fn a_dst_transition_day_still_resolves() {
         let window = sync_window("2026-03-29", "2026-03-29", "Europe/London").unwrap();
