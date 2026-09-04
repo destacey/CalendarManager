@@ -110,6 +110,36 @@ mod tests {
         ActivityInput { name: name.to_string(), color: color.to_string(), is_active }
     }
 
+    /// The regression guard for the bug `ActivityInput::is_active`'s
+    /// `#[serde(default = "default_true")]` exists to fix. Every other test
+    /// in this file builds `ActivityInput` with the `input()` helper — a
+    /// plain struct literal that always sets `is_active` explicitly and so
+    /// can never observe what serde does when the field is missing. Only
+    /// deserializing real JSON, the way `create_activity`/`update_activity`
+    /// actually receive their payload from the frontend, exercises the
+    /// default at all. If this attribute were reverted to a plain
+    /// `#[serde(default)]` — which silently means `false` for a bool — every
+    /// other test would keep compiling and passing while the activity-management
+    /// modal started creating disabled activities behind the user's back.
+    #[test]
+    fn activity_input_defaults_is_active_to_true_when_absent_from_payload() {
+        let json = r##"{"name":"Architecture","color":"#2f54eb"}"##;
+        let parsed: ActivityInput = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.is_active, true);
+        assert_eq!(parsed.name, "Architecture");
+        assert_eq!(parsed.color, "#2f54eb");
+    }
+
+    /// The companion case: an explicit `false` must still be honoured, so the
+    /// default can't be satisfied by an implementation that ignores the
+    /// payload and always returns `true`.
+    #[test]
+    fn activity_input_honours_an_explicit_false_for_is_active() {
+        let json = r##"{"name":"Retired","color":"#f5222d","is_active":false}"##;
+        let parsed: ActivityInput = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.is_active, false);
+    }
+
     #[test]
     fn create_returns_the_activity_with_its_generated_id() {
         let conn = setup();
