@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Space, Tooltip, Dropdown, MenuProps, Flex, Typography, theme } from 'antd';
-import { MinusOutlined, BorderOutlined, CloseOutlined, BlockOutlined, MenuFoldOutlined, MenuUnfoldOutlined, CloudSyncOutlined, MenuOutlined, HomeOutlined, CalendarOutlined, SettingOutlined } from '@ant-design/icons';
+import { MinusOutlined, BorderOutlined, CloseOutlined, BlockOutlined, MenuFoldOutlined, MenuUnfoldOutlined, CloudSyncOutlined, SyncOutlined, MenuOutlined, HomeOutlined, CalendarOutlined, SettingOutlined } from '@ant-design/icons';
 import UserMenu from './UserMenu';
-import SyncProgress from './SyncProgress';
 import SyncModal from './SyncModal';
-import { calendarService, SyncProgress as SyncProgressType } from '../services/calendar';
+import { cancelSync, onSyncStatus, onSyncComplete } from '../services/calendar';
+import type { SyncStatus } from '../api/sync';
 import {
   minimizeWindow,
   toggleMaximizeWindow,
@@ -39,7 +39,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
   onDataManagement
 }) => {
   const [isMaximized, setIsMaximized] = useState(false);
-  const [syncProgress, setSyncProgress] = useState<SyncProgressType | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [syncModalVisible, setSyncModalVisible] = useState(false);
   const [modalKey, setModalKey] = useState(Date.now());
   const { token } = theme.useToken();
@@ -72,17 +72,28 @@ const TitleBar: React.FC<TitleBarProps> = ({
 
     setUpWindowState();
 
-    // Set up sync progress tracking
-    calendarService.setSyncCallbacks(
-      (progress) => setSyncProgress(progress),
-      () => setSyncProgress(null)
-    );
+    let unlistenStatus: (() => void) | undefined;
+    let unlistenComplete: (() => void) | undefined;
+
+    onSyncStatus((status) => {
+      if (!cancelled) setSyncStatus(status);
+    }).then((unlisten) => {
+      if (cancelled) unlisten();
+      else unlistenStatus = unlisten;
+    });
+
+    onSyncComplete(() => {
+      if (!cancelled) setSyncStatus(null);
+    }).then((unlisten) => {
+      if (cancelled) unlisten();
+      else unlistenComplete = unlisten;
+    });
 
     return () => {
       cancelled = true;
       unlistenResize?.();
-      // Clean up sync callbacks
-      calendarService.setSyncCallbacks();
+      unlistenStatus?.();
+      unlistenComplete?.();
     };
   }, []);
 
@@ -101,8 +112,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
   };
 
   const handleCancelSync = () => {
-    calendarService.cancelSync();
-    setSyncProgress(null);
+    cancelSync().catch((error) => console.warn('Cancel sync failed:', error));
   };
 
   const handleSyncButtonClick = () => {
@@ -196,17 +206,23 @@ const TitleBar: React.FC<TitleBarProps> = ({
           maxWidth: '300px'
         }}
       >
-        {syncProgress ? (
-          <div 
-            onClick={handleProgressClick}
-            style={{ cursor: 'pointer', width: '100%' }}
-          >
-            <SyncProgress 
-              progress={syncProgress} 
-              onCancel={handleCancelSync}
-              compact={true}
+        {syncStatus ? (
+          <Flex align="center" gap={8} style={{ cursor: 'pointer' }} onClick={handleProgressClick}>
+            <SyncOutlined spin style={{ color: token.colorPrimary }} />
+            <Text style={{ fontSize: '12px', color: token.colorTextSecondary }}>
+              {syncStatus.fetched} fetched · {syncStatus.phase}
+            </Text>
+            <Button
+              type="text"
+              size="small"
+              icon={<CloseOutlined />}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleCancelSync();
+              }}
+              title="Cancel sync"
             />
-          </div>
+          </Flex>
         ) : (
           <Tooltip title="Open sync options">
             <Button

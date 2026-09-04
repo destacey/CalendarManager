@@ -9,6 +9,7 @@ use tauri::Manager;
 use tauri_plugin_store::StoreExt;
 
 use auth::AuthState;
+use commands::sync::SyncState;
 
 /// If the frontend never mounts (CSP violation, devUrl mismatch, module
 /// error), `src/main.tsx` never calls `show()` and the process would run with
@@ -22,6 +23,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .manage(AuthState::default())
+        .manage(SyncState::default())
         .setup(|app| {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -221,6 +223,9 @@ pub fn run() {
             commands::db::set_event_type_manually,
             commands::db::reprocess_event_types,
             commands::db::reset_event_type_to_auto,
+            commands::sync::start_sync,
+            commands::sync::cancel_sync,
+            commands::sync::sync_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
