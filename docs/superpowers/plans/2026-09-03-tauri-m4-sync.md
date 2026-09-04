@@ -6,7 +6,7 @@
 
 **Architecture:** `start_sync` spawns a Tokio task that pages `/me/calendar/calendarView` with `reqwest`, transforms and upserts each 500-event page inside one transaction, and emits one honest progress event per page. Cancellation is a `CancellationToken` checked between pages and passed to `reqwest`. The 715-line `calendar.ts` collapses to a thin client.
 
-**Tech Stack:** Rust (`reqwest`, `tokio`, `tokio-util`, `chrono`, `chrono-tz`, `serde`), Tauri v2, React 19.
+**Tech Stack:** Rust (`reqwest`, `tokio`, `tokio-util`, `chrono`, `chrono-tz`, `iana-time-zone`, `serde`), Tauri v2, React 19.
 
 ## Global Constraints
 
@@ -411,6 +411,27 @@ Two notes. The original used `isBetween(..., '[]')` — inclusive both ends — 
 **Offline:** map a `reqwest` connect error to `SyncError::Offline`, whose `Display` is the message the original showed. `navigator.onLine` only ever reported whether the adapter had a link; a real connection error is an honest signal.
 
 **Success message:** `format!("Successfully synced {total} events for the specified date range.")`, matching `calendar.ts:449`.
+
+**Where the timezone comes from — a gap found by actually running the app.**
+`sync_window` takes a timezone string, but the config store's `timezone` value
+on the real machine is **`null`**, and always has been: the legacy Electron store
+had `timezone: { type: ['string','null'], default: null }`, so
+`storageService.getTimezone()` (`src/services/storage.ts:79`) has always fallen
+back to `Intl.DateTimeFormat().resolvedOptions().timeZone`. Rust gets no such
+fallback for free.
+
+So this task must resolve the timezone as: the store's `timezone` if it is a
+non-empty string, else the **system** zone. Use `iana_time_zone::get_timezone()`
+— already in `Cargo.lock`, pulled in transitively by `chrono`'s `clock` feature,
+so promoting it to a direct `iana-time-zone = "0.1"` dependency adds nothing to
+the tree. If even that fails, fall back to `"UTC"` rather than erroring; a sync
+window an hour off is far better than a sync that refuses to run.
+
+Add tests for the resolution itself: a non-empty stored string wins; `null`,
+absent, and `""` all fall through to the system zone; and the resolved zone
+always parses as a `chrono_tz::Tz` (a system zone Rust cannot parse would
+otherwise fail every sync, and that is worth catching in a test rather than at
+runtime).
 
 - [ ] **Step 1: Write failing tests** for the pieces that do not need a network: the `SyncStatus`/`SyncResult`/`Phase` serialization shapes (assert the exact JSON keys the frontend will destructure — `fetched`, `phase`, `success`, `message`, `stats.created`, `stats.updated`, `stats.deleted`, `stats.total`), the success and cancellation message strings, and the `$select`/`$top` query construction. **Do not add an HTTP-mocking dependency**; the paginated fetch is covered by the manual gate, as the spec intends.
 - [ ] **Step 2: Run to verify failure.**
