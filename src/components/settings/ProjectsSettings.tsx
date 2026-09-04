@@ -298,7 +298,7 @@ const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) 
               <Alert
                 type="warning"
                 showIcon
-                message={`${importPreview.skipped.length} row${importPreview.skipped.length === 1 ? '' : 's'} will be skipped`}
+                title={`${importPreview.skipped.length} row${importPreview.skipped.length === 1 ? '' : 's'} will be skipped`}
                 description={
                   <div style={{ maxHeight: 160, overflowY: 'auto' }}>
                     {importPreview.skipped.map(row => (
@@ -317,7 +317,7 @@ const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) 
               <Alert
                 type="info"
                 showIcon
-                message="Nothing to import"
+                title="Nothing to import"
                 description="Every row in this file was skipped. Existing projects are never changed by an import."
               />
             ) : (

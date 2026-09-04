@@ -40,6 +40,15 @@ vi.mock('./ProjectsSettings', () => ({
   )
 }))
 
+vi.mock('./MappingRulesSettings', () => ({
+  default: ({ searchTerm }: { searchTerm: string }) => (
+    <div data-testid="mapping-rules-settings">
+      <span data-testid="search-term">{searchTerm}</span>
+      <div>Mapping Rules Settings Component</div>
+    </div>
+  )
+}))
+
 describe('Settings', () => {
   const defaultProps = createSettingsProps()
 
@@ -396,7 +405,7 @@ describe('Settings', () => {
       render(<Settings {...defaultProps} />)
 
       const tabs = screen.getAllByRole('tab')
-      expect(tabs.map(tab => tab.textContent)).toEqual(['General', 'Activities', 'Projects'])
+      expect(tabs.map(tab => tab.textContent)).toEqual(['General', 'Activities', 'Projects', 'Mapping Rules'])
     })
 
     it('maintains tabItems structure that supports easy extension', () => {
@@ -422,6 +431,12 @@ describe('Settings', () => {
       render(<Settings {...defaultProps} />)
 
       expect(screen.getByRole('tab', { name: /projects/i })).toBeInTheDocument()
+    })
+
+    it('offers a Mapping Rules tab', () => {
+      render(<Settings {...defaultProps} />)
+
+      expect(screen.getByRole('tab', { name: /mapping rules/i })).toBeInTheDocument()
     })
 
     it('keeps General as the tab shown first', () => {

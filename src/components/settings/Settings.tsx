@@ -7,6 +7,7 @@ import EventTypesSettings from "./EventTypesSettings";
 import EventTypeRulesSettings from "./EventTypeRulesSettings";
 import ActivitiesSettings from "./ActivitiesSettings";
 import ProjectsSettings from "./ProjectsSettings";
+import MappingRulesSettings from "./MappingRulesSettings";
 
 const { Title } = Typography;
 const { Search } = Input;
@@ -63,6 +64,17 @@ const Settings: React.FC<SettingsProps> = ({ onEventsUpdated }) => {
       children: (
         <div style={{ maxWidth: "800px" }}>
           <ProjectsSettings searchTerm={searchTerm} />
+        </div>
+      ),
+    },
+    {
+      key: "mapping-rules",
+      label: "Mapping Rules",
+      children: (
+        // Wider than the other tabs: a rule row carries its conditions, its
+        // target, and its ordering controls all on one line.
+        <div style={{ maxWidth: "1100px" }}>
+          <MappingRulesSettings searchTerm={searchTerm} />
         </div>
       ),
     },
