@@ -598,6 +598,14 @@ const EventTable: React.FC<EventTableProps> = ({
             }
           }}
           pagination={false}
+          /* Virtualised because `pagination={false}` means every matching row
+             is in the DOM. Measured on a real month of 504 rows, one commit of
+             this table blocked the main thread for 1-3.5 seconds, and the
+             commit repeats — that was the bulk of the ~30s post-sync freeze.
+             Virtual rendering keeps only the visible rows mounted, so the cost
+             stops scaling with the month's event count. Requires the `scroll`
+             dimensions below, which were already set. */
+          virtual
           onChange={handleTableChange}
           rowClassName={(record) => 'table-row-clickable'}
           onRow={(record, index) => ({
