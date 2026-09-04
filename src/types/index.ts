@@ -95,3 +95,11 @@ export interface EventTypeRule {
   created_at?: string
 }
 
+export interface Activity {
+  id?: number
+  name: string
+  color: string
+  is_active: boolean
+  created_at?: string
+}
+
