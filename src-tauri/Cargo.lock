@@ -393,6 +393,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "chrono-tz",
+ "iana-time-zone",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",
