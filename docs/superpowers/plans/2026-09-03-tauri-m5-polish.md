@@ -128,23 +128,43 @@ Install the JS sides: `npm install @tauri-apps/plugin-dialog @tauri-apps/plugin-
 
 - [ ] **Step 5: Rewire the export**
 
-In `EventTable.tsx`, replace the Blob-and-anchor block (currently around `:247-258`) with:
+**Read the component first — it has less scaffolding than you might assume.**
+`handleExport` has **no try/catch and no message API at all**: a thrown export
+fails completely silently today. So this step adds both. `EventTable` does not
+currently import `useMessage`; add it from `../../contexts/MessageContext`, the
+same way `DataManagement.tsx` does. (Importing from `contexts/` is fine — the
+constraint is not to *modify* that directory.)
+
+Replace the Blob-and-anchor block (currently `:247-260`, from the
+`writeBuffer()` call through `revokeObjectURL`) with:
 
 ```typescript
     const buffer = await workbook.xlsx.writeBuffer()
-    const saved = await saveFile(
-      fileName,
-      new Uint8Array(buffer as ArrayBuffer),
-      'Excel Workbook',
-      ['xlsx']
-    )
 
-    if (saved) {
-      messageApi.success(`Exported ${exportData.length} events`)
+    try {
+      const saved = await saveFile(
+        fileName,
+        new Uint8Array(buffer as ArrayBuffer),
+        'Excel Workbook',
+        ['xlsx']
+      )
+
+      // A cancelled dialog is a normal outcome, not a failure — say nothing.
+      if (saved) {
+        messageApi.success(`Exported ${exportData.length} events`)
+      }
+    } catch (error) {
+      console.error('Export failed:', error)
+      messageApi.error('Could not save the export')
     }
 ```
 
-Keep the existing filename generation and the surrounding try/catch, and make sure the catch surfaces a message — a failed export must not be silent, which is the failure mode this task exists to fix. Read the component to match its existing message API and error handling rather than assuming.
+Keep the existing filename generation untouched. Note `handleExport` is wrapped
+in `useCallback` with a dependency array (`:262`) — add `messageApi` to it, or
+the callback will close over a stale value.
+
+Verify the exact `useMessage` import path and the returned API's shape against
+`DataManagement.tsx` rather than trusting the snippet above.
 
 - [ ] **Step 6: Run to verify pass, then the full suite**
 
