@@ -113,6 +113,33 @@ impl EventType {
     }
 }
 
+/// Mirrors `Activity` in `src/types/index.ts`.
+///
+/// No `#[serde(rename_all = "camelCase")]` — deliberately. Domain field names
+/// stay `snake_case` across the IPC boundary, and serde's default already
+/// serialises `is_active` as `is_active`, which is the key the TypeScript
+/// interface reads.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Activity {
+    pub id: Option<i64>,
+    pub name: String,
+    pub color: String,
+    pub is_active: bool,
+    pub created_at: Option<String>,
+}
+
+impl Activity {
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get("id")?,
+            name: row.get("name")?,
+            color: row.get("color")?,
+            is_active: row.get("is_active")?,
+            created_at: row.get("created_at")?,
+        })
+    }
+}
+
 /// Mirrors `EventTypeRule` in `src/types/index.ts`. `field_name` and
 /// `operator` are typed as string literal unions there (`'title' |
 /// 'is_all_day' | ...`, `'equals' | 'contains' | 'is_empty'`); they stay
