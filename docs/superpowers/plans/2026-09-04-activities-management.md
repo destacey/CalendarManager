@@ -1353,7 +1353,7 @@ cd /D/Dev/CalendarManager && npm run test:run
 cd /D/Dev/CalendarManager/src-tauri && cargo test
 ```
 
-Expected: frontend **389 + 17 new = 406 passed**; Rust **227 passed**. If the frontend reports `no tests`, the shell is on a lowercase drive letter — see Global Constraints.
+Expected: frontend **392 + 17 new = 409 passed**; Rust **229 passed**. If the frontend reports `no tests`, the shell is on a lowercase drive letter — see Global Constraints.
 
 - [ ] **Step 6: Verify the production build**
 
