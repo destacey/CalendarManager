@@ -234,6 +234,34 @@ mod tests {
             .unwrap()
     }
 
+    /// Foreign keys are enforced only because `libsqlite3-sys`'s bundled
+    /// build sets `SQLITE_DEFAULT_FOREIGN_KEYS=1` - SQLite's own default is
+    /// OFF, and nothing in this codebase issues `PRAGMA foreign_keys = ON`.
+    /// `event_types::delete_event_type` and the rule-creation error path both
+    /// depend on that, so if a future `rusqlite` bump drops the flag they
+    /// would silently stop enforcing instead of failing loudly. This guards
+    /// the invariant at the point it is actually relied on.
+    #[test]
+    fn foreign_keys_are_enforced_by_default() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        let enforced: i64 = conn
+            .query_row("SELECT * FROM pragma_foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(enforced, 1, "the bundled SQLite must default foreign_keys to ON");
+
+        run_migrations(&conn).unwrap();
+        let err = conn.execute(
+            "INSERT INTO event_type_rules (name, field_name, operator, value, target_type_id, priority)
+             VALUES ('orphan', 'title', 'contains', 'x', 99999, 1)",
+            [],
+        );
+        assert!(
+            err.is_err(),
+            "a rule targeting a non-existent event type must be rejected by the FK"
+        );
+    }
+
     #[test]
     fn a_fresh_database_gets_every_table() {
         let conn = Connection::open_in_memory().unwrap();
