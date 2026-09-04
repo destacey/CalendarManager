@@ -22,6 +22,24 @@ vi.mock('./TimezoneSettings', () => ({
   )
 }))
 
+vi.mock('./ActivitiesSettings', () => ({
+  default: ({ searchTerm }: { searchTerm: string }) => (
+    <div data-testid="activities-settings">
+      <span data-testid="search-term">{searchTerm}</span>
+      <div>Activities Settings Component</div>
+    </div>
+  )
+}))
+
+vi.mock('./ProjectsSettings', () => ({
+  default: ({ searchTerm }: { searchTerm: string }) => (
+    <div data-testid="projects-settings">
+      <span data-testid="search-term">{searchTerm}</span>
+      <div>Projects Settings Component</div>
+    </div>
+  )
+}))
+
 describe('Settings', () => {
   const defaultProps = createSettingsProps()
 
@@ -371,15 +389,14 @@ describe('Settings', () => {
   })
 
   describe('Future Extensibility', () => {
-    it('has commented structure for future tabs', () => {
-      // This is more of a code review test to ensure the component is designed for extension
-      // The actual component source contains commented code for future sync settings
+    it('renders one tab per configured settings area', () => {
+      // This test previously asserted a single tab plus a placeholder comment
+      // for future ones. Activities filled that placeholder, so it now pins the
+      // real tab set - it exists to catch a tab being added or lost silently.
       render(<Settings {...defaultProps} />)
-      
-      // Currently only has one tab
+
       const tabs = screen.getAllByRole('tab')
-      expect(tabs).toHaveLength(1)
-      expect(tabs[0]).toHaveTextContent('General')
+      expect(tabs.map(tab => tab.textContent)).toEqual(['General', 'Activities', 'Projects'])
     })
 
     it('maintains tabItems structure that supports easy extension', () => {
@@ -391,6 +408,29 @@ describe('Settings', () => {
       
       // Should have the general tab and be able to handle more
       expect(screen.getByRole('tab', { name: 'General' })).toBeInTheDocument()
+    })
+  })
+
+  describe('Activities tab', () => {
+    it('offers an Activities tab alongside General', () => {
+      render(<Settings {...defaultProps} />)
+
+      expect(screen.getByRole('tab', { name: /activities/i })).toBeInTheDocument()
+    })
+
+    it('offers a Projects tab too', () => {
+      render(<Settings {...defaultProps} />)
+
+      expect(screen.getByRole('tab', { name: /projects/i })).toBeInTheDocument()
+    })
+
+    it('keeps General as the tab shown first', () => {
+      render(<Settings {...defaultProps} />)
+
+      expect(screen.getByRole('tab', { name: /general/i })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
     })
   })
 })

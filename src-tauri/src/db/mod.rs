@@ -1,5 +1,6 @@
 // Ties the two halves of the split together: `migrate` copies the legacy
 // *file* into place, then `schema` runs the *migrations* against it.
+pub mod activities;
 pub mod assignment;
 pub mod categories;
 pub mod error;
@@ -7,6 +8,8 @@ pub mod event_types;
 pub mod events;
 pub mod migrate;
 pub mod models;
+pub mod project_import;
+pub mod projects;
 pub mod rules;
 pub mod schema;
 pub mod sync;
