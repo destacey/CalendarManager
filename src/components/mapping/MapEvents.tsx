@@ -1,0 +1,431 @@
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import { Typography, Space, Button, Empty, Spin, Switch, Flex, Tag, theme } from 'antd'
+import { HolderOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons'
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  type DragEndEvent,
+  type DragStartEvent
+} from '@dnd-kit/core'
+import dayjs, { Dayjs } from 'dayjs'
+import { Project, Activity } from '../../types'
+import { useMessage } from '../../contexts/MessageContext'
+import { getUnmappedGroups, UnmappedGroup } from '../../api/mapping'
+import ActivityPicker from './ActivityPicker'
+import { getProjects } from '../../api/projects'
+import { getActivities } from '../../api/activities'
+
+const { Text, Title } = Typography
+
+interface MapEventsProps {
+  onEventsUpdated?: () => void
+}
+
+/** Where the activity picker opens, in viewport coordinates. */
+interface PickerState {
+  project: Project
+  groups: UnmappedGroup[]
+  x: number
+  y: number
+}
+
+const GroupCard: React.FC<{
+  group: UnmappedGroup
+  selected: boolean
+  onSelect: (group: UnmappedGroup, additive: boolean) => void
+}> = ({ group, selected, onSelect }) => {
+  const { token } = theme.useToken()
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: group.key,
+    data: { group }
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      aria-label={`${group.title}, ${group.eventCount} events`}
+      onClick={e => onSelect(group, e.ctrlKey || e.metaKey || e.shiftKey)}
+      style={{
+        border: `1px solid ${selected ? token.colorPrimary : token.colorBorder}`,
+        background: selected ? token.colorPrimaryBg : token.colorBgContainer,
+        boxShadow: selected ? `inset 3px 0 0 ${token.colorPrimary}` : undefined,
+        borderRadius: token.borderRadius,
+        padding: '9px 12px',
+        cursor: 'grab',
+        opacity: isDragging ? 0.4 : 1,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 5
+      }}
+    >
+      <Flex align="center" gap={8}>
+        <HolderOutlined style={{ color: token.colorTextQuaternary }} />
+        <Text strong={selected}>{group.title}</Text>
+        <Tag color={selected ? 'blue' : 'default'} style={{ marginInlineEnd: 0 }}>
+          {group.eventCount}
+        </Tag>
+        <div style={{ flexGrow: 1 }} />
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {formatEffort(group)}
+        </Text>
+      </Flex>
+      <Flex align="center" gap={6} style={{ paddingLeft: 22 }}>
+        {group.categories ? (
+          group.categories.split(',').map(c => (
+            <Tag key={c} style={{ marginInlineEnd: 0, fontSize: 11 }}>
+              {c.trim()}
+            </Tag>
+          ))
+        ) : (
+          <Text type="secondary" italic style={{ fontSize: 11 }}>
+            no categories
+          </Text>
+        )}
+        {group.typeName && (
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            {group.typeName}
+          </Text>
+        )}
+      </Flex>
+    </div>
+  )
+}
+
+const ProjectRow: React.FC<{ project: Project; children?: React.ReactNode }> = ({
+  project,
+  children
+}) => {
+  const { token } = theme.useToken()
+  const { setNodeRef, isOver } = useDroppable({ id: `project-${project.id}`, data: { project } })
+
+  return (
+    <div
+      ref={setNodeRef}
+      data-testid={`project-drop-${project.id}`}
+      style={{
+        border: `1px ${isOver ? 'dashed' : 'solid'} ${isOver ? token.colorPrimary : token.colorBorder}`,
+        background: isOver ? token.colorPrimaryBg : token.colorBgContainer,
+        borderRadius: token.borderRadius,
+        padding: '11px 12px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8
+      }}
+    >
+      <Text code>{project.code}</Text>
+      <Text strong>{project.name}</Text>
+      {project.program && (
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {project.program}
+        </Text>
+      )}
+      <div style={{ flexGrow: 1 }} />
+      {children}
+    </div>
+  )
+}
+
+/**
+ * All-day events are shown as a count rather than folded into hours: how many
+ * hours an all-day event is worth is still an open, configurable question, and
+ * inventing a number here would be the same bug the billable footer already
+ * has.
+ */
+function formatEffort(group: UnmappedGroup): string {
+  const parts: string[] = []
+  if (group.timedMinutes > 0) {
+    const h = Math.floor(group.timedMinutes / 60)
+    const m = group.timedMinutes % 60
+    parts.push(h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`)
+  }
+  if (group.allDayCount > 0) {
+    parts.push(`${group.allDayCount} all-day`)
+  }
+  return parts.join(' · ') || '—'
+}
+
+const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
+  const { token } = theme.useToken()
+  const messageApi = useMessage()
+  const [groups, setGroups] = useState<UnmappedGroup[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [activities, setActivities] = useState<Activity[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([])
+  const [billableOnly, setBillableOnly] = useState(true)
+  const [month, setMonth] = useState<Dayjs>(dayjs())
+  const [dragging, setDragging] = useState<UnmappedGroup | null>(null)
+  const [picker, setPicker] = useState<PickerState | null>(null)
+
+  // The distance constraint keeps a plain click a selection rather than a
+  // drag the user did not mean. The keyboard sensor is not decoration: space
+  // picks a group up, arrows move between projects, space drops - which makes
+  // the whole board usable without a mouse, and testable without simulating
+  // pointer physics.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor)
+  )
+
+  const range = useMemo(
+    () => ({
+      start: month.startOf('month').format('YYYY-MM-DDTHH:mm:ss'),
+      end: month.endOf('month').format('YYYY-MM-DDTHH:mm:ss')
+    }),
+    [month]
+  )
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true)
+      const [g, p, a] = await Promise.all([
+        getUnmappedGroups(range.start, range.end, billableOnly),
+        getProjects(),
+        getActivities()
+      ])
+      setGroups(g)
+      setProjects(p.filter(x => x.is_active))
+      setActivities(a.filter(x => x.is_active))
+      setSelectedKeys([])
+    } catch (error) {
+      console.error('Error loading unmapped events:', error)
+      messageApi.error('Failed to load unmapped events')
+    } finally {
+      setLoading(false)
+    }
+  }, [range.start, range.end, billableOnly, messageApi])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const selectedGroups = useMemo(
+    () => groups.filter(g => selectedKeys.includes(g.key)),
+    [groups, selectedKeys]
+  )
+
+  const totalSelectedEvents = selectedGroups.reduce((n, g) => n + g.eventCount, 0)
+
+  const handleSelect = (group: UnmappedGroup, additive: boolean) => {
+    setSelectedKeys(keys => {
+      if (additive) {
+        return keys.includes(group.key) ? keys.filter(k => k !== group.key) : [...keys, group.key]
+      }
+      // A plain click replaces the selection; ctrl/cmd/shift extends it.
+      return keys.length === 1 && keys[0] === group.key ? [] : [group.key]
+    })
+  }
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const group = event.active.data.current?.group as UnmappedGroup | undefined
+    if (!group) return
+    setDragging(group)
+    // Dragging an unselected card acts on that card alone, which is what a
+    // user who never selected anything expects.
+    if (!selectedKeys.includes(group.key)) {
+      setSelectedKeys([group.key])
+    }
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const group = dragging
+    setDragging(null)
+    const project = event.over?.data.current?.project as Project | undefined
+    if (!project || !group) return
+
+    const dropped = selectedKeys.includes(group.key)
+      ? groups.filter(g => selectedKeys.includes(g.key))
+      : [group]
+
+    // Anchor the picker to the row that was dropped on, so it opens where the
+    // user let go rather than somewhere they have to hunt for.
+    const rect = document
+      .querySelector(`[data-testid="project-drop-${project.id}"]`)
+      ?.getBoundingClientRect()
+
+    setPicker({
+      project,
+      groups: dropped,
+      x: rect ? rect.left + 24 : 200,
+      y: rect ? rect.bottom + 6 : 200
+    })
+  }
+
+  const remaining = groups.reduce((n, g) => n + g.eventCount, 0)
+
+  return (
+    <div style={{ padding: 24, height: '100%', overflow: 'auto' }}>
+      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
+        <Flex align="baseline" gap={12} wrap>
+          <Title level={2} style={{ marginBottom: 0 }}>
+            Map events
+          </Title>
+          <Text type="secondary">
+            {remaining} unmapped event{remaining === 1 ? '' : 's'} in {groups.length} group
+            {groups.length === 1 ? '' : 's'}
+          </Text>
+          <div style={{ flexGrow: 1 }} />
+          {/* Prev/next rather than a DatePicker: stepping months is the only
+              thing needed here, and it is one click instead of three. */}
+          <Space size={4}>
+            <Button
+              icon={<LeftOutlined />}
+              size="small"
+              aria-label="Previous month"
+              onClick={() => setMonth(m => m.subtract(1, 'month'))}
+            />
+            <Text style={{ minWidth: 110, textAlign: 'center' }}>
+              {month.format('MMMM YYYY')}
+            </Text>
+            <Button
+              icon={<RightOutlined />}
+              size="small"
+              aria-label="Next month"
+              onClick={() => setMonth(m => m.add(1, 'month'))}
+            />
+          </Space>
+          <Space size={6}>
+            <Switch
+              size="small"
+              checked={billableOnly}
+              onChange={setBillableOnly}
+              aria-label="Billable types only"
+            />
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              Billable types only
+            </Text>
+          </Space>
+        </Flex>
+
+        {loading ? (
+          <Flex justify="center" style={{ padding: 48 }}>
+            <Spin />
+          </Flex>
+        ) : (
+          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 400px) minmax(0, 1fr)',
+                gap: 20,
+                alignItems: 'start'
+              }}
+            >
+              <Space orientation="vertical" size={10} style={{ width: '100%' }}>
+                <Flex align="center" gap={8}>
+                  <Text strong style={{ fontSize: 13 }}>
+                    Unmapped
+                  </Text>
+                  {selectedKeys.length > 0 && (
+                    <Tag color="blue" style={{ marginInlineEnd: 0 }}>
+                      {selectedKeys.length} selected · {totalSelectedEvents} events
+                    </Tag>
+                  )}
+                  <div style={{ flexGrow: 1 }} />
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    ctrl-click to add
+                  </Text>
+                </Flex>
+
+                {groups.length === 0 ? (
+                  <Empty description="Nothing left to map for this month" />
+                ) : (
+                  <Space orientation="vertical" size={7} style={{ width: '100%' }}>
+                    {groups.map(group => (
+                      <GroupCard
+                        key={group.key}
+                        group={group}
+                        selected={selectedKeys.includes(group.key)}
+                        onSelect={handleSelect}
+                      />
+                    ))}
+                  </Space>
+                )}
+              </Space>
+
+              <Space orientation="vertical" size={10} style={{ width: '100%' }}>
+                <Flex align="center" gap={8}>
+                  <Text strong style={{ fontSize: 13 }}>
+                    Projects
+                  </Text>
+                  <div style={{ flexGrow: 1 }} />
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    Drop the selection on a project
+                  </Text>
+                </Flex>
+
+                {projects.length === 0 ? (
+                  <Empty description="No active projects — add one in Settings" />
+                ) : (
+                  <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+                    {projects.map(project => (
+                      <ProjectRow key={project.id} project={project} />
+                    ))}
+                  </Space>
+                )}
+              </Space>
+            </div>
+
+            <DragOverlay>
+              {dragging && (
+                <div
+                  style={{
+                    border: `1px solid ${token.colorPrimary}`,
+                    borderRadius: token.borderRadius,
+                    background: token.colorBgElevated,
+                    padding: '9px 11px',
+                    boxShadow: token.boxShadowSecondary,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    width: 216
+                  }}
+                >
+                  <HolderOutlined style={{ color: token.colorPrimary }} />
+                  <Text strong style={{ fontSize: 13 }}>
+                    {selectedGroups.length > 1
+                      ? `${selectedGroups.length} groups`
+                      : dragging.title}
+                  </Text>
+                  <div style={{ flexGrow: 1 }} />
+                  <Tag color="blue" style={{ marginInlineEnd: 0 }}>
+                    {selectedGroups.length > 1 ? totalSelectedEvents : dragging.eventCount}
+                  </Tag>
+                </div>
+              )}
+            </DragOverlay>
+          </DndContext>
+        )}
+      </Space>
+
+      {picker && (
+        <ActivityPicker
+          project={picker.project}
+          groups={picker.groups}
+          activities={activities}
+          x={picker.x}
+          y={picker.y}
+          onDone={() => {
+            setPicker(null)
+            onEventsUpdated?.()
+            load()
+          }}
+          onCancel={() => setPicker(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+export default MapEvents

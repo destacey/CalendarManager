@@ -6,6 +6,7 @@ import Login from './components/Login'
 import TitleBar from './components/TitleBar'
 import LoadingScreen from './components/LoadingScreen'
 import SideNavigation from './components/SideNavigation'
+import MapEvents from './components/mapping/MapEvents'
 import DataManagement from './components/DataManagement'
 import Settings from './components/settings/Settings'
 import { ThemeProvider, useTheme } from './contexts/ThemeContext'
@@ -115,6 +116,12 @@ function AppContent() {
           height: '100%'
         }}>
           <CalendarView key={eventsRefreshKey} />
+        </div>
+        <div style={{ 
+          display: selectedNavKey === 'map-events' ? 'block' : 'none',
+          height: '100%'
+        }}>
+          <MapEvents onEventsUpdated={() => setEventsRefreshKey(prev => prev + 1)} />
         </div>
         <div style={{ 
           display: selectedNavKey === 'settings' ? 'block' : 'none',
