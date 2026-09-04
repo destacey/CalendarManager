@@ -604,4 +604,67 @@ describe('EventTable', () => {
       expect(screen.queryByText(/Exported/)).not.toBeInTheDocument()
     })
   })
+
+  /* These run against the real component via `vi.importActual`, like the
+     Excel export tests above, because the module-level `vi.mock('./EventTable')`
+     stub has hand-written columns of its own and would prove nothing. */
+  describe('Column widths', () => {
+    const renderRealTable = async () => {
+      const { default: RealEventTable } = await vi.importActual<typeof import('./EventTable')>(
+        './EventTable'
+      )
+      const props = createEventTableProps({
+        getEventsForDate: vi.fn(() => [mockTimedEvent])
+      })
+      render(<RealEventTable {...props} />)
+    }
+
+    /** The `<colgroup>` antd emits, as { header text -> width in px }. */
+    const columnWidths = () => {
+      const widths = Array.from(document.querySelectorAll('col')).map(col =>
+        parseFloat((col.getAttribute('style') || '').replace(/[^0-9.]/g, '')) || 0
+      )
+      const headers = Array.from(document.querySelectorAll('th')).map(th => th.textContent || '')
+      return Object.fromEntries(headers.map((h, i) => [h, widths[i]]))
+    }
+
+    /* The bug this guards: Title was the only column without a width, so it
+       absorbed whatever space the other seven left over. A virtual table sizes
+       every column as `Math.max(width || 0, minWidth || 0)`, so once the other
+       columns' fixed widths exceeded the container, Title's share hit zero and
+       the column vanished rather than truncating via its `ellipsis` config. */
+    it('gives Title a real width instead of letting it collapse to nothing', async () => {
+      await renderRealTable()
+
+      expect(columnWidths()['Title']).toBeGreaterThanOrEqual(200)
+    })
+
+    /* Generalises the same failure: any column added without a width (or
+       minWidth) collapses the same way Title did, and the table quietly gets
+       narrower instead of scrolling. The floor is deliberately low - this is
+       catching "reserved no space at all", not policing column sizing. */
+    it('reserves space for every column, so none can be squeezed away', async () => {
+      await renderRealTable()
+
+      const collapsed = Object.entries(columnWidths()).filter(([, width]) => width < 50)
+
+      expect(collapsed).toEqual([])
+    })
+
+    /* The table's own width is what makes the container overflow and scroll.
+       It has to account for every column, or a narrow window squeezes the
+       flexible column to nothing instead of showing a horizontal scrollbar. */
+    it('sizes the table to the full width its columns demand', async () => {
+      await renderRealTable()
+
+      const totalColumnWidth = Object.values(columnWidths()).reduce((sum, w) => sum + w, 0)
+      const tableWidth = parseFloat(
+        (document.querySelector('.ant-table-container table')?.getAttribute('style') || '')
+          .match(/width:\s*([0-9.]+)px/)?.[1] || '0'
+      )
+
+      expect(tableWidth).toBe(totalColumnWidth)
+      expect(tableWidth).toBeGreaterThanOrEqual(1110)
+    })
+  })
 })

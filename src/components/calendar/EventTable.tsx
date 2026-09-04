@@ -13,6 +13,11 @@ import { saveFile } from '../../api/files'
 
 const { Text } = Typography
 
+/* Title is the only flexible column: every other column is a fixed width, and
+   Title takes the remainder so it grows on a wide window. This is the floor it
+   may never drop below - see the comment on the column itself. */
+const TITLE_MIN_WIDTH = 200
+
 interface EventTableProps {
   currentDate: Dayjs
   getEventsForDate: (date: Dayjs) => Event[]
@@ -338,6 +343,15 @@ const EventTable: React.FC<EventTableProps> = ({
       title: 'Title',
       dataIndex: 'title',
       key: 'title',
+      /* Title is the one column with no fixed width - it takes whatever the
+         other seven leave over, so it grows on a wide window. Without a
+         `minWidth` that share reaches zero on a narrow one: a virtual table
+         sizes each column as `Math.max(width || 0, minWidth || 0)`, so the
+         column collapsed to 1px and vanished instead of truncating via the
+         `ellipsis` below. `scroll.x` on the Table must stay >= the total of
+         every width here plus this minimum, or the container squeezes the
+         column rather than scrolling. */
+      minWidth: TITLE_MIN_WIDTH,
       ellipsis: {
         showTitle: false
       },
@@ -572,6 +586,17 @@ const EventTable: React.FC<EventTableProps> = ({
     }
   ]
 
+  /* Derived from the columns rather than hard-coded, because the two must
+     agree: if `scroll.x` is less than the width the columns actually demand,
+     a narrow container squeezes the flexible column to nothing instead of
+     scrolling horizontally. Deriving it means adding a column can't
+     reintroduce that mismatch. */
+  const tableScrollWidth = columns.reduce((total, column) => {
+    const { width, minWidth } = column as { width?: number; minWidth?: number }
+    return total + Math.max(width ?? 0, minWidth ?? 0)
+  }, 0)
+
+
   // Calculate summary data based on current visible data
   const currentData = filteredData.length > 0 ? filteredData : tableEvents
   const summaryData = {
@@ -605,7 +630,7 @@ const EventTable: React.FC<EventTableProps> = ({
           columns={columns}
           dataSource={tableEvents}
           size="small"
-          scroll={{ y: bodyHeight, x: 800 }}
+          scroll={{ y: bodyHeight, x: tableScrollWidth }}
           components={{
             header: {
               cell: (props: any) => (

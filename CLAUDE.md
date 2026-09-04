@@ -56,12 +56,13 @@ The app follows a 4-stage state machine in `App.tsx`:
 - The database lives in `app_data_dir()` (`%APPDATA%/com.triowfs.calendarmanager/calendar.db`), not the repo root
 - A versioned migration runner (`db/schema.rs`) keyed on SQLite's built-in `PRAGMA user_version` applies schema changes; migration 1 is idempotent so a copied legacy database (already fully evolved, `user_version` 0) passes through untouched and is simply stamped
 - On first run, `db/migrate.rs` copies a legacy `calendar.db` (and any `-wal` sidecar) from the old repo-root location into `app_data_dir()` before the database is opened, preserving event types, rules and manual overrides that Microsoft Graph cannot recreate
-- **Foreign keys are enforced.** `libsqlite3-sys`'s bundled build compiles with `SQLITE_DEFAULT_FOREIGN_KEYS=1`; the previous `better-sqlite3` backend left them off. This already changed behaviour once: deleting an in-use event type used to silently orphan its events, and now instead reassigns them to the default type and removes rules that targeted it, in one transaction (`db::event_types::delete_event_type`, surfaced to the frontend as `DeleteEventTypeOutcome`). Creating or updating a rule with a `target_type_id` that doesn't exist now fails with a real `FOREIGN KEY constraint failed` error, which `src/api/rules.ts` translates into a readable message rather than letting it reach the user.
+- **Foreign keys are enforced.** `libsqlite3-sys`'s bundled build compiles with `SQLITE_DEFAULT_FOREIGN_KEYS=1`; the previous `better-sqlite3` backend left them off. This already changed behaviour once: deleting an in-use event type used to silently orphan its events, and now instead reassigns them to the default type and removes rules that targeted it, in one transaction (`db::event_types::delete_event_type`, surfaced to the frontend as `DeleteEventTypeOutcome`). Creating or updating a rule with a `target_type_id` that doesn't exist now fails with a real `FOREIGN KEY constraint failed` error, which `src/api/rules.ts` translates into a readable message rather than letting it reach the user. SQLite's own default is OFF and nothing here issues `PRAGMA foreign_keys = ON`, so this rests entirely on that build flag — `db::schema`'s `foreign_keys_are_enforced_by_default` test guards it, because a `rusqlite` bump that dropped the flag would silently stop enforcing rather than fail.
 - `events` table: calendar events with Microsoft Graph sync metadata
 - `categories` table: event categorization with color coding
 
 **Microsoft Graph Integration:**
 - All Graph calls happen in Rust (`reqwest`), never from the renderer — there is no CSP or CORS concern for talking to Graph because the webview never does it directly
+- **TLS trust comes from the Windows certificate store.** `reqwest`'s `rustls` feature (0.13+) uses `rustls-platform-verifier`; `webpki-roots` is not in the dependency tree. This is why the app works behind a TLS-inspecting corporate proxy whose root CA is installed by Group Policy. Reverting to a bundled root store would break exactly those users, and no unit test would catch it — nothing in the suite makes a real HTTPS call
 - Date-range sync only; the delta-sync path was deliberately not ported (it was ~150 lines of unreachable code even under Electron)
 - Sync configuration (date range) drives `/me/calendar/calendarView`
 
@@ -119,11 +120,20 @@ The app follows a 4-stage state machine in `App.tsx`:
 ### Test Setup
 The application uses **Vitest** with React Testing Library for component and utility testing, plus a separate **Cargo** test suite for the Rust backend:
 
-- **Test Configuration**: `vitest.config.ts` - Configured for jsdom environment with React support
+- **Test Configuration**: `vitest.config.mts` - Configured for jsdom environment with React support
 - **Test Setup**: `src/test/setup.ts` - Global test setup with mocks for `ResizeObserver`, dayjs plugins, and jsdom quirks
 - **Test Utilities**: `src/test/utils.tsx` - Custom render function with providers and mock data
 - **Test Coverage**: Run `npm run test:run` to generate coverage reports
 - **Rust tests**: Run `cd src-tauri && cargo test`; these are unit tests co-located with the modules they cover (rule evaluation, the Graph transform, the migration runner against both a fresh database and a legacy-shaped one, DPAPI round-trips, etc.)
+
+**Both config files must keep their ESM extensions.** `package.json` declares
+`"type": "commonjs"`, so a plain `vite.config.js` / `vitest.config.ts` is loaded
+as CommonJS and Vite 8 warns that it contains ESM syntax — and will fail outright
+once `configLoader: 'native'` becomes the default. They are therefore
+`vite.config.mjs` and `vitest.config.mts`. Renaming either back, or adding a new
+`.js`/`.ts` config beside them, reintroduces the problem. Flipping the package to
+`"type": "module"` would also fix it, but changes module resolution for
+everything else, which is why the extensions carry it instead.
 
 **The drive-letter trap:** running `npm run test:run` from a lowercase drive letter (`d:\Dev\CalendarManager`) makes Vitest collect zero tests — every file reports "No test suite found in file", and the suite looks completely broken. The identical command from `D:\Dev\CalendarManager` passes all 389. This has cost real diagnosis time twice; always confirm `pwd` prints an uppercase drive letter before trusting a failing (or suspiciously empty) frontend test run.
 

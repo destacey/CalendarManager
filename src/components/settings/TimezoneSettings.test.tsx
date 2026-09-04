@@ -114,7 +114,7 @@ describe('TimezoneSettings', () => {
         expect(screen.getByRole('combobox')).toBeInTheDocument()
         // Select should be present with selected value
         const select = screen.getByRole('combobox')
-        expect(select).toHaveAttribute('type', 'search')
+        expect(select).toHaveAttribute('aria-autocomplete', 'list')
       })
     })
   })
@@ -265,7 +265,7 @@ describe('TimezoneSettings', () => {
         // Check for the search input inside the select
         const searchInput = screen.getByRole('combobox')
         expect(searchInput).toBeInTheDocument()
-        expect(searchInput).toHaveAttribute('type', 'search')
+        expect(searchInput).toHaveAttribute('aria-autocomplete', 'list')
       })
     })
   })
