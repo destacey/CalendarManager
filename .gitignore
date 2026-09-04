@@ -6,7 +6,6 @@ yarn-error.log*
 
 # Build outputs
 dist/
-dist-electron/
 build/
 *.tgz
 
@@ -50,12 +49,6 @@ pids/
 
 # Coverage directory used by tools like istanbul
 coverage/
-
-# Electron
-out/
-app/
-packages/
-release/
 
 # Temporary files
 tmp/
