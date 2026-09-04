@@ -3,8 +3,9 @@ import dayjs, { Dayjs } from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { Event } from '../types'
-import { calendarService } from '../services/calendar'
+import { onSyncComplete } from '../api/sync'
 import { storageService } from '../services/storage'
+import { getEvents } from '../api/events'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -20,7 +21,7 @@ export const useCalendarEvents = () => {
     try {
       setLoading(true)
       setError(null)
-      const eventsData = await calendarService.getLocalEvents()
+      const eventsData = await getEvents()
       setEvents(eventsData)
     } catch (error) {
       setError('Failed to load events')
@@ -51,8 +52,20 @@ export const useCalendarEvents = () => {
       }
     }
 
-    calendarService.addSyncCallbacks(undefined, handleSyncComplete)
-    return () => calendarService.removeSyncCallbacks(undefined, handleSyncComplete)
+    // onSyncComplete resolves asynchronously, so an unmount before it settles
+    // would otherwise leak a listener that nothing ever removes.
+    let cancelled = false
+    let unlisten: (() => void) | undefined
+
+    onSyncComplete(handleSyncComplete).then((off) => {
+      if (cancelled) off()
+      else unlisten = off
+    })
+
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
   }, [loadEvents])
 
   // Initial load

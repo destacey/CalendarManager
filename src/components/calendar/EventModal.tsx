@@ -7,6 +7,7 @@ import utc from 'dayjs/plugin/utc'
 import { Event, EventType } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
 import { calculateEventDuration } from '../../utils/eventUtils'
+import { getEventTypes, setEventTypeManually, resetEventTypeToAuto } from '../../api/eventTypes'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -46,10 +47,8 @@ const EventModal: React.FC<EventModalProps> = ({
 
   const loadEventTypes = async () => {
     try {
-      if (window.electronAPI?.getEventTypes) {
-        const types = await window.electronAPI.getEventTypes()
-        setEventTypes(types)
-      }
+      const types = await getEventTypes()
+      setEventTypes(types)
     } catch (error) {
       console.error('Error loading event types:', error)
     }
@@ -61,17 +60,15 @@ const EventModal: React.FC<EventModalProps> = ({
 
   const handleSaveType = async () => {
     if (!event || !event.id || !selectedTypeId) return
-    
+
     try {
-      if (window.electronAPI?.setEventTypeManually) {
-        const success = await window.electronAPI.setEventTypeManually(event.id, selectedTypeId)
-        if (success) {
-          messageApi.success('Event type updated')
-          setIsEditingType(false)
-          onEventUpdated?.()
-        } else {
-          messageApi.error('Failed to update event type')
-        }
+      const success = await setEventTypeManually(event.id, selectedTypeId)
+      if (success) {
+        messageApi.success('Event type updated')
+        setIsEditingType(false)
+        onEventUpdated?.()
+      } else {
+        messageApi.error('Failed to update event type')
       }
     } catch (error) {
       console.error('Error updating event type:', error)
@@ -81,22 +78,23 @@ const EventModal: React.FC<EventModalProps> = ({
 
   const handleResetToAutoAssign = async () => {
     if (!event || !event.id) return
-    
+
     try {
-      if (window.electronAPI?.evaluateEventType && window.electronAPI?.setEventTypeManually) {
-        const autoTypeId = await window.electronAPI.evaluateEventType(event)
-        if (autoTypeId) {
-          // Reset to auto-assigned type
-          await window.electronAPI.updateEvent(event.id, { 
-            ...event, 
-            type_id: autoTypeId, 
-            type_manually_set: false 
-          })
-          setSelectedTypeId(autoTypeId)
-          messageApi.success('Event type reset to auto-assignment')
-          onEventUpdated?.()
-        }
+      const autoTypeId = await resetEventTypeToAuto(event.id)
+      // `reset_event_type_to_auto` returns `null` when the reset itself
+      // succeeded but no rule matched and there's no default type to fall
+      // back to — the write still happened (type_id cleared, the manual
+      // flag reset), so this is not a failure. Only a thrown error is.
+      // Treating `null` as failure silently dropped the success message and
+      // never called `onEventUpdated`, resurrecting the "button does
+      // nothing" impression this command exists to cure.
+      setSelectedTypeId(autoTypeId ?? undefined)
+      if (autoTypeId) {
+        messageApi.success('Event type reset to auto-assignment')
+      } else {
+        messageApi.info('Event type reset, but no rule matched — no type assigned')
       }
+      onEventUpdated?.()
     } catch (error) {
       console.error('Error resetting event type:', error)
       messageApi.error('Failed to reset event type')

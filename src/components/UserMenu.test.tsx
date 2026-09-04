@@ -8,7 +8,7 @@ import { authService } from '../services/auth'
 vi.mock('../services/auth', () => ({
   authService: {
     isLoggedIn: vi.fn(),
-    getGraphClient: vi.fn(),
+    getCurrentAccount: vi.fn(),
     logout: vi.fn()
   }
 }))
@@ -23,20 +23,11 @@ vi.mock('../contexts/ThemeContext', () => ({
   ThemeProvider: ({ children }: { children: React.ReactNode }) => children
 }))
 
-// Create mock graph client with proper chaining
-const mockGet = vi.fn()
-const mockGraphClient = {
-  api: vi.fn(() => ({
-    get: mockGet
-  }))
-} as any
-
-const mockUserData = {
-  displayName: 'John Doe',
-  mail: 'john.doe@example.com',
-  userPrincipalName: 'john.doe@example.com',
-  givenName: 'John',
-  surname: 'Doe'
+// Account as returned by the Rust `get_account` command: just { name, username }.
+// UserMenu derives displayName/mail/givenName/surname from these two fields.
+const mockAccount = {
+  name: 'John Doe',
+  username: 'john.doe@example.com'
 }
 
 describe('UserMenu', () => {
@@ -44,25 +35,24 @@ describe('UserMenu', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(authService.isLoggedIn).mockReturnValue(true)
-    vi.mocked(authService.getGraphClient).mockResolvedValue(mockGraphClient)
+    vi.mocked(authService.isLoggedIn).mockResolvedValue(true)
+    vi.mocked(authService.getCurrentAccount).mockResolvedValue(mockAccount)
     vi.mocked(authService.logout).mockResolvedValue(undefined)
-    mockGet.mockResolvedValue(mockUserData)
   })
 
   describe('Loading State', () => {
     it('shows loading state initially', async () => {
       // Delay the mock resolution to ensure we can test loading state
-      vi.mocked(authService.getGraphClient).mockImplementation(() => 
-        new Promise(resolve => setTimeout(() => resolve(mockGraphClient), 10))
+      vi.mocked(authService.getCurrentAccount).mockImplementation(() =>
+        new Promise(resolve => setTimeout(() => resolve(mockAccount), 10))
       )
-      
+
       render(<UserMenu {...defaultProps} />)
-      
+
       // Check loading state immediately after render
       expect(screen.getByText('Loading...')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /loading/i })).toBeInTheDocument()
-      
+
       // Wait for loading to complete
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
@@ -71,16 +61,16 @@ describe('UserMenu', () => {
 
     it('shows loading icon in loading state', async () => {
       // Delay the mock resolution to ensure we can test loading state
-      vi.mocked(authService.getGraphClient).mockImplementation(() => 
-        new Promise(resolve => setTimeout(() => resolve(mockGraphClient), 10))
+      vi.mocked(authService.getCurrentAccount).mockImplementation(() =>
+        new Promise(resolve => setTimeout(() => resolve(mockAccount), 10))
       )
-      
+
       render(<UserMenu {...defaultProps} />)
-      
+
       // The loading icon should be present initially
       const loadingButton = screen.getByRole('button', { name: /loading/i })
       expect(loadingButton).toBeInTheDocument()
-      
+
       // Wait for loading to complete
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
@@ -93,43 +83,41 @@ describe('UserMenu', () => {
       await act(async () => {
         render(<UserMenu {...defaultProps} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       expect(authService.isLoggedIn).toHaveBeenCalled()
-      expect(authService.getGraphClient).toHaveBeenCalled()
-      expect(mockGraphClient.api).toHaveBeenCalledWith('/me')
-      expect(mockGet).toHaveBeenCalled()
+      expect(authService.getCurrentAccount).toHaveBeenCalled()
     })
 
     it('does not fetch user data when not logged in', async () => {
-      vi.mocked(authService.isLoggedIn).mockReturnValue(false)
-      
+      vi.mocked(authService.isLoggedIn).mockResolvedValue(false)
+
       await act(async () => {
         render(<UserMenu {...defaultProps} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
-      expect(authService.getGraphClient).not.toHaveBeenCalled()
+
+      expect(authService.getCurrentAccount).not.toHaveBeenCalled()
     })
 
     it('handles user data fetch error gracefully', async () => {
       vi.spyOn(console, 'error').mockImplementation(() => {})
-      vi.mocked(authService.getGraphClient).mockRejectedValue(new Error('Network error'))
-      
+      vi.mocked(authService.getCurrentAccount).mockRejectedValue(new Error('Network error'))
+
       await act(async () => {
         render(<UserMenu {...defaultProps} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       // Should still render but with fallback data
       // We can't easily test the dropdown menu items without opening the dropdown
     })
@@ -140,11 +128,11 @@ describe('UserMenu', () => {
       await act(async () => {
         render(<UserMenu {...defaultProps} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       // Avatar should be present
       expect(screen.getByRole('img')).toBeInTheDocument()
     })
@@ -154,7 +142,7 @@ describe('UserMenu', () => {
       await act(async () => {
         render(<UserMenu {...props} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.getByText('John')).toBeInTheDocument()
       })
@@ -165,44 +153,43 @@ describe('UserMenu', () => {
       await act(async () => {
         render(<UserMenu {...props} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       expect(screen.queryByText('John')).not.toBeInTheDocument()
     })
 
     it('falls back to displayName when givenName is not available', async () => {
-      const userDataWithoutGivenName = {
-        ...mockUserData,
-        givenName: ''
-      }
-      mockGet.mockResolvedValue(userDataWithoutGivenName)
-      
+      // A leading space makes `name.split(' ')[0]` empty while the full name
+      // (trimmed by the DOM/testing-library matcher) still reads 'John Doe'.
+      vi.mocked(authService.getCurrentAccount).mockResolvedValue({
+        name: ' John Doe',
+        username: mockAccount.username
+      })
+
       const props = createUserMenuProps({ showName: true })
       await act(async () => {
         render(<UserMenu {...props} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.getByText('John Doe')).toBeInTheDocument()
       })
     })
 
-    it('falls back to "User" when no name data is available', async () => {
-      const userDataWithoutName = {
-        ...mockUserData,
-        givenName: '',
-        displayName: ''
-      }
-      mockGet.mockResolvedValue(userDataWithoutName)
-      
+    it('falls back to "Unknown User" when no name data is available', async () => {
+      vi.mocked(authService.getCurrentAccount).mockResolvedValue({
+        name: '',
+        username: ''
+      })
+
       const props = createUserMenuProps({ showName: true })
       await act(async () => {
         render(<UserMenu {...props} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.getByText('Unknown User')).toBeInTheDocument()
       })
@@ -214,11 +201,11 @@ describe('UserMenu', () => {
       await act(async () => {
         render(<UserMenu {...defaultProps} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       // Click the user button to open dropdown
       const userButton = screen.getByRole('button')
       await act(async () => {
@@ -228,7 +215,7 @@ describe('UserMenu', () => {
 
     it('opens dropdown menu when user button is clicked', async () => {
       await openDropdown()
-      
+
       // Should show user profile info
       expect(screen.getByText('John Doe')).toBeInTheDocument()
       expect(screen.getByText('john.doe@example.com')).toBeInTheDocument()
@@ -236,21 +223,21 @@ describe('UserMenu', () => {
 
     it('displays user profile information in dropdown', async () => {
       await openDropdown()
-      
+
       expect(screen.getByText('John Doe')).toBeInTheDocument()
       expect(screen.getByText('john.doe@example.com')).toBeInTheDocument()
     })
 
     it('displays theme toggle in dropdown', async () => {
       await openDropdown()
-      
+
       expect(screen.getByText('Dark Mode')).toBeInTheDocument()
       expect(screen.getByRole('switch')).toBeInTheDocument()
     })
 
     it('displays sign out option in dropdown', async () => {
       await openDropdown()
-      
+
       expect(screen.getByText('Sign Out')).toBeInTheDocument()
     })
 
@@ -259,16 +246,16 @@ describe('UserMenu', () => {
       await act(async () => {
         render(<UserMenu {...props} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       const userButton = screen.getByRole('button')
       await act(async () => {
         fireEvent.click(userButton)
       })
-      
+
       expect(screen.getByText('Data Management')).toBeInTheDocument()
     })
 
@@ -277,16 +264,16 @@ describe('UserMenu', () => {
       await act(async () => {
         render(<UserMenu {...props} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       const userButton = screen.getByRole('button')
       await act(async () => {
         fireEvent.click(userButton)
       })
-      
+
       expect(screen.queryByText('Data Management')).not.toBeInTheDocument()
     })
   })
@@ -296,21 +283,21 @@ describe('UserMenu', () => {
       await act(async () => {
         render(<UserMenu {...defaultProps} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       const userButton = screen.getByRole('button')
       await act(async () => {
         fireEvent.click(userButton)
       })
-      
+
       const themeSwitch = screen.getByRole('switch')
       await act(async () => {
         fireEvent.click(themeSwitch)
       })
-      
+
       expect(mockToggleTheme).toHaveBeenCalled()
     })
 
@@ -319,16 +306,16 @@ describe('UserMenu', () => {
       await act(async () => {
         render(<UserMenu {...defaultProps} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       const userButton = screen.getByRole('button')
       await act(async () => {
         fireEvent.click(userButton)
       })
-      
+
       // Should show sun icon for light mode
       expect(screen.getByText('Dark Mode')).toBeInTheDocument()
     })
@@ -337,24 +324,24 @@ describe('UserMenu', () => {
       await act(async () => {
         render(<UserMenu {...defaultProps} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       const userButton = screen.getByRole('button')
       await act(async () => {
         fireEvent.click(userButton)
       })
-      
+
       const themeSection = screen.getByText('Dark Mode').closest('.ant-dropdown-menu-item')
       expect(themeSection).toBeInTheDocument()
-      
+
       // Clicking the theme section should not close the dropdown
       await act(async () => {
         fireEvent.click(themeSection!)
       })
-      
+
       // Menu should still be visible
       expect(screen.getByText('Dark Mode')).toBeInTheDocument()
     })
@@ -367,21 +354,21 @@ describe('UserMenu', () => {
       await act(async () => {
         render(<UserMenu {...props} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       const userButton = screen.getByRole('button')
       await act(async () => {
         fireEvent.click(userButton)
       })
-      
+
       const signOutButton = screen.getByText('Sign Out')
       await act(async () => {
         fireEvent.click(signOutButton)
       })
-      
+
       await waitFor(() => {
         expect(authService.logout).toHaveBeenCalled()
         expect(mockOnLogout).toHaveBeenCalled()
@@ -390,27 +377,27 @@ describe('UserMenu', () => {
 
     it('calls onLogout even when logout service fails', async () => {
       vi.mocked(authService.logout).mockRejectedValue(new Error('Logout failed'))
-      
+
       const mockOnLogout = vi.fn()
       const props = createUserMenuProps({ onLogout: mockOnLogout })
       await act(async () => {
         render(<UserMenu {...props} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       const userButton = screen.getByRole('button')
       await act(async () => {
         fireEvent.click(userButton)
       })
-      
+
       const signOutButton = screen.getByText('Sign Out')
       await act(async () => {
         fireEvent.click(signOutButton)
       })
-      
+
       await waitFor(() => {
         expect(mockOnLogout).toHaveBeenCalled()
       })
@@ -424,21 +411,21 @@ describe('UserMenu', () => {
       await act(async () => {
         render(<UserMenu {...props} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       const userButton = screen.getByRole('button')
       await act(async () => {
         fireEvent.click(userButton)
       })
-      
+
       const dataManagementButton = screen.getByText('Data Management')
       await act(async () => {
         fireEvent.click(dataManagementButton)
       })
-      
+
       expect(mockOnDataManagement).toHaveBeenCalled()
     })
   })
@@ -449,11 +436,11 @@ describe('UserMenu', () => {
       await act(async () => {
         render(<UserMenu {...defaultProps} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       // The avatar should contain the initials (rendered as text content)
       // This is hard to test directly as it's rendered inside the avatar
       const avatar = screen.getByRole('img')
@@ -461,72 +448,67 @@ describe('UserMenu', () => {
     })
 
     it('handles single name correctly', async () => {
-      const singleNameUser = {
-        ...mockUserData,
-        displayName: 'John'
-      }
-      mockGet.mockResolvedValue(singleNameUser)
-      
+      vi.mocked(authService.getCurrentAccount).mockResolvedValue({
+        name: 'John',
+        username: mockAccount.username
+      })
+
       await act(async () => {
         render(<UserMenu {...defaultProps} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       const avatar = screen.getByRole('img')
       expect(avatar).toBeInTheDocument()
     })
   })
 
   describe('Email Fallback', () => {
-    it('uses userPrincipalName when mail is not available', async () => {
-      const userWithoutMail = {
-        ...mockUserData,
-        mail: '',
-        userPrincipalName: 'john.doe@company.com'
-      }
-      mockGet.mockResolvedValue(userWithoutMail)
-      
+    it('uses the account username as the email', async () => {
+      vi.mocked(authService.getCurrentAccount).mockResolvedValue({
+        name: 'John Doe',
+        username: 'john.doe@company.com'
+      })
+
       await act(async () => {
         render(<UserMenu {...defaultProps} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       const userButton = screen.getByRole('button')
       await act(async () => {
         fireEvent.click(userButton)
       })
-      
+
       expect(screen.getByText('john.doe@company.com')).toBeInTheDocument()
     })
 
     it('handles missing email gracefully', async () => {
-      const userWithoutEmail = {
-        ...mockUserData,
-        mail: '',
-        userPrincipalName: ''
-      }
-      mockGet.mockResolvedValue(userWithoutEmail)
-      
+      vi.mocked(authService.getCurrentAccount).mockResolvedValue({
+        name: 'John Doe',
+        username: ''
+      })
+
       await act(async () => {
         render(<UserMenu {...defaultProps} />)
       })
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
       })
-      
+
       // Should still render without errors
       const userButton = screen.getByRole('button')
       await act(async () => {
         fireEvent.click(userButton)
       })
-      
+
       expect(screen.getByText('John Doe')).toBeInTheDocument()
     })
   })

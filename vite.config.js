@@ -1,32 +1,18 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import electron from 'vite-plugin-electron'
-import renderer from 'vite-plugin-electron-renderer'
 
 export default defineConfig({
-  plugins: [
-    react(),
-    electron([
-      {
-        entry: 'electron/main.js',
-        onstart: (options) => {
-          if (options.startup) {
-            options.startup()
-          }
-        },
-      },
-      {
-        entry: 'electron/preload.js',
-        onstart: (options) => {
-          options.reload()
-        },
-      },
-    ]),
-    renderer(),
-  ],
+  plugins: [react()],
+  // Tauri shows its own build output; don't let Vite wipe it
+  clearScreen: false,
   server: {
     port: 3000,
-    open: false, // Prevent Vite from opening browser automatically
+    // Tauri needs a known port — fail loudly rather than silently moving to 3001
+    strictPort: true,
+    open: false,
+    watch: {
+      ignored: ['**/src-tauri/**'],
+    },
   },
   build: {
     outDir: 'dist',

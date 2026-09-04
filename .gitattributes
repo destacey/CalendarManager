@@ -1,0 +1,23 @@
+# Normalise line endings so a file cannot show as modified with an empty diff.
+# Without this, core.autocrlf=true on Windows left 62 tracked files stored as
+# LF in the index but CRLF in the working tree, so any of them could appear
+# dirty for no reason — and every commit printed a warning about it.
+* text=auto eol=lf
+
+# Scripts that Windows must see with CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets: never touch these, and never try to diff them as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.xlsx binary
+*.db binary
+*.bin binary

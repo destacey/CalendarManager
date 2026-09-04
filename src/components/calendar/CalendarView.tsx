@@ -18,6 +18,7 @@ import MonthEventCell from './MonthEventCell'
 import CalendarHeader from './CalendarHeader'
 import { getEventBackgroundColor } from '../../utils/eventUtils'
 import { useMessage } from '../../contexts/MessageContext'
+import { getEventTypes } from '../../api/eventTypes'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -78,10 +79,8 @@ const CalendarView: React.FC = () => {
 
   const loadEventTypes = async () => {
     try {
-      if (window.electronAPI?.getEventTypes) {
-        const types = await window.electronAPI.getEventTypes()
-        setEventTypes(types)
-      }
+      const types = await getEventTypes()
+      setEventTypes(types)
     } catch (error) {
       console.error('Error loading event types:', error)
     }

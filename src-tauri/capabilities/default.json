@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability set for the main window. Note on opener:allow-open-url: this may be redundant, since the Rust-side app.opener().open_url() call in auth/flow.rs appears to bypass this scope check entirely. It is kept because the login flow has only been verified working with it present — do not remove it without re-verifying login, and do not 'fix' any resulting gap by adding a URL-scope wildcard.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-show",
+    "core:window:allow-start-dragging",
+    "opener:allow-open-url",
+    "dialog:allow-save",
+    "fs:allow-write-file"
+  ]
+}

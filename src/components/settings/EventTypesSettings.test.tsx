@@ -3,14 +3,18 @@ import { screen, waitFor, act } from '@testing-library/react'
 import { render } from '../../test/utils'
 import EventTypesSettings from './EventTypesSettings'
 import type { EventType } from '../../types'
+import * as eventTypesApi from '../../api/eventTypes'
 
-// Mock the electron API
-const mockElectronAPI = {
+// Mock the eventTypes API module
+vi.mock('../../api/eventTypes', () => ({
   getEventTypes: vi.fn(),
   createEventType: vi.fn(),
   updateEventType: vi.fn(),
-  deleteEventType: vi.fn()
-}
+  deleteEventType: vi.fn(),
+  setDefaultEventType: vi.fn()
+}))
+
+const mockEventTypesApi = vi.mocked(eventTypesApi)
 
 // Mock data
 const mockEventTypes: EventType[] = [
@@ -19,6 +23,7 @@ const mockEventTypes: EventType[] = [
     name: 'Work',
     color: '#1890ff',
     is_default: false,
+    is_billable: false,
     created_at: '2023-01-01T00:00:00Z'
   },
   {
@@ -26,6 +31,7 @@ const mockEventTypes: EventType[] = [
     name: 'Personal',
     color: '#52c41a',
     is_default: true,
+    is_billable: false,
     created_at: '2023-01-01T00:00:00Z'
   }
 ]
@@ -33,18 +39,13 @@ const mockEventTypes: EventType[] = [
 describe('EventTypesSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    
-    // Setup window.electronAPI mock
-    Object.defineProperty(window, 'electronAPI', {
-      value: mockElectronAPI,
-      writable: true
-    })
-    
+
     // Default mock implementations
-    mockElectronAPI.getEventTypes.mockResolvedValue(mockEventTypes)
-    mockElectronAPI.createEventType.mockResolvedValue({ id: 3 })
-    mockElectronAPI.updateEventType.mockResolvedValue(true)
-    mockElectronAPI.deleteEventType.mockResolvedValue(true)
+    mockEventTypesApi.getEventTypes.mockResolvedValue(mockEventTypes)
+    mockEventTypesApi.createEventType.mockResolvedValue({ id: 3, name: 'New Type', color: '#000000', is_billable: false })
+    mockEventTypesApi.updateEventType.mockResolvedValue(mockEventTypes[0])
+    mockEventTypesApi.deleteEventType.mockResolvedValue({ deleted: true, eventsReassigned: 0, rulesRemoved: 0, reassignedTo: null })
+    mockEventTypesApi.setDefaultEventType.mockResolvedValue(true)
   })
 
   it('renders the component with basic elements', async () => {
@@ -63,7 +64,7 @@ describe('EventTypesSettings', () => {
     })
     
     await waitFor(() => {
-      expect(mockElectronAPI.getEventTypes).toHaveBeenCalled()
+      expect(mockEventTypesApi.getEventTypes).toHaveBeenCalled()
     })
     
     await waitFor(() => {
@@ -101,7 +102,7 @@ describe('EventTypesSettings', () => {
   })
 
   it('handles API errors gracefully', async () => {
-    mockElectronAPI.getEventTypes.mockRejectedValue(new Error('API Error'))
+    mockEventTypesApi.getEventTypes.mockRejectedValue(new Error('API Error'))
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     
     await act(async () => {

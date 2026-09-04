@@ -1,0 +1,43 @@
+[package]
+name = "calendar-manager"
+version = "0.0.0"
+description = "Calendar Manager"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "calendar_manager_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-store = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tiny_http = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }
+url = "2"
+thiserror = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tokio = { version = "1", features = ["sync", "macros"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+chrono-tz = "0.10"
+tokio-util = "0.7"
+iana-time-zone = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true

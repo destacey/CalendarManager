@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '../../test/utils'
+import { render, screen, fireEvent, waitFor, act } from '../../test/utils'
 import { 
   createEventTableProps, 
   mockTimedEvent, 
@@ -11,10 +11,15 @@ import {
   createMockDayjs
 } from '../../test/utils'
 import EventTable from './EventTable'
+import { saveFile } from '../../api/files'
 
-// Mock ExcelJS library
-vi.mock('exceljs', () => ({
-  default: class Workbook {
+// Mock ExcelJS library. The buffer is non-empty so the "Excel Export" suite
+// below can assert the export actually hands real bytes to saveFile. The
+// real component calls `new ExcelJS.Workbook()` (a property on the default
+// export), not `new ExcelJS()` — the mock has to shape it the same way or
+// the constructor call throws once real handleExport actually runs it.
+vi.mock('exceljs', () => {
+  class Workbook {
     addWorksheet = vi.fn(() => ({
       addRow: vi.fn(),
       getRow: vi.fn(() => ({
@@ -24,10 +29,52 @@ vi.mock('exceljs', () => ({
       columns: []
     }))
     xlsx = {
-      writeBuffer: vi.fn(() => Promise.resolve(new ArrayBuffer(0)))
+      writeBuffer: vi.fn(() => Promise.resolve(new ArrayBuffer(8)))
     }
   }
+  return { default: { Workbook } }
+})
+
+// The native Save-As wrapper. Defaults to a successful save; individual
+// tests override this to exercise cancellation and failure.
+vi.mock('../../api/files', () => ({
+  saveFile: vi.fn(() => Promise.resolve(true))
 }))
+
+// The rest of this suite renders EventTable via the self-mock below (kept as
+// pre-existing), which never touches dayjs formatting. The "Excel Export"
+// suite renders the REAL component (via vi.importActual) to exercise the
+// actual handleExport logic, which needs dayjs().tz().format('YYYY-MM-DD HHmm')
+// to honour its format string for the filename assertion — the suite-wide
+// setup.ts mock ignores the format string entirely, so it's overridden here
+// the same way TimezoneSettings.test.tsx overrides it locally.
+vi.mock('dayjs', () => {
+  const mock: any = {
+    format: vi.fn((fmt?: string) =>
+      fmt === 'YYYY-MM-DD HHmm' ? '2024-01-15 1430' : '2024-01-15'
+    ),
+    startOf: vi.fn(() => mock),
+    endOf: vi.fn(() => mock),
+    add: vi.fn(() => mock),
+    subtract: vi.fn(() => mock),
+    isSame: vi.fn(() => false),
+    isBefore: vi.fn(() => false),
+    isAfter: vi.fn(() => false),
+    isSameOrBefore: vi.fn(() => true),
+    diff: vi.fn(() => 60),
+    hour: vi.fn(() => 9),
+    minute: vi.fn(() => 0),
+    date: vi.fn(() => 1),
+    tz: vi.fn(() => mock),
+    isValid: vi.fn(() => true),
+    valueOf: vi.fn(() => 1704067200000),
+    toDate: vi.fn(() => new Date('2024-01-15')),
+    clone: vi.fn(() => mock)
+  }
+  const dayjsFn: any = vi.fn(() => mock)
+  Object.assign(dayjsFn, mock, { utc: vi.fn(() => mock), extend: vi.fn() })
+  return { default: dayjsFn }
+})
 
 // Mock calculateEventDuration utility
 vi.mock('../../utils/eventUtils', () => ({
@@ -483,6 +530,78 @@ describe('EventTable', () => {
 
       // Should still display the event
       expect(screen.getByText('Team Meeting')).toBeInTheDocument()
+    })
+  })
+
+  // These tests render the REAL EventTable (bypassing the self-mock above via
+  // vi.importActual) because the self-mocked component never calls
+  // handleExport at all — it's a hand-rolled table that doesn't reproduce the
+  // export logic. Only the real component exercises the actual save path.
+  describe('Excel Export', () => {
+    const captureExportFn = async (overrides = {}) => {
+      const { default: RealEventTable } = await vi.importActual<typeof import('./EventTable')>(
+        './EventTable'
+      )
+      let exportFn: (() => void) | undefined
+      const props = createEventTableProps({
+        onExportReady: (fn: () => void) => {
+          exportFn = fn
+        },
+        ...overrides
+      })
+
+      render(<RealEventTable {...props} />)
+      await waitFor(() => expect(exportFn).toBeDefined())
+      return exportFn as () => Promise<void>
+    }
+
+    it('saves the workbook via a native dialog with a timestamped filename', async () => {
+      const exportFn = await captureExportFn({
+        getEventsForDate: vi.fn(() => [mockTimedEvent])
+      })
+
+      await act(async () => {
+        await exportFn()
+      })
+
+      expect(saveFile).toHaveBeenCalledTimes(1)
+      const [fileName, bytes, filterName, extensions] = vi.mocked(saveFile).mock.calls[0]
+
+      expect(fileName).toMatch(/^Calendar Export \d{4}-\d{2}-\d{2} \d{4}\.xlsx$/)
+      expect(filterName).toBe('Excel Workbook')
+      expect(extensions).toEqual(['xlsx'])
+      expect(bytes).toBeInstanceOf(Uint8Array)
+      expect(bytes.length).toBeGreaterThan(0)
+
+      await waitFor(() => {
+        expect(screen.getByText(/Exported \d+ events/)).toBeInTheDocument()
+      })
+    })
+
+    it('treats a cancelled dialog as a normal outcome: no success message, no throw', async () => {
+      vi.mocked(saveFile).mockResolvedValueOnce(false)
+      const exportFn = await captureExportFn()
+
+      await act(async () => {
+        await expect(exportFn()).resolves.toBeUndefined()
+      })
+
+      expect(screen.queryByText(/Exported/)).not.toBeInTheDocument()
+      expect(screen.queryByText(/Could not save/)).not.toBeInTheDocument()
+    })
+
+    it('surfaces an error message when saveFile rejects, instead of failing silently', async () => {
+      vi.mocked(saveFile).mockRejectedValueOnce(new Error('disk full'))
+      const exportFn = await captureExportFn()
+
+      await act(async () => {
+        await expect(exportFn()).resolves.toBeUndefined()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Could not save the export')).toBeInTheDocument()
+      })
+      expect(screen.queryByText(/Exported/)).not.toBeInTheDocument()
     })
   })
 })

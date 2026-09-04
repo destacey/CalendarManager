@@ -7,6 +7,9 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { EventType, EventTypeRule } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
+import { getEventTypeRules, createEventTypeRule, updateEventTypeRule, deleteEventTypeRule, updateRulePriorities, InvalidTargetTypeError } from '../../api/rules'
+import { getEventTypes, reprocessEventTypes } from '../../api/eventTypes'
+import { getEvents } from '../../api/events'
 
 const { Text } = Typography
 const { Option } = Select
@@ -83,30 +86,28 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
   const loadData = async () => {
     try {
       setLoading(true)
-      if (window.electronAPI?.getEventTypeRules && window.electronAPI?.getEventTypes && window.electronAPI?.getEvents) {
-        const [rulesData, typesData, eventsData] = await Promise.all([
-          window.electronAPI.getEventTypeRules(),
-          window.electronAPI.getEventTypes(),
-          window.electronAPI.getEvents()
-        ])
-        setRules(rulesData)
-        setEventTypes(typesData)
-        
-        // Extract unique categories from existing events
-        const categoriesSet = new Set<string>()
-        eventsData.forEach(event => {
-          if (event.categories && event.categories.trim()) {
-            // Split comma-separated categories and add each one
-            event.categories.split(',').forEach(cat => {
-              const trimmedCat = cat.trim()
-              if (trimmedCat) {
-                categoriesSet.add(trimmedCat)
-              }
-            })
-          }
-        })
-        setExistingCategories(Array.from(categoriesSet).sort())
-      }
+      const [rulesData, typesData, eventsData] = await Promise.all([
+        getEventTypeRules(),
+        getEventTypes(),
+        getEvents()
+      ])
+      setRules(rulesData)
+      setEventTypes(typesData)
+
+      // Extract unique categories from existing events
+      const categoriesSet = new Set<string>()
+      eventsData.forEach(event => {
+        if (event.categories && event.categories.trim()) {
+          // Split comma-separated categories and add each one
+          event.categories.split(',').forEach(cat => {
+            const trimmedCat = cat.trim()
+            if (trimmedCat) {
+              categoriesSet.add(trimmedCat)
+            }
+          })
+        }
+      })
+      setExistingCategories(Array.from(categoriesSet).sort())
     } catch (error) {
       console.error('Error loading rules:', error)
       messageApi.error('Failed to load rules')
@@ -136,20 +137,18 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
 
   const handleDelete = async (rule: EventTypeRule) => {
     try {
-      if (!window.electronAPI?.deleteEventTypeRule || !window.electronAPI?.updateRulePriorities) return
-      
-      const success = await window.electronAPI.deleteEventTypeRule(rule.id!)
+      const success = await deleteEventTypeRule(rule.id!)
       if (success) {
         // After deletion, reorder priorities for remaining rules
         const remainingRules = rules
           .filter(r => r.id !== rule.id)
           .sort((a, b) => a.priority - b.priority)
-        
+
         if (remainingRules.length > 0) {
           const ruleIds = remainingRules.map(r => r.id!)
-          await window.electronAPI.updateRulePriorities(ruleIds)
+          await updateRulePriorities(ruleIds)
         }
-        
+
         messageApi.success('Rule deleted')
         loadData()
       } else {
@@ -168,26 +167,24 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
       if (editingRule) {
         // Update existing rule - keep existing priority
         const ruleData = { ...values, priority: editingRule.priority }
-        if (!window.electronAPI?.updateEventTypeRule) return
-        const updated = await window.electronAPI.updateEventTypeRule(editingRule.id!, ruleData)
+        const updated = await updateEventTypeRule(editingRule.id!, ruleData)
         if (updated) {
           messageApi.success('Rule updated')
         }
       } else {
         // Create new rule - assign next available priority (lowest priority)
         const ruleData = { ...values, priority: rules.length + 1 }
-        if (!window.electronAPI?.createEventTypeRule) return
-        const created = await window.electronAPI.createEventTypeRule(ruleData)
+        const created = await createEventTypeRule(ruleData)
         if (created) {
           messageApi.success('Rule created')
         }
       }
-      
+
       setModalVisible(false)
       loadData()
     } catch (error) {
       console.error('Error saving rule:', error)
-      messageApi.error('Failed to save rule')
+      messageApi.error(error instanceof InvalidTargetTypeError ? error.message : 'Failed to save rule')
     }
   }
 
@@ -210,10 +207,8 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
       
       // Update priorities in backend
       try {
-        if (window.electronAPI?.updateRulePriorities) {
-          const ruleIds = updatedRules.map(rule => rule.id!)
-          await window.electronAPI.updateRulePriorities(ruleIds)
-        }
+        const ruleIds = updatedRules.map(rule => rule.id!)
+        await updateRulePriorities(ruleIds)
       } catch (error) {
         console.error('Error updating rule priorities:', error)
         messageApi.error('Failed to update rule order')
@@ -226,23 +221,21 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
   const handleReprocessEvents = async () => {
     try {
       setReprocessing(true)
-      if (window.electronAPI?.reprocessEventTypes) {
-        const result = await window.electronAPI.reprocessEventTypes()
-        if (result.success) {
-          notification.success({
-            message: 'Events Reprocessed',
-            description: result.message,
-            duration: 4
-          })
-          // Refresh calendar data
-          onEventsUpdated?.()
-        } else {
-          notification.error({
-            message: 'Reprocessing Failed', 
-            description: result.message,
-            duration: 6
-          })
-        }
+      const result = await reprocessEventTypes()
+      if (result.success) {
+        notification.success({
+          message: 'Events Reprocessed',
+          description: result.message,
+          duration: 4
+        })
+        // Refresh calendar data
+        onEventsUpdated?.()
+      } else {
+        notification.error({
+          message: 'Reprocessing Failed',
+          description: result.message,
+          duration: 6
+        })
       }
     } catch (error) {
       console.error('Error reprocessing events:', error)

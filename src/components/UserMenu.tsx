@@ -29,15 +29,23 @@ const UserMenu: React.FC<UserMenuProps> = ({ onLogout, showName = true, onDataMa
   useEffect(() => {
     const fetchUserInfo = async () => {
       try {
-        if (authService.isLoggedIn()) {
-          const graphClient = await authService.getGraphClient();
-          const user = await graphClient.api('/me').get();
-          setUserInfo({
-            displayName: user.displayName || 'Unknown User',
-            mail: user.mail || user.userPrincipalName || '',
-            givenName: user.givenName || '',
-            surname: user.surname || ''
-          });
+        if (await authService.isLoggedIn()) {
+          const account = await authService.getCurrentAccount();
+          setUserInfo(
+            account
+              ? {
+                  displayName: account.name || 'Unknown User',
+                  mail: account.username || '',
+                  givenName: account.name.split(' ')[0] || '',
+                  surname: account.name.split(' ').slice(1).join(' ')
+                }
+              : {
+                  displayName: 'Unknown User',
+                  mail: '',
+                  givenName: '',
+                  surname: ''
+                }
+          );
         }
       } catch (error) {
         console.error('Error fetching user info:', error);

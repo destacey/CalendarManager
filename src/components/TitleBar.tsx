@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Space, Tooltip, Dropdown, MenuProps, Flex, Typography, theme } from 'antd';
-import { MinusOutlined, BorderOutlined, CloseOutlined, BlockOutlined, MenuFoldOutlined, MenuUnfoldOutlined, CloudSyncOutlined, MenuOutlined, HomeOutlined, CalendarOutlined, SettingOutlined } from '@ant-design/icons';
+import { MinusOutlined, BorderOutlined, CloseOutlined, BlockOutlined, MenuFoldOutlined, MenuUnfoldOutlined, CloudSyncOutlined, SyncOutlined, MenuOutlined, HomeOutlined, CalendarOutlined, SettingOutlined } from '@ant-design/icons';
 import UserMenu from './UserMenu';
-import SyncProgress from './SyncProgress';
 import SyncModal from './SyncModal';
-import { calendarService, SyncProgress as SyncProgressType } from '../services/calendar';
+import { cancelSync, onSyncStatus, onSyncComplete } from '../services/calendar';
+import type { SyncStatus } from '../api/sync';
+import {
+  minimizeWindow,
+  toggleMaximizeWindow,
+  closeWindow,
+  isWindowMaximized,
+  onWindowResized,
+} from '../api/window';
 
 interface TitleBarProps {
   showUserMenu?: boolean;
@@ -32,73 +39,80 @@ const TitleBar: React.FC<TitleBarProps> = ({
   onDataManagement
 }) => {
   const [isMaximized, setIsMaximized] = useState(false);
-  const [syncProgress, setSyncProgress] = useState<SyncProgressType | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [syncModalVisible, setSyncModalVisible] = useState(false);
   const [modalKey, setModalKey] = useState(Date.now());
   const { token } = theme.useToken();
 
   useEffect(() => {
-    // Check initial window state
-    const checkWindowState = async () => {
-      if (window.electronAPI) {
-        try {
-          const maximized = await window.electronAPI.isWindowMaximized();
-          setIsMaximized(maximized);
-        } catch (error) {
-          console.warn('Could not get window state:', error);
+    let unlistenResize: (() => void) | undefined;
+    let cancelled = false;
+
+    const setUpWindowState = async () => {
+      try {
+        const maximized = await isWindowMaximized();
+        if (!cancelled) setIsMaximized(maximized);
+      } catch (error) {
+        console.warn('Could not get window state:', error);
+      }
+
+      try {
+        const unlisten = await onWindowResized((maximized) => {
+          if (!cancelled) setIsMaximized(maximized);
+        });
+        if (cancelled) {
+          unlisten();
+        } else {
+          unlistenResize = unlisten;
         }
+      } catch (error) {
+        console.warn('Could not subscribe to window resize:', error);
       }
     };
 
-    checkWindowState();
+    setUpWindowState();
 
-    // Listen for window state changes
-    const handleWindowStateChange = (event: any, maximized: boolean) => {
-      setIsMaximized(maximized);
-    };
+    let unlistenStatus: (() => void) | undefined;
+    let unlistenComplete: (() => void) | undefined;
 
-    if (window.electronAPI?.onWindowStateChange) {
-      window.electronAPI.onWindowStateChange(handleWindowStateChange);
-    }
+    onSyncStatus((status) => {
+      if (!cancelled) setSyncStatus(status);
+    }).then((unlisten) => {
+      if (cancelled) unlisten();
+      else unlistenStatus = unlisten;
+    });
 
-    // Set up sync progress tracking
-    calendarService.setSyncCallbacks(
-      (progress) => setSyncProgress(progress),
-      () => setSyncProgress(null)
-    );
+    onSyncComplete(() => {
+      if (!cancelled) setSyncStatus(null);
+    }).then((unlisten) => {
+      if (cancelled) unlisten();
+      else unlistenComplete = unlisten;
+    });
 
     return () => {
-      if (window.electronAPI?.removeAllListeners) {
-        window.electronAPI.removeAllListeners('window-state-change');
-      }
-      // Clean up sync callbacks
-      calendarService.setSyncCallbacks();
+      cancelled = true;
+      unlistenResize?.();
+      unlistenStatus?.();
+      unlistenComplete?.();
     };
   }, []);
 
   const handleMinimize = () => {
-    if (window.electronAPI) {
-      window.electronAPI.minimizeWindow();
-    }
+    minimizeWindow().catch((error) => console.warn('Minimize failed:', error));
   };
 
   const handleMaximize = () => {
-    if (window.electronAPI) {
-      window.electronAPI.maximizeWindow();
-      // Toggle the state immediately for responsive UI
-      setIsMaximized(!isMaximized);
-    }
+    // Optimistic flip keeps the icon responsive; onWindowResized corrects it
+    setIsMaximized((previous) => !previous);
+    toggleMaximizeWindow().catch((error) => console.warn('Maximize failed:', error));
   };
 
   const handleClose = () => {
-    if (window.electronAPI) {
-      window.electronAPI.closeWindow();
-    }
+    closeWindow().catch((error) => console.warn('Close failed:', error));
   };
 
   const handleCancelSync = () => {
-    calendarService.cancelSync();
-    setSyncProgress(null);
+    cancelSync().catch((error) => console.warn('Cancel sync failed:', error));
   };
 
   const handleSyncButtonClick = () => {
@@ -136,6 +150,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
 
   return (
     <Flex
+      data-tauri-drag-region
       justify="space-between"
       align="center"
       style={{
@@ -143,7 +158,6 @@ const TitleBar: React.FC<TitleBarProps> = ({
         background: token.colorBgContainer,
         padding: '0 12px',
         borderBottom: `1px solid ${token.colorBorder}`,
-        WebkitAppRegion: 'drag',
         userSelect: 'none',
       }}
     >
@@ -162,9 +176,6 @@ const TitleBar: React.FC<TitleBarProps> = ({
               type="text"
               size="small"
               icon={<MenuOutlined style={{ fontSize: '14px' }} />}
-              style={{ 
-                WebkitAppRegion: 'no-drag'
-              }}
               title="Navigation menu"
             />
           </Dropdown>
@@ -177,13 +188,10 @@ const TitleBar: React.FC<TitleBarProps> = ({
               <MenuFoldOutlined style={{ fontSize: '14px' }} />
             }
             onClick={onMenuToggle}
-            style={{ 
-              WebkitAppRegion: 'no-drag'
-            }}
             title={sideNavCollapsed ? 'Expand menu' : 'Collapse menu'}
           />
         )}
-        <Text style={{ fontSize: '14px', fontWeight: 500 }}>
+        <Text data-tauri-drag-region style={{ fontSize: '14px', fontWeight: 500 }}>
           {isMobile ? 'CM' : 'Calendar Manager'}
         </Text>
         
@@ -193,23 +201,28 @@ const TitleBar: React.FC<TitleBarProps> = ({
       <Flex 
         justify="center"
         align="center"
-        style={{ 
-          flex: 1, 
-          WebkitAppRegion: 'no-drag',
+        style={{
+          flex: 1,
           maxWidth: '300px'
         }}
       >
-        {syncProgress ? (
-          <div 
-            onClick={handleProgressClick}
-            style={{ cursor: 'pointer', width: '100%' }}
-          >
-            <SyncProgress 
-              progress={syncProgress} 
-              onCancel={handleCancelSync}
-              compact={true}
+        {syncStatus ? (
+          <Flex align="center" gap={8} style={{ cursor: 'pointer' }} onClick={handleProgressClick}>
+            <SyncOutlined spin style={{ color: token.colorPrimary }} />
+            <Text style={{ fontSize: '12px', color: token.colorTextSecondary }}>
+              {syncStatus.fetched} fetched · {syncStatus.phase}
+            </Text>
+            <Button
+              type="text"
+              size="small"
+              icon={<CloseOutlined />}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleCancelSync();
+              }}
+              title="Cancel sync"
             />
-          </div>
+          </Flex>
         ) : (
           <Tooltip title="Open sync options">
             <Button
@@ -221,7 +234,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
         )}
       </Flex>
       
-      <Flex align="center" style={{ WebkitAppRegion: 'no-drag' }}>
+      <Flex align="center">
         <Space size={8}>
           {showUserMenu && onLogout && (
             <div style={{ marginRight: '8px' }}>

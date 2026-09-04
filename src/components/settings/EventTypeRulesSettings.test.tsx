@@ -3,18 +3,31 @@ import { screen, waitFor, act } from '@testing-library/react'
 import { render } from '../../test/utils'
 import EventTypeRulesSettings from './EventTypeRulesSettings'
 import type { EventType, EventTypeRule, Event } from '../../types'
+import * as rulesApi from '../../api/rules'
+import * as eventTypesApi from '../../api/eventTypes'
+import * as eventsApi from '../../api/events'
 
-// Mock the electron API
-const mockElectronAPI = {
+// Mock the api modules
+vi.mock('../../api/rules', () => ({
   getEventTypeRules: vi.fn(),
-  getEventTypes: vi.fn(),
-  getEvents: vi.fn(),
   createEventTypeRule: vi.fn(),
   updateEventTypeRule: vi.fn(),
   deleteEventTypeRule: vi.fn(),
-  updateRulePriorities: vi.fn(),
+  updateRulePriorities: vi.fn()
+}))
+
+vi.mock('../../api/eventTypes', () => ({
+  getEventTypes: vi.fn(),
   reprocessEventTypes: vi.fn()
-}
+}))
+
+vi.mock('../../api/events', () => ({
+  getEvents: vi.fn()
+}))
+
+const mockRulesApi = vi.mocked(rulesApi)
+const mockEventTypesApi = vi.mocked(eventTypesApi)
+const mockEventsApi = vi.mocked(eventsApi)
 
 // Mock data
 const mockEventTypes: EventType[] = [
@@ -22,13 +35,15 @@ const mockEventTypes: EventType[] = [
     id: 1,
     name: 'Work',
     color: '#1890ff',
-    is_default: false
+    is_default: false,
+    is_billable: false
   },
   {
     id: 2,
     name: 'Personal',
     color: '#52c41a',
-    is_default: true
+    is_default: true,
+    is_billable: false
   }
 ]
 
@@ -72,18 +87,12 @@ describe('EventTypeRulesSettings', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    
-    // Setup window.electronAPI mock
-    Object.defineProperty(window, 'electronAPI', {
-      value: mockElectronAPI,
-      writable: true
-    })
-    
+
     // Default mock implementations
-    mockElectronAPI.getEventTypeRules.mockResolvedValue(mockRules)
-    mockElectronAPI.getEventTypes.mockResolvedValue(mockEventTypes)
-    mockElectronAPI.getEvents.mockResolvedValue(mockEvents)
-    mockElectronAPI.reprocessEventTypes.mockResolvedValue({ success: true, message: 'Success' })
+    mockRulesApi.getEventTypeRules.mockResolvedValue(mockRules)
+    mockEventTypesApi.getEventTypes.mockResolvedValue(mockEventTypes)
+    mockEventsApi.getEvents.mockResolvedValue(mockEvents)
+    mockEventTypesApi.reprocessEventTypes.mockResolvedValue({ success: true, message: 'Success' })
   })
 
   it('renders the component with basic elements', async () => {
@@ -103,9 +112,9 @@ describe('EventTypeRulesSettings', () => {
     })
     
     await waitFor(() => {
-      expect(mockElectronAPI.getEventTypeRules).toHaveBeenCalled()
-      expect(mockElectronAPI.getEventTypes).toHaveBeenCalled()
-      expect(mockElectronAPI.getEvents).toHaveBeenCalled()
+      expect(mockRulesApi.getEventTypeRules).toHaveBeenCalled()
+      expect(mockEventTypesApi.getEventTypes).toHaveBeenCalled()
+      expect(mockEventsApi.getEvents).toHaveBeenCalled()
     })
     
     await waitFor(() => {
@@ -184,7 +193,7 @@ describe('EventTypeRulesSettings', () => {
   })
 
   it('disables process button when no rules exist', async () => {
-    mockElectronAPI.getEventTypeRules.mockResolvedValue([])
+    mockRulesApi.getEventTypeRules.mockResolvedValue([])
     
     await act(async () => {
       render(<EventTypeRulesSettings onEventsUpdated={mockOnEventsUpdated} />)
@@ -197,7 +206,7 @@ describe('EventTypeRulesSettings', () => {
   })
 
   it('handles API errors gracefully', async () => {
-    mockElectronAPI.getEventTypeRules.mockRejectedValue(new Error('API Error'))
+    mockRulesApi.getEventTypeRules.mockRejectedValue(new Error('API Error'))
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     
     await act(async () => {
@@ -217,7 +226,7 @@ describe('EventTypeRulesSettings', () => {
     })
     
     await waitFor(() => {
-      expect(mockElectronAPI.getEvents).toHaveBeenCalled()
+      expect(mockEventsApi.getEvents).toHaveBeenCalled()
     })
     
     // The component should extract categories from the mock events

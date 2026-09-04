@@ -1,8 +1,19 @@
 import React, { useState, useEffect } from 'react'
-import { Modal, Button, Space, Card, Typography, Progress, Alert, Divider, Statistic, Row, Col, DatePicker, Form } from 'antd'
-import { SyncOutlined, CloudOutlined, StopOutlined, CheckCircleOutlined, ExclamationCircleOutlined, SettingOutlined } from '@ant-design/icons'
-import { calendarService, SyncProgress, SyncResult, SyncConfig } from '../services/calendar'
-import SyncProgressComponent from './SyncProgress'
+import { Modal, Button, Card, Typography, Spin, Alert, Statistic, Row, Col, DatePicker, Form } from 'antd'
+import { StopOutlined, CheckCircleOutlined, ExclamationCircleOutlined, SettingOutlined } from '@ant-design/icons'
+import {
+  startSync,
+  cancelSync,
+  getSyncStatus,
+  getCurrentSyncConfig,
+  getDefaultSyncConfig,
+  setSyncConfig,
+  onSyncStatus,
+  onSyncComplete,
+  SyncConfig,
+  SyncResult,
+} from '../services/calendar'
+import type { SyncStatus } from '../api/sync'
 import dayjs from 'dayjs'
 
 const { Title, Text } = Typography
@@ -13,101 +24,111 @@ interface SyncModalProps {
 }
 
 const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
-  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [canSync, setCanSync] = useState(true)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
   const [lastResult, setLastResult] = useState<SyncResult | null>(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [customSyncConfig, setCustomSyncConfig] = useState<SyncConfig | null>(null)
-  const [syncStatus, setSyncStatus] = useState(calendarService.getSyncStatus())
-  
+
   // Form instance - always create but only use when visible
   const [form] = Form.useForm()
 
   useEffect(() => {
-    // Set up online/offline detection
     const handleOnline = () => setIsOnline(true)
     const handleOffline = () => setIsOnline(false)
-    
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
-
-    // Set up sync callbacks when modal is open
-    if (visible) {
-      // Refresh sync status when modal opens
-      setSyncStatus(calendarService.getSyncStatus())
-      
-      calendarService.setSyncCallbacks(
-        (progress) => setSyncProgress(progress),
-        (result) => {
-          setSyncProgress(null)
-          setLastResult(result)
-          // Refresh sync status after sync completes
-          setSyncStatus(calendarService.getSyncStatus())
-        }
-      )
-      
-      // Initialize form with current sync config
-      const initializeForm = async () => {
-        try {
-          const currentConfig = await calendarService.getCurrentSyncConfig()
-          if (form) {
-            form.setFieldsValue({
-              startDate: dayjs(currentConfig.startDate),
-              endDate: dayjs(currentConfig.endDate)
-            })
-          }
-          setCustomSyncConfig(currentConfig)
-        } catch (error) {
-          console.error('Error loading sync config:', error)
-          // Use defaults if there's an error
-          const defaultConfig = calendarService.getDefaultSyncConfig()
-          if (form) {
-            form.setFieldsValue({
-              startDate: dayjs(defaultConfig.startDate),
-              endDate: dayjs(defaultConfig.endDate)
-            })
-          }
-          setCustomSyncConfig(defaultConfig)
-        }
-      }
-      initializeForm()
-    }
-
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
     }
-  }, [visible])
+  }, [])
 
-  const handleSync = async (forceFullSync = false) => {
-    if (!isOnline) {
-      return
-    }
+  useEffect(() => {
+    if (!visible) return
 
-    if (calendarService.isSyncing()) {
-      return
+    let cancelled = false
+
+    getSyncStatus().then((status) => {
+      if (cancelled) return
+      setIsSyncing(status.isActive)
+      setCanSync(status.canSync)
+    }).catch((error) => console.warn('Could not read sync status:', error))
+
+    const initializeForm = async () => {
+      try {
+        const currentConfig = await getCurrentSyncConfig()
+        form.setFieldsValue({
+          startDate: dayjs(currentConfig.startDate),
+          endDate: dayjs(currentConfig.endDate),
+        })
+        if (!cancelled) setCustomSyncConfig(currentConfig)
+      } catch (error) {
+        console.error('Error loading sync config:', error)
+        const defaultConfig = getDefaultSyncConfig()
+        form.setFieldsValue({
+          startDate: dayjs(defaultConfig.startDate),
+          endDate: dayjs(defaultConfig.endDate),
+        })
+        if (!cancelled) setCustomSyncConfig(defaultConfig)
+      }
     }
+    initializeForm()
+
+    let unlistenStatus: (() => void) | undefined
+    let unlistenComplete: (() => void) | undefined
+
+    onSyncStatus((status) => {
+      if (cancelled) return
+      setIsSyncing(true)
+      setSyncStatus(status)
+    }).then((unlisten) => {
+      if (cancelled) unlisten()
+      else unlistenStatus = unlisten
+    })
+
+    onSyncComplete((result) => {
+      if (cancelled) return
+      setIsSyncing(false)
+      setSyncStatus(null)
+      setLastResult(result)
+      getSyncStatus().then((status) => setCanSync(status.canSync)).catch(() => {})
+    }).then((unlisten) => {
+      if (cancelled) unlisten()
+      else unlistenComplete = unlisten
+    })
+
+    return () => {
+      cancelled = true
+      unlistenStatus?.()
+      unlistenComplete?.()
+    }
+  }, [visible, form])
+
+  const handleSync = async () => {
+    if (!isOnline || isSyncing || !canSync) return
 
     setLastResult(null)
-    
-    // Save custom sync config if it has been modified
+
     if (customSyncConfig) {
       try {
-        await calendarService.setSyncConfig(customSyncConfig)
+        await setSyncConfig(customSyncConfig)
       } catch (error) {
         console.error('Invalid sync config:', error)
         return
       }
     }
-    
+
     try {
-      await calendarService.syncEvents(forceFullSync)
+      await startSync()
+      setIsSyncing(true)
     } catch (error) {
       console.error('Sync start error:', error)
     }
   }
 
   const handleConfigChange = (changedFields: any) => {
-    // Convert dayjs objects to date strings
     const processedFields: any = {}
     if (changedFields.startDate) {
       processedFields.startDate = changedFields.startDate.format('YYYY-MM-DD')
@@ -115,177 +136,106 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
     if (changedFields.endDate) {
       processedFields.endDate = changedFields.endDate.format('YYYY-MM-DD')
     }
-    
-    // Start with default config if customSyncConfig is null, then merge changes
-    const currentConfig = customSyncConfig || calendarService.getDefaultSyncConfig()
-    const newConfig = { ...currentConfig, ...processedFields }
-    setCustomSyncConfig(newConfig)
+    const currentConfig = customSyncConfig || getDefaultSyncConfig()
+    setCustomSyncConfig({ ...currentConfig, ...processedFields })
   }
 
   const handleCancelSync = () => {
-    calendarService.cancelSync()
-    setSyncProgress(null)
+    cancelSync().catch((error) => console.error('Cancel sync error:', error))
   }
 
-  const renderSyncOptions = () => {
-    return (
-      <div>
-        {/* Status Information */}
-        <Card size="small" style={{ marginBottom: 16 }}>
+  const renderSyncOptions = () => (
+    <div>
+      <Card
+        title={
+          <span>
+            <SettingOutlined style={{ marginRight: 8 }} />
+            Sync Date Range
+            {customSyncConfig && (
+              <Text type="secondary" style={{ marginLeft: 8 }}>
+                ({dayjs(customSyncConfig.startDate).format('MMM D')} - {dayjs(customSyncConfig.endDate).format('MMM D, YYYY')})
+              </Text>
+            )}
+          </span>
+        }
+        size="small"
+        style={{ marginBottom: 16 }}
+      >
+        <Form form={form} layout="vertical" onValuesChange={handleConfigChange} size="small">
           <Row gutter={16}>
-            <Col span={24}>
-              <Statistic
-                title="Connection"
-                value={isOnline ? 'Online' : 'Offline'}
-                styles={{ content: { color: isOnline ? '#3f8600' : '#cf1322' } }}
-              />
+            <Col span={12}>
+              <Form.Item label="Start Date" name="startDate" rules={[{ required: true, message: 'Required' }]}>
+                <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="End Date" name="endDate" rules={[{ required: true, message: 'Required' }]}>
+                <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+              </Form.Item>
             </Col>
           </Row>
-        </Card>
+          <Text type="secondary" style={{ fontSize: '11px' }}>
+            Total range: {customSyncConfig?.startDate && customSyncConfig?.endDate ?
+              dayjs(customSyncConfig.endDate).diff(dayjs(customSyncConfig.startDate), 'days') + 1 : 0} days
+          </Text>
+        </Form>
+      </Card>
 
-        {/* Date Range Configuration */}
-        <Card 
-          title={
-            <span>
-              <SettingOutlined style={{ marginRight: 8 }} />
-              Sync Date Range
-              {customSyncConfig && (
-                <Text type="secondary" style={{ marginLeft: 8 }}>
-                  ({dayjs(customSyncConfig.startDate).format('MMM D')} - {dayjs(customSyncConfig.endDate).format('MMM D, YYYY')})
-                </Text>
-              )}
-            </span>
-          }
-          size="small"
-          style={{ marginBottom: 16 }}
-        >
-          <Form
-            form={form}
-            layout="vertical"
-            onValuesChange={handleConfigChange}
-            size="small"
-          >
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item
-                  label="Start Date"
-                  name="startDate"
-                  rules={[
-                    { required: true, message: 'Required' }
-                  ]}
-                >
-                  <DatePicker
-                    style={{ width: '100%' }}
-                    format="YYYY-MM-DD"
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  label="End Date"
-                  name="endDate"
-                  rules={[
-                    { required: true, message: 'Required' }
-                  ]}
-                >
-                  <DatePicker
-                    style={{ width: '100%' }}
-                    format="YYYY-MM-DD"
-                  />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Text type="secondary" style={{ fontSize: '11px' }}>
-              Total range: {customSyncConfig?.startDate && customSyncConfig?.endDate ? 
-                dayjs(customSyncConfig.endDate).diff(dayjs(customSyncConfig.startDate), 'days') + 1 : 0} days
-            </Text>
-          </Form>
-        </Card>
+      <Button type="primary" size="large" onClick={handleSync} disabled={!isOnline || !canSync} block>
+        Sync Calendar
+      </Button>
+      <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: '4px', textAlign: 'center' }}>
+        Downloads all events in your configured date range from Microsoft Graph.
+      </Text>
 
-        {/* Sync Options */}
-        <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-          <div>
-            <Button
-              type="primary"
-              size="large"
-              onClick={() => handleSync(true)}
-              disabled={!isOnline}
-              block
-            >
-              Sync Calendar
-            </Button>
-            <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: '4px', textAlign: 'center' }}>
-              Downloads all events in your configured date range from Microsoft Graph.
-            </Text>
-          </div>
-        </Space>
-
-        {!isOnline && (
-          <Alert
-            title="Offline"
-            description="You're currently offline. Sync options will be available when you reconnect to the internet."
-            type="warning"
-            style={{ marginTop: 16 }}
-            showIcon
-          />
-        )}
-      </div>
-    )
-  }
-
-  const renderSyncProgress = () => {
-    if (!syncProgress) return null
-
-    return (
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <Title level={4} style={{ margin: 0 }}>Syncing Calendar</Title>
-          <Button
-            danger
-            icon={<StopOutlined />}
-            onClick={handleCancelSync}
-          >
-            Cancel
-          </Button>
-        </div>
-
-        <Card>
-          <SyncProgressComponent 
-            progress={syncProgress} 
-            onCancel={handleCancelSync}
-            compact={false}
-          />
-        </Card>
-
+      {!isOnline && (
         <Alert
-          title="Sync in Progress"
-          description="You can continue using the app while the sync runs in the background. This modal will update with the results when complete."
-          type="info"
+          title="Offline"
+          description="You're currently offline. Sync options will be available when you reconnect to the internet."
+          type="warning"
           style={{ marginTop: 16 }}
           showIcon
         />
+      )}
+    </div>
+  )
+
+  // Deliberately modest: the old progress bar jumped 0% straight to 100%
+  // (fetched is the only count the backend can report mid-sync — there's no
+  // known total until the last page arrives) and its four stage icons all
+  // rendered the same spinner. This just says what's true: a spinner, the
+  // running count, the phase, and a way to stop.
+  const renderSyncProgress = () => (
+    <div style={{ textAlign: 'center', padding: '24px 0' }}>
+      <Spin size="large" />
+      <Title level={4} style={{ marginTop: 16 }}>
+        {syncStatus ? `${syncStatus.fetched} events fetched…` : 'Starting sync…'}
+      </Title>
+      {syncStatus && <Text type="secondary">{syncStatus.phase}</Text>}
+      <div style={{ marginTop: 24 }}>
+        <Button danger icon={<StopOutlined />} onClick={handleCancelSync}>
+          Cancel
+        </Button>
       </div>
-    )
-  }
+    </div>
+  )
 
   const renderSyncResult = () => {
     if (!lastResult) return null
-
     return (
       <div>
         <Title level={4}>Sync Complete</Title>
-        
         <Alert
-          title={lastResult.success ? "Sync Successful" : "Sync Failed"}
+          title={lastResult.success ? 'Sync Successful' : 'Sync Failed'}
           description={lastResult.message}
-          type={lastResult.success ? "success" : "error"}
+          type={lastResult.success ? 'success' : 'error'}
           icon={lastResult.success ? <CheckCircleOutlined /> : <ExclamationCircleOutlined />}
           style={{ marginBottom: 16 }}
           showIcon
         />
 
         {lastResult.success && (
-          <Card title={`${lastResult.mode === 'differential' ? 'Differential' : 'Full'} Sync Results`} size="small">
+          <Card title="Sync Results" size="small">
             <Row gutter={16}>
               <Col span={6}>
                 <Statistic title="Created" value={lastResult.stats.created} styles={{ content: { color: '#3f8600' } }} />
@@ -313,12 +263,7 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
           </Card>
         )}
 
-        <Button
-          type="primary"
-          onClick={() => setLastResult(null)}
-          style={{ marginTop: 16 }}
-          block
-        >
+        <Button type="primary" onClick={() => setLastResult(null)} style={{ marginTop: 16 }} block>
           Start New Sync
         </Button>
       </div>
@@ -326,13 +271,9 @@ const SyncModal: React.FC<SyncModalProps> = ({ visible, onClose }) => {
   }
 
   const getModalContent = () => {
-    if (lastResult) {
-      return renderSyncResult()
-    } else if (syncProgress) {
-      return renderSyncProgress()
-    } else {
-      return renderSyncOptions()
-    }
+    if (lastResult) return renderSyncResult()
+    if (isSyncing) return renderSyncProgress()
+    return renderSyncOptions()
   }
 
   if (!visible) {
