@@ -31,6 +31,15 @@ vi.mock('./ActivitiesSettings', () => ({
   )
 }))
 
+vi.mock('./ProjectsSettings', () => ({
+  default: ({ searchTerm }: { searchTerm: string }) => (
+    <div data-testid="projects-settings">
+      <span data-testid="search-term">{searchTerm}</span>
+      <div>Projects Settings Component</div>
+    </div>
+  )
+}))
+
 describe('Settings', () => {
   const defaultProps = createSettingsProps()
 
@@ -387,7 +396,7 @@ describe('Settings', () => {
       render(<Settings {...defaultProps} />)
 
       const tabs = screen.getAllByRole('tab')
-      expect(tabs.map(tab => tab.textContent)).toEqual(['General', 'Activities'])
+      expect(tabs.map(tab => tab.textContent)).toEqual(['General', 'Activities', 'Projects'])
     })
 
     it('maintains tabItems structure that supports easy extension', () => {
@@ -407,6 +416,12 @@ describe('Settings', () => {
       render(<Settings {...defaultProps} />)
 
       expect(screen.getByRole('tab', { name: /activities/i })).toBeInTheDocument()
+    })
+
+    it('offers a Projects tab too', () => {
+      render(<Settings {...defaultProps} />)
+
+      expect(screen.getByRole('tab', { name: /projects/i })).toBeInTheDocument()
     })
 
     it('keeps General as the tab shown first', () => {

@@ -103,3 +103,12 @@ export interface Activity {
   created_at?: string
 }
 
+
+export interface Project {
+  id?: number
+  name: string
+  code: string
+  program?: string | null
+  is_active: boolean
+  created_at?: string
+}

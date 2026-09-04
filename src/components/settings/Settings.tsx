@@ -6,6 +6,7 @@ import TimezoneSettings from "./TimezoneSettings";
 import EventTypesSettings from "./EventTypesSettings";
 import EventTypeRulesSettings from "./EventTypeRulesSettings";
 import ActivitiesSettings from "./ActivitiesSettings";
+import ProjectsSettings from "./ProjectsSettings";
 
 const { Title } = Typography;
 const { Search } = Input;
@@ -53,6 +54,15 @@ const Settings: React.FC<SettingsProps> = ({ onEventsUpdated }) => {
       children: (
         <div style={{ maxWidth: "800px" }}>
           <ActivitiesSettings searchTerm={searchTerm} />
+        </div>
+      ),
+    },
+    {
+      key: "projects",
+      label: "Projects",
+      children: (
+        <div style={{ maxWidth: "800px" }}>
+          <ProjectsSettings searchTerm={searchTerm} />
         </div>
       ),
     },
