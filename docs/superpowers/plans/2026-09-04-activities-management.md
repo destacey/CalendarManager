@@ -169,7 +169,7 @@ fn apply_migration_2(conn: &Connection) -> Result<(), DbError> {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd /D/Dev/CalendarManager/src-tauri && cargo test migration_2_creates_and_seeds seeded_activities_all_have
+cd /D/Dev/CalendarManager/src-tauri && cargo test activities
 ```
 
 Expected: PASS, 2 tests.
