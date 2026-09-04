@@ -97,6 +97,24 @@ fn success_message(total: u32) -> String {
     format!("Successfully synced {total} events for the specified date range.")
 }
 
+/// A sync that fetched nothing must not delete anything.
+///
+/// `CalendarViewPage::value` is `#[serde(default)]`, so an HTTP 200 whose
+/// body lacks `value`, or has `value: []`, parses cleanly to zero events —
+/// and unconditionally reaching `cleanup_range` with an empty keep-list
+/// would then delete every row in the window that has a `graph_id` and
+/// report the sync as a success. Every other failure path already skips
+/// cleanup (a non-2xx or a parse failure returns `Err` before the loop ever
+/// updates `fetched`; cancellation returns early too) — this is the one
+/// silent path, and extracting the decision as a pure function is what makes
+/// it testable without standing up an HTTP mock: `run` cannot otherwise be
+/// exercised end-to-end in this crate (there is deliberately no HTTP mocking
+/// here), so a guard buried inline in `run` would be a guard nothing pins in
+/// place.
+fn should_clean_up(fetched: u32) -> bool {
+    fetched > 0
+}
+
 /// `calendar.ts:186`'s cancellation result, exactly: zeroed stats, no
 /// errors, `success: false`. Cancellation is a normal outcome (an `Ok`
 /// `SyncResult`), not a propagated `SyncError` — the same treatment the
@@ -219,7 +237,16 @@ pub async fn run<R: Runtime>(
     let window = sync_window(&sync_config.start_date, &sync_config.end_date, &timezone)?;
 
     let db = app.state::<Db>().inner().clone();
-    let client = reqwest::Client::new();
+    // 120s, not something shorter: a 500-event page over a slow connection
+    // is legitimately slow, so this is a last-resort guard against a dead
+    // connection (link up, packets silently dropped — the classic hotel or
+    // captive-portal Wi-Fi failure), not a latency budget. Without it,
+    // `reqwest::Client::new()` has no default timeout and a black-holed
+    // connection hangs a page fetch indefinitely.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| SyncError::Other(e.to_string()))?;
 
     let mut url = build_calendar_view_url(&window.start, &window.end);
     let mut fetched = 0u32;
@@ -270,6 +297,23 @@ pub async fn run<R: Runtime>(
         return Ok(cancelled_result());
     }
 
+    // A fetch that returned nothing must never authorise deleting the window.
+    // `value` is #[serde(default)], so a 200 with an absent or empty array
+    // parses cleanly to zero events — and cleanup would then delete every
+    // synced event in range and report it as success. If a genuinely empty
+    // window ever needs clearing, that should be a deliberate action, not a
+    // silent side effect of a fetch that came back empty.
+    if !should_clean_up(fetched) {
+        let result = SyncResult {
+            success: true,
+            message: success_message(0),
+            stats: SyncStats::default(),
+            errors: None,
+        };
+        let _ = app.emit("sync-complete", result.clone());
+        return Ok(result);
+    }
+
     app.emit("sync-status", SyncStatus { fetched, phase: Phase::Cleaning })
         .map_err(|e| SyncError::Other(e.to_string()))?;
 
@@ -287,8 +331,13 @@ pub async fn run<R: Runtime>(
         errors: None,
     };
 
-    app.emit("sync-complete", result.clone())
-        .map_err(|e| SyncError::Other(e.to_string()))?;
+    // A failed emit here must not turn an already-committed, successful sync
+    // into a reported failure: the upserts and the DELETE have already
+    // committed by this point, so propagating an emit error with `?` would
+    // report "Sync Failed" for a sync that, in the database, fully
+    // succeeded. `commands/sync.rs` already treats every one of its own
+    // `sync-complete` emits this way.
+    let _ = app.emit("sync-complete", result.clone());
 
     Ok(result)
 }
@@ -386,6 +435,20 @@ mod tests {
         assert_eq!(result.message, "Sync was cancelled");
         assert_eq!(result.stats, SyncStats { created: 0, updated: 0, deleted: 0, total: 0 });
         assert!(result.errors.is_none());
+    }
+
+    // --- the empty-fetch cleanup guard ---
+
+    /// A fetch that returned nothing must never authorise a cleanup delete.
+    #[test]
+    fn should_clean_up_is_false_when_nothing_was_fetched() {
+        assert!(!should_clean_up(0));
+    }
+
+    #[test]
+    fn should_clean_up_is_true_once_anything_was_fetched() {
+        assert!(should_clean_up(1));
+        assert!(should_clean_up(500));
     }
 
     // --- query construction ---

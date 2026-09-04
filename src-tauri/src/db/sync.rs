@@ -673,6 +673,49 @@ mod tests {
         assert_eq!(graph_ids_remaining(&conn), vec![Some("real-event".to_string())]);
     }
 
+    /// Every other `cleanup_range` test above uses bounds like
+    /// `"2026-03-01T00:00:00"` and rows like `"2026-03-15T00:00:00"` — a
+    /// shape that never occurs at runtime. Real bounds come from
+    /// `graph::date_range::sync_window`'s `to_rfc3339()` output (an offset
+    /// suffix, milliseconds on the end bound); real rows hold Microsoft
+    /// Graph's raw `dateTime` verbatim (seven fractional digits, no offset
+    /// at all). This is the most dangerous statement in the sync engine —
+    /// the DELETE that runs against the user's real database — so it gets a
+    /// test using the formats it will actually see, with the window itself
+    /// produced by `sync_window` rather than hardcoded so this test breaks
+    /// if that format ever changes.
+    #[test]
+    fn cleanup_range_handles_the_real_graph_and_sync_window_date_formats() {
+        let conn = setup();
+        let window =
+            crate::graph::date_range::sync_window("2026-03-01", "2026-03-31", "Europe/London")
+                .unwrap();
+
+        // Mid-window, absent from the keep-list: deleted.
+        insert_raw_event(&conn, Some("deleted"), "2026-03-15T09:00:00.0000000");
+        // The same shape, present in the keep-list: survives.
+        insert_raw_event(&conn, Some("kept"), "2026-03-15T09:00:00.0000000");
+        // Just past the `.999` upper bound: under-deletion is the safe
+        // direction, so this must NOT be deleted.
+        insert_raw_event(&conn, Some("just-past-end"), "2026-03-31T23:59:59.9999999");
+        // Outside the window entirely.
+        insert_raw_event(&conn, Some("outside"), "2026-04-15T09:00:00.0000000");
+        // Local-only event inside the window: survives regardless of the
+        // keep-list or date range.
+        insert_raw_event(&conn, None, "2026-03-15T09:00:00.0000000");
+
+        let deleted =
+            cleanup_range(&conn, &window.start, &window.end, &["kept".to_string()]).unwrap();
+
+        assert_eq!(deleted, 1, "only the mid-window event absent from the keep-list is deleted");
+        let remaining = graph_ids_remaining(&conn);
+        assert!(!remaining.contains(&Some("deleted".to_string())));
+        assert!(remaining.contains(&Some("kept".to_string())));
+        assert!(remaining.contains(&Some("just-past-end".to_string())));
+        assert!(remaining.contains(&Some("outside".to_string())));
+        assert!(remaining.contains(&None));
+    }
+
     /// `cleanup_range` is called repeatedly against the same long-lived
     /// connection over an app's lifetime (once per sync). The temp table it
     /// stages ids into must not leak state between calls.
