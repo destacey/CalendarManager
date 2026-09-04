@@ -11,6 +11,8 @@
     "core:window:allow-is-maximized",
     "core:window:allow-show",
     "core:window:allow-start-dragging",
-    "opener:allow-open-url"
+    "opener:allow-open-url",
+    "dialog:allow-save",
+    "fs:allow-write-file"
   ]
 }

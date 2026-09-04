@@ -8,6 +8,8 @@ import dayjs from 'dayjs'
 import ExcelJS from 'exceljs'
 import { Event, EventType } from '../../types'
 import { calculateEventDuration } from '../../utils/eventUtils'
+import { useMessage } from '../../contexts/MessageContext'
+import { saveFile } from '../../api/files'
 
 const { Text } = Typography
 
@@ -47,6 +49,7 @@ const EventTable: React.FC<EventTableProps> = ({
 }) => {
   const tableRef = useRef<TableRef>(null)
   const [filteredData, setFilteredData] = useState<TableEvent[]>([])
+  const messageApi = useMessage()
 
   const handleTableChange = useCallback((pagination: any, filters: any, sorter: any, extra: any) => {
     // Always update filtered data with current visible data
@@ -244,22 +247,25 @@ const EventTable: React.FC<EventTableProps> = ({
     const timestamp = now.format('YYYY-MM-DD HHmm')
     const fileName = `Calendar Export ${timestamp}.xlsx`
 
-    // Generate buffer and create blob for download
     const buffer = await workbook.xlsx.writeBuffer()
-    const blob = new Blob([buffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    })
 
-    // Create download link and trigger download
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileName
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-  }, [filteredData, tableEvents, userTimezone])
+    try {
+      const saved = await saveFile(
+        fileName,
+        new Uint8Array(buffer as ArrayBuffer),
+        'Excel Workbook',
+        ['xlsx']
+      )
+
+      // A cancelled dialog is a normal outcome, not a failure — say nothing.
+      if (saved) {
+        messageApi.success(`Exported ${exportData.length} events`)
+      }
+    } catch (error) {
+      console.error('Export failed:', error)
+      messageApi.error('Could not save the export')
+    }
+  }, [filteredData, tableEvents, userTimezone, messageApi])
 
   // Pass export function to parent via callback
   React.useEffect(() => {
