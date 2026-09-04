@@ -121,7 +121,7 @@ function AppContent() {
           display: selectedNavKey === 'map-events' ? 'block' : 'none',
           height: '100%'
         }}>
-          <MapEvents onEventsUpdated={() => setEventsRefreshKey(prev => prev + 1)} />
+          <MapEvents />
         </div>
         <div style={{ 
           display: selectedNavKey === 'settings' ? 'block' : 'none',

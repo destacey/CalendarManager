@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Typography, Space, Button, Empty, Spin, Switch, Flex, Tag, theme, Splitter, Input } from 'antd'
 import { HolderOutlined, LeftOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons'
 import {
@@ -23,9 +23,15 @@ import { getActivities } from '../../api/activities'
 
 const { Text, Title } = Typography
 
-interface MapEventsProps {
-  onEventsUpdated?: () => void
-}
+// Deliberately no `onEventsUpdated`. The obvious thing here is to tell
+// App.tsx that events changed, but its only mechanism is bumping
+// `eventsRefreshKey`, and `<CalendarView key={eventsRefreshKey} />` DESTROYS
+// AND REBUILDS the whole calendar subtree — documented in docs/backlog.md as
+// the wrong mechanism, and measured at hundreds of milliseconds. The calendar
+// renders no project or activity data, so that work bought nothing and was
+// half of the flash after every drop. If mapping ever surfaces there, it
+// should come back as a data reload, not a remount.
+type MapEventsProps = Record<string, never>
 
 /** What a drop is about to map, once the user picks an activity. */
 interface PickerState {
@@ -153,13 +159,19 @@ function formatEffort(group: UnmappedGroup): string {
   return parts.join(' · ') || '—'
 }
 
-const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
+const MapEvents: React.FC<MapEventsProps> = () => {
   const { token } = theme.useToken()
   const messageApi = useMessage()
   const [groups, setGroups] = useState<UnmappedGroup[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [activities, setActivities] = useState<Activity[]>([])
+  /* Only the FIRST load blanks the board. Every later one — a month change, a
+     filter toggle, the reload after mapping — keeps everything mounted and
+     shows a small spinner instead. Swapping the whole splitter for a centred
+     spinner and back is what made the page flash on every drop. */
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const hasLoaded = useRef(false)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [billableOnly, setBillableOnly] = useState(true)
   const [search, setSearch] = useState('')
@@ -187,7 +199,11 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
 
   const load = useCallback(async () => {
     try {
-      setLoading(true)
+      if (hasLoaded.current) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
       const [g, p, a] = await Promise.all([
         getUnmappedGroups(range.start, range.end, billableOnly),
         getProjects(),
@@ -201,7 +217,9 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
       console.error('Error loading unmapped events:', error)
       messageApi.error('Failed to load unmapped events')
     } finally {
+      hasLoaded.current = true
       setLoading(false)
+      setRefreshing(false)
     }
   }, [range.start, range.end, billableOnly, messageApi])
 
@@ -352,6 +370,7 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
                       {selectedKeys.length} selected · {totalSelectedEvents} events
                     </Tag>
                   )}
+                  {refreshing && <Spin size="small" />}
                   <div style={{ flexGrow: 1 }} />
                   <Text type="secondary" style={{ fontSize: 11 }}>
                     ctrl-click to add
@@ -467,7 +486,6 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
           activities={activities}
           onDone={() => {
             setPicker(null)
-            onEventsUpdated?.()
             load()
           }}
           onCancel={() => setPicker(null)}

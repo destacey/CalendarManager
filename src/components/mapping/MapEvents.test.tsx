@@ -11,7 +11,13 @@ vi.mock('../../api/mapping', () => ({ getUnmappedGroups: vi.fn() }))
 // The drop itself opens ActivityPicker, which is tested directly: dnd-kit's
 // collision detection needs real element geometry, and jsdom reports every
 // element as zero-sized, so a drag cannot be driven here at all.
-vi.mock('./ActivityPicker', () => ({ default: () => <div data-testid="activity-picker" /> }))
+vi.mock('./ActivityPicker', () => ({
+  default: ({ onDone }: { onDone: () => void }) => (
+    <button data-testid="activity-picker" onClick={onDone}>
+      finish
+    </button>
+  )
+}))
 vi.mock('../../api/projects', () => ({ getProjects: vi.fn() }))
 vi.mock('../../api/activities', () => ({ getActivities: vi.fn() }))
 
@@ -189,6 +195,49 @@ describe('MapEvents', () => {
       await user.click(card)
 
       expect(card).toHaveAttribute('aria-pressed', 'false')
+    })
+  })
+
+  /* Mapping used to swap the whole splitter for a centred spinner and back,
+     which read as the page flashing on every drop. A refresh must leave the
+     board mounted. */
+  describe('refreshing without flashing', () => {
+    it('keeps the board on screen while reloading', async () => {
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+
+      // A slow reload, so the intermediate state is observable at all.
+      let release: (v: typeof mockGroups) => void = () => {}
+      vi.mocked(getUnmappedGroups).mockReturnValueOnce(
+        new Promise(resolve => {
+          release = resolve
+        })
+      )
+
+      // Any reload after the first takes this path — the toggle is simply the
+      // one reachable without a drag.
+      screen.getByRole('switch', { name: /billable types only/i }).click()
+
+      // Mid-refresh: the board is still there, not replaced by a spinner.
+      expect(screen.getByText('Daily Standup')).toBeInTheDocument()
+      expect(screen.getByText('Projects')).toBeInTheDocument()
+
+      release(mockGroups)
+      await waitFor(() => expect(getUnmappedGroups).toHaveBeenCalledTimes(2))
+    })
+
+    it('still blanks the board on the very first load', () => {
+      let release: (v: typeof mockGroups) => void = () => {}
+      vi.mocked(getUnmappedGroups).mockReturnValueOnce(
+        new Promise(resolve => {
+          release = resolve
+        })
+      )
+
+      render(<MapEvents />)
+
+      expect(screen.queryByText('Unmapped')).not.toBeInTheDocument()
+      release(mockGroups)
     })
   })
 
