@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Deferred work, recorded follow-ups, and environment traps are in
+[`docs/backlog.md`](docs/backlog.md). Notably: there is **no installer or
+auto-updater yet** — that work is blocked on generating an update signing key.
+
 ## Development Commands
 
 **Primary development workflow:**
