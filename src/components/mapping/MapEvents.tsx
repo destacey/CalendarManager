@@ -27,12 +27,10 @@ interface MapEventsProps {
   onEventsUpdated?: () => void
 }
 
-/** Where the activity picker opens, in viewport coordinates. */
+/** What a drop is about to map, once the user picks an activity. */
 interface PickerState {
   project: Project
   groups: UnmappedGroup[]
-  x: number
-  y: number
 }
 
 const GroupCard: React.FC<{
@@ -248,18 +246,7 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
       ? groups.filter(g => selectedKeys.includes(g.key))
       : [group]
 
-    // Anchor the picker to the row that was dropped on, so it opens where the
-    // user let go rather than somewhere they have to hunt for.
-    const rect = document
-      .querySelector(`[data-testid="project-drop-${project.id}"]`)
-      ?.getBoundingClientRect()
-
-    setPicker({
-      project,
-      groups: dropped,
-      x: rect ? rect.left + 24 : 200,
-      y: rect ? rect.bottom + 6 : 200
-    })
+    setPicker({ project, groups: dropped })
   }
 
   const remaining = groups.reduce((n, g) => n + g.eventCount, 0)
@@ -414,8 +401,6 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsUpdated }) => {
           project={picker.project}
           groups={picker.groups}
           activities={activities}
-          x={picker.x}
-          y={picker.y}
           onDone={() => {
             setPicker(null)
             onEventsUpdated?.()

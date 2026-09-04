@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Typography, theme } from 'antd'
 import { Project, Activity } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
@@ -11,9 +11,6 @@ interface ActivityPickerProps {
   /** Every group being mapped — one, or a whole ctrl-click selection. */
   groups: UnmappedGroup[]
   activities: Activity[]
-  /** Viewport coordinates of the drop, so this opens where the user let go. */
-  x: number
-  y: number
   onDone: () => void
   onCancel: () => void
 }
@@ -27,19 +24,34 @@ interface ActivityPickerProps {
  *
  * One click finishes it. There is deliberately no search box and no confirm
  * step; the list is short and the whole point is speed.
+ *
+ * It is CENTRED rather than anchored to the drop point. Anchoring put it
+ * partly off-screen when the project dropped on was low in the viewport, with
+ * no way to scroll to the rest — and it bought nothing, because the activity
+ * list is identical whichever project you drop on. Centring costs the spatial
+ * cue of which project that was, so the header names it instead.
  */
 const ActivityPicker: React.FC<ActivityPickerProps> = ({
   project,
   groups,
   activities,
-  x,
-  y,
   onDone,
   onCancel
 }) => {
   const { token } = theme.useToken()
   const messageApi = useMessage()
   const [busy, setBusy] = useState(false)
+
+  // Escape cancels, as it would for any modal surface.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
+
+  const eventCount = groups.reduce((n, g) => n + g.eventCount, 0)
 
   const commit = async (activityId: number | null) => {
     if (busy) return
@@ -63,20 +75,31 @@ const ActivityPicker: React.FC<ActivityPickerProps> = ({
   }
 
   return (
-    <>
-      {/* Clicking away cancels without mapping anything. */}
-      <div onClick={onCancel} data-testid="picker-scrim" style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
+    <div
+      onClick={onCancel}
+      data-testid="picker-scrim"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(0, 0, 0, 0.35)'
+      }}
+    >
       <div
         role="menu"
         aria-label="Choose an activity"
+        // Stops a click on the menu itself reaching the scrim behind it.
+        onClick={e => e.stopPropagation()}
         style={{
-          position: 'fixed',
-          left: x,
-          top: y,
-          zIndex: 1001,
-          width: 268,
-          maxHeight: 360,
-          overflowY: 'auto',
+          width: 300,
+          // Never taller than the viewport, and scrolls inside itself when the
+          // activity list outgrows it — the failure the anchored version had.
+          maxHeight: 'min(70vh, 520px)',
+          display: 'flex',
+          flexDirection: 'column',
           background: token.colorBgElevated,
           border: `1px solid ${token.colorBorder}`,
           borderRadius: token.borderRadiusLG,
@@ -84,31 +107,40 @@ const ActivityPicker: React.FC<ActivityPickerProps> = ({
           padding: 6
         }}
       >
-        <div style={{ padding: '6px 10px 8px' }}>
-          <Text strong style={{ fontSize: 12 }}>
-            Activity
-          </Text>
-          <Text type="secondary" style={{ fontSize: 11, marginLeft: 6 }}>
-            — one click to finish
+        <div style={{ padding: '8px 10px 10px', flexShrink: 0 }}>
+          <div>
+            <Text strong style={{ fontSize: 13 }}>
+              Activity
+            </Text>
+            <Text type="secondary" style={{ fontSize: 11, marginLeft: 6 }}>
+              — one click to finish
+            </Text>
+          </div>
+          {/* Centring loses the spatial cue of which project was dropped on,
+              so it is stated. */}
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {eventCount} event{eventCount === 1 ? '' : 's'} &rarr; {project.name}
           </Text>
         </div>
 
         {/* First, not buried: mapping to a project with no activity is a real
             answer and often the right one. */}
-        <Option label="Project only, no activity" onPick={() => commit(null)} />
+        <div style={{ overflowY: 'auto', flexGrow: 1 }}>
+          <Option label="Project only, no activity" onPick={() => commit(null)} />
 
-        <div style={{ height: 1, background: token.colorSplit, margin: '4px 8px' }} />
+          <div style={{ height: 1, background: token.colorSplit, margin: '4px 8px' }} />
 
-        {activities.map(activity => (
-          <Option
-            key={activity.id}
-            label={activity.name}
-            color={activity.color}
-            onPick={() => commit(activity.id!)}
-          />
-        ))}
+          {activities.map(activity => (
+            <Option
+              key={activity.id}
+              label={activity.name}
+              color={activity.color}
+              onPick={() => commit(activity.id!)}
+            />
+          ))}
+        </div>
       </div>
-    </>
+    </div>
   )
 }
 

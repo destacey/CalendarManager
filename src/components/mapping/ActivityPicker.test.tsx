@@ -27,8 +27,6 @@ const renderPicker = (overrides = {}) => {
       project={project}
       groups={groups}
       activities={activities}
-      x={100}
-      y={100}
       onDone={onDone}
       onCancel={onCancel}
       {...overrides}
@@ -132,6 +130,35 @@ describe('ActivityPicker', () => {
     await user.click(option)
 
     await waitFor(() => expect(mapEvents).toHaveBeenCalledTimes(1))
+  })
+
+  /* Anchoring the picker to the drop point put it partly off-screen when the
+     project was low in the viewport, with no way to reach the rest. */
+  it('names the project and event count, since it no longer opens beside it', () => {
+    renderPicker()
+
+    expect(screen.getByText('28 events → Website Rebuild')).toBeInTheDocument()
+  })
+
+  it('cancels on Escape', async () => {
+    const user = userEvent.setup()
+    const { onCancel } = renderPicker()
+
+    await user.keyboard('{Escape}')
+
+    expect(onCancel).toHaveBeenCalled()
+    expect(mapEvents).not.toHaveBeenCalled()
+  })
+
+  /* Clicking the menu must not reach the scrim behind it, or choosing an
+     activity would cancel at the same time. */
+  it('does not cancel when the menu itself is clicked', async () => {
+    const user = userEvent.setup()
+    const { onCancel } = renderPicker()
+
+    await user.click(screen.getByRole('menu', { name: /choose an activity/i }))
+
+    expect(onCancel).not.toHaveBeenCalled()
   })
 
   it('cancels without mapping when the backdrop is clicked', async () => {
