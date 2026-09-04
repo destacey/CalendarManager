@@ -27,11 +27,11 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.1.1",
-    "@vitest/ui": "^4.0.18",
+    "@vitest/ui": "^5.0.0",
     "jsdom": "^29.1.1",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
-    "vitest": "^4.0.18"
+    "vitest": "^5.0.0"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
