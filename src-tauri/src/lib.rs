@@ -5,6 +5,7 @@ mod db;
 use std::time::Duration;
 
 use tauri::Manager;
+use tauri_plugin_store::StoreExt;
 
 use auth::AuthState;
 
@@ -40,6 +41,114 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .map_err(|e| format!("no app data dir: {e}"))?;
+
+            // Corrupt-store guard: must run before the database is opened,
+            // and before anything else touches config.json. `app.store()`'s
+            // first build already attempted a load and silently swallowed a
+            // deserialize failure (tauri-plugin-store's `build()` discards
+            // that error), so every read would otherwise fall through to its
+            // default with no sign anything is wrong — and the first write
+            // this session makes would then truncate the bad file, destroying
+            // it. `Store::reload()` re-reads the same file but *does*
+            // propagate a deserialize error, which is the only way to detect
+            // this before it's too late. This matters more than a merely
+            // corrupt preferences file would: once a "legacy database already
+            // copied" marker lives in this store, silently resetting it could
+            // re-run the legacy database copy against a database that is
+            // already live.
+            match app.store(commands::config::STORE_FILE) {
+                Ok(config_store) => {
+                    if let Err(tauri_plugin_store::Error::Deserialize(_)) = config_store.reload() {
+                        let config_path = app_data_dir.join(commands::config::STORE_FILE);
+                        let corrupt_path =
+                            app_data_dir.join(format!("{}.corrupt", commands::config::STORE_FILE));
+                        // Renamed, not deleted, and overwriting any previous
+                        // `.corrupt` file: the bad bytes survive for
+                        // diagnosis rather than being clobbered by the next
+                        // write. This logs via `eprintln!`, which only reaches
+                        // anywhere under `tauri dev` — `main.rs` builds with
+                        // `windows_subsystem = "windows"` in release, so there
+                        // is no console for a packaged build to show it on.
+                        eprintln!(
+                            "{} could not be parsed; preserving it as {} rather than letting the \
+                             next write silently truncate it",
+                            config_path.display(),
+                            corrupt_path.display()
+                        );
+                        if let Err(e) = std::fs::rename(&config_path, &corrupt_path) {
+                            eprintln!(
+                                "could not rename corrupt config {} to {}: {e}",
+                                config_path.display(),
+                                corrupt_path.display()
+                            );
+                        }
+                    }
+
+                    // One-time carry-over from the abandoned electron-store
+                    // config. Only when the new store hasn't already been
+                    // populated (by the user re-entering their client ID, or
+                    // a previous carry-over) — never overwrite config the
+                    // user has already set in the new app.
+                    if config_store.get("appRegistrationId").is_none() {
+                        // Electron's config lived at
+                        // `%APPDATA%/calendarmanager/config.json`; the Tauri
+                        // app's app-data dir is
+                        // `%APPDATA%/com.triowfs.calendarmanager`, so the
+                        // legacy file is a sibling directory of this one.
+                        if let Some(appdata_root) = app_data_dir.parent() {
+                            let legacy_config_path =
+                                appdata_root.join("calendarmanager").join("config.json");
+                            match std::fs::read(&legacy_config_path) {
+                                Ok(bytes) => {
+                                    match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                                        Ok(legacy) => {
+                                            let carried =
+                                                commands::config::keys_to_carry_over(&legacy);
+                                            if carried.is_empty() {
+                                                eprintln!(
+                                                    "Legacy config at {} had none of the keys we \
+                                                     carry over",
+                                                    legacy_config_path.display()
+                                                );
+                                            } else {
+                                                let carried_keys: Vec<String> =
+                                                    carried.keys().cloned().collect();
+                                                for (key, value) in carried {
+                                                    config_store.set(key, value);
+                                                }
+                                                match config_store.save() {
+                                                    Ok(()) => eprintln!(
+                                                        "Carried over legacy config keys {:?} \
+                                                         from {} (left untouched)",
+                                                        carried_keys,
+                                                        legacy_config_path.display()
+                                                    ),
+                                                    Err(e) => eprintln!(
+                                                        "could not save carried-over config: {e}"
+                                                    ),
+                                                }
+                                            }
+                                        }
+                                        Err(e) => eprintln!(
+                                            "Legacy config at {} could not be parsed, skipping \
+                                             carry-over: {e}",
+                                            legacy_config_path.display()
+                                        ),
+                                    }
+                                }
+                                // No legacy install on this machine (or the
+                                // user never had one) — nothing to carry over.
+                                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                                Err(e) => eprintln!(
+                                    "could not read legacy config {}: {e}",
+                                    legacy_config_path.display()
+                                ),
+                            }
+                        }
+                    }
+                }
+                Err(e) => eprintln!("could not open config store: {e}"),
+            }
 
             // Where electron/main.js kept it: the repo root, i.e. the parent of
             // src-tauri during development. Also check beside the executable,
