@@ -5,6 +5,7 @@
 
 use tauri::State;
 
+use crate::db::activities::{self, ActivityInput};
 use crate::db::assignment::{self, EventFieldsInput, ReprocessEventTypesResult};
 use crate::db::categories::{self, NewCategory};
 use crate::db::error::DbResult;
@@ -12,7 +13,7 @@ use crate::db::event_types::{
     self, DeleteEventTypeOutcome, EventTypeRuleUpdate, EventTypeUpdate, NewEventType, NewEventTypeRule,
 };
 use crate::db::events::{self, EventUpdate, NewEvent};
-use crate::db::models::{Category, Event, EventType, EventTypeRule};
+use crate::db::models::{Activity, Category, Event, EventType, EventTypeRule};
 use crate::db::Db;
 
 #[tauri::command]
@@ -110,6 +111,30 @@ pub async fn update_event_type_rule(
 #[tauri::command]
 pub async fn delete_event_type_rule(db: State<'_, Db>, id: i64) -> DbResult<bool> {
     db.call(move |conn| event_types::delete_event_type_rule(conn, id)).await
+}
+
+#[tauri::command]
+pub async fn get_activities(db: State<'_, Db>) -> DbResult<Vec<Activity>> {
+    db.call(activities::list_activities).await
+}
+
+#[tauri::command]
+pub async fn create_activity(db: State<'_, Db>, activity: ActivityInput) -> DbResult<Activity> {
+    db.call(move |conn| activities::create_activity(conn, &activity)).await
+}
+
+#[tauri::command]
+pub async fn update_activity(
+    db: State<'_, Db>,
+    id: i64,
+    activity: ActivityInput,
+) -> DbResult<Option<Activity>> {
+    db.call(move |conn| activities::update_activity(conn, id, &activity)).await
+}
+
+#[tauri::command]
+pub async fn delete_activity(db: State<'_, Db>, id: i64) -> DbResult<bool> {
+    db.call(move |conn| activities::delete_activity(conn, id)).await
 }
 
 #[tauri::command]
