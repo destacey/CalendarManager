@@ -140,6 +140,36 @@ impl Activity {
     }
 }
 
+/// Mirrors `Project` in `src/types/index.ts`.
+///
+/// No `#[serde(rename_all = "camelCase")]` — domain field names stay
+/// `snake_case` across IPC, as everywhere else in this module.
+///
+/// `program` is `Option<String>`: it is free text and a project need not
+/// belong to a program, so the column is nullable.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Project {
+    pub id: Option<i64>,
+    pub name: String,
+    pub code: String,
+    pub program: Option<String>,
+    pub is_active: bool,
+    pub created_at: Option<String>,
+}
+
+impl Project {
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get("id")?,
+            name: row.get("name")?,
+            code: row.get("code")?,
+            program: row.get("program")?,
+            is_active: row.get("is_active")?,
+            created_at: row.get("created_at")?,
+        })
+    }
+}
+
 /// Mirrors `EventTypeRule` in `src/types/index.ts`. `field_name` and
 /// `operator` are typed as string literal unions there (`'title' |
 /// 'is_all_day' | ...`, `'equals' | 'contains' | 'is_empty'`); they stay

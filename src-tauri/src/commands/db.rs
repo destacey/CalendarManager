@@ -6,6 +6,7 @@
 use tauri::State;
 
 use crate::db::activities::{self, ActivityInput};
+use crate::db::projects::{self, ProjectInput};
 use crate::db::assignment::{self, EventFieldsInput, ReprocessEventTypesResult};
 use crate::db::categories::{self, NewCategory};
 use crate::db::error::DbResult;
@@ -13,7 +14,7 @@ use crate::db::event_types::{
     self, DeleteEventTypeOutcome, EventTypeRuleUpdate, EventTypeUpdate, NewEventType, NewEventTypeRule,
 };
 use crate::db::events::{self, EventUpdate, NewEvent};
-use crate::db::models::{Activity, Category, Event, EventType, EventTypeRule};
+use crate::db::models::{Activity, Category, Event, EventType, EventTypeRule, Project};
 use crate::db::Db;
 
 #[tauri::command]
@@ -111,6 +112,30 @@ pub async fn update_event_type_rule(
 #[tauri::command]
 pub async fn delete_event_type_rule(db: State<'_, Db>, id: i64) -> DbResult<bool> {
     db.call(move |conn| event_types::delete_event_type_rule(conn, id)).await
+}
+
+#[tauri::command]
+pub async fn get_projects(db: State<'_, Db>) -> DbResult<Vec<Project>> {
+    db.call(projects::list_projects).await
+}
+
+#[tauri::command]
+pub async fn create_project(db: State<'_, Db>, project: ProjectInput) -> DbResult<Project> {
+    db.call(move |conn| projects::create_project(conn, &project)).await
+}
+
+#[tauri::command]
+pub async fn update_project(
+    db: State<'_, Db>,
+    id: i64,
+    project: ProjectInput,
+) -> DbResult<Option<Project>> {
+    db.call(move |conn| projects::update_project(conn, id, &project)).await
+}
+
+#[tauri::command]
+pub async fn delete_project(db: State<'_, Db>, id: i64) -> DbResult<bool> {
+    db.call(move |conn| projects::delete_project(conn, id)).await
 }
 
 #[tauri::command]

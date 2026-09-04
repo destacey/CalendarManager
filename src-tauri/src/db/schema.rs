@@ -8,7 +8,7 @@ use super::error::DbError;
 
 /// Bumped whenever a migration is added. Stored in SQLite's built-in
 /// PRAGMA user_version, so no bookkeeping table is needed.
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 /// Migration 1 is the complete schema as electron/main.js left it. It is
 /// written to be idempotent — CREATE TABLE IF NOT EXISTS, and column adds
@@ -173,6 +173,29 @@ const MIGRATION_2: &str = r#"
       ('UX Design',            '#eb2f96');
 "#;
 
+/// Migration 3 adds the `projects` table.
+///
+/// Unlike migration 2 there is no seed: projects are the user's own data,
+/// with no sensible starter set.
+///
+/// `code` is `UNIQUE` and carries the identity of a project; `name` is not,
+/// because two projects under different programs may legitimately share one.
+/// `program` is free text and nullable — a project need not belong to one.
+///
+/// Idempotent for the same reason the earlier migrations are: `run_migrations`
+/// re-applies the whole ladder from `version + 1` for a `user_version` 0
+/// database, which the real legacy database still is.
+const MIGRATION_3: &str = r#"
+    CREATE TABLE IF NOT EXISTS projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      code TEXT NOT NULL UNIQUE,
+      program TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+"#;
+
 fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, DbError> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
@@ -221,6 +244,7 @@ fn apply_migration(conn: &Connection, version: i64) -> Result<(), DbError> {
     match version {
         1 => apply_migration_1(conn),
         2 => apply_migration_2(conn),
+        3 => apply_migration_3(conn),
         other => Err(DbError::Other(format!("no migration defined for schema version {other}"))),
     }
 }
@@ -239,6 +263,11 @@ fn apply_migration_1(conn: &Connection) -> Result<(), DbError> {
 
 fn apply_migration_2(conn: &Connection) -> Result<(), DbError> {
     conn.execute_batch(MIGRATION_2)?;
+    Ok(())
+}
+
+fn apply_migration_3(conn: &Connection) -> Result<(), DbError> {
+    conn.execute_batch(MIGRATION_3)?;
     Ok(())
 }
 
@@ -356,6 +385,51 @@ mod tests {
             .unwrap();
 
         assert_eq!(bad, 0, "every seeded activity needs a colour and is_active = 1");
+    }
+
+    /// Projects are user data, so unlike the activities seed there is nothing
+    /// to assert about content — only that the table exists with the shape the
+    /// CRUD module and the UI expect.
+    #[test]
+    fn migration_3_creates_an_empty_projects_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM projects", [], |row| row.get(0))
+            .unwrap();
+
+        assert_eq!(count, 0, "projects must start empty - there is no seed");
+        assert_eq!(
+            columns(&conn, "projects"),
+            vec!["id", "name", "code", "program", "is_active", "created_at"]
+        );
+    }
+
+    /// `code` carries a project's identity, so the UNIQUE constraint is what
+    /// the readable duplicate-code error in src/api/projects.ts keys off.
+    /// `name` deliberately has no such constraint.
+    #[test]
+    fn project_code_is_unique_but_name_is_not() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO projects (name, code, program) VALUES ('Rebuild', 'PRJ-001', 'Platform')",
+            [],
+        )
+        .unwrap();
+
+        let duplicate_code = conn.execute(
+            "INSERT INTO projects (name, code) VALUES ('Something else', 'PRJ-001')",
+            [],
+        );
+        assert!(duplicate_code.is_err(), "a repeated code must be rejected");
+
+        let duplicate_name = conn.execute(
+            "INSERT INTO projects (name, code) VALUES ('Rebuild', 'PRJ-002')",
+            [],
+        );
+        assert!(duplicate_name.is_ok(), "two projects may share a name");
     }
 
     #[test]

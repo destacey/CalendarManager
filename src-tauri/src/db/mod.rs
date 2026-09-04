@@ -8,6 +8,7 @@ pub mod event_types;
 pub mod events;
 pub mod migrate;
 pub mod models;
+pub mod projects;
 pub mod rules;
 pub mod schema;
 pub mod sync;
