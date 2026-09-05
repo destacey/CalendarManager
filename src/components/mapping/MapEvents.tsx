@@ -354,17 +354,6 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
             onClick={() => setMonth(m => m.add(1, 'month'))}
           />
         </Space>
-        <Space size={6}>
-          <Switch
-            size="small"
-            checked={billableOnly}
-            onChange={setBillableOnly}
-            aria-label="Billable types only"
-          />
-          <Text type="secondary" style={{ fontSize: 13 }}>
-            Billable types only
-          </Text>
-        </Space>
       </Flex>
 
       {loading ? (
@@ -398,10 +387,25 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
                   )}
                   {refreshing && <Spin size="small" />}
                   <div style={{ flexGrow: 1 }} />
-                  <Text type="secondary" style={{ fontSize: 11 }}>
-                    ctrl-click to add
-                  </Text>
+                  {/* Panel-scoped, like the Projects panel's own toggle: it
+                      filters THIS list, and in the page header it read as
+                      though it applied to the whole screen. */}
+                  <Space size={6}>
+                    <Switch
+                      size="small"
+                      checked={billableOnly}
+                      onChange={setBillableOnly}
+                      aria-label="Billable types only"
+                    />
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      Billable types only
+                    </Text>
+                  </Space>
                 </Flex>
+
+                <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
+                  ctrl-click to add to the selection
+                </Text>
 
                 <Input
                   allowClear

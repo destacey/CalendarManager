@@ -320,6 +320,31 @@ describe('MapEvents', () => {
       expect(document.querySelector('.ant-splitter-bar')).toBeInTheDocument()
     })
 
+    /* It filters the unmapped list, so it has to live in that panel. In the
+       page header it read as though it applied to the whole screen. */
+    it('puts the billable filter in the events panel, beside the search', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+
+      const search = screen.getByPlaceholderText('Search events and categories')
+      const toggle = screen.getByRole('switch', { name: /billable types only/i })
+      const panel = search.closest('.ant-splitter-panel')
+
+      expect(panel).not.toBeNull()
+      expect(panel).toContainElement(toggle)
+
+      // And it still works from its new home.
+      await user.click(toggle)
+      await waitFor(() => {
+        expect(getUnmappedGroups).toHaveBeenLastCalledWith(
+          expect.any(String),
+          expect.any(String),
+          false
+        )
+      })
+    })
+
     it('gives the drag handle a keyboard-reachable control', async () => {
       render(<MapEvents />)
       await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
