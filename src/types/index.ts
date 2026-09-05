@@ -55,6 +55,11 @@ export interface Event {
   is_meeting?: boolean
   type_id?: number
   type_manually_set?: boolean
+  /** Where this event's time is booked. A project with no activity is valid. */
+  project_id?: number | null
+  activity_id?: number | null
+  /** Set when a human mapped it, which stops any rule moving it again. */
+  mapping_manually_set?: boolean
   created_at?: string
   updated_at?: string
   synced_at?: string

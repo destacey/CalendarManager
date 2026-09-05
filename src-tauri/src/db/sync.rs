@@ -733,4 +733,45 @@ mod tests {
 
         assert!(graph_ids_remaining(&conn).is_empty());
     }
+
+    /// The mapping columns are not in either UPDATE's column list, and they
+    /// must stay that way: a sync re-running over 8,900 events would otherwise
+    /// silently discard every project and activity the user had assigned.
+    #[test]
+    fn upsert_leaves_an_existing_mapping_untouched() {
+        let conn = setup();
+        let default_type = create_type(&conn, "Default", true);
+        let _ = default_type;
+        conn.execute(
+            "INSERT INTO projects (id, name, code) VALUES (1, 'Rebuild', 'PRJ-001')",
+            [],
+        )
+        .unwrap();
+
+        // First sync creates the event, then the user maps it by hand.
+        upsert_page(&conn, &[fields("g1", "Standup")]).unwrap();
+        conn.execute(
+            "UPDATE events SET project_id = 1, activity_id = 3, mapping_manually_set = 1
+             WHERE graph_id = 'g1'",
+            [],
+        )
+        .unwrap();
+
+        // A later sync brings the same event back with a changed title.
+        upsert_page(&conn, &[fields("g1", "Standup (renamed)")]).unwrap();
+
+        let (title, project_id, activity_id, manual): (String, Option<i64>, Option<i64>, bool) = conn
+            .query_row(
+                "SELECT title, project_id, activity_id, mapping_manually_set
+                 FROM events WHERE graph_id = 'g1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+
+        assert_eq!(title, "Standup (renamed)", "the sync still updates what it owns");
+        assert_eq!(project_id, Some(1), "the mapping must survive a sync");
+        assert_eq!(activity_id, Some(3));
+        assert!(manual, "and it must stay marked as hand-mapped");
+    }
 }

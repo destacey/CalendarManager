@@ -197,6 +197,8 @@ export const createEventModalProps = (overrides = {}) => ({
     }
   }),
   userTimezone: 'America/New_York',
+  projects: [],
+  activities: [],
   ...overrides
 })
 
@@ -296,6 +298,9 @@ export const createEventTableProps = (overrides = {}) => ({
   setIsModalVisible: vi.fn(),
   userTimezone: 'America/New_York',
   eventTypes: [],
+  projects: [],
+  activities: [],
+  onMappingChanged: vi.fn(),
   onExportReady: vi.fn(),
   ...overrides
 })

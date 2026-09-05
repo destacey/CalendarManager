@@ -28,7 +28,7 @@ use super::models::Event;
 const EVENT_COLUMNS: &str = "id, graph_id, title, description, start_date, end_date, \
      COALESCE(is_all_day, 0) AS is_all_day, COALESCE(show_as, 'busy') AS show_as, \
      COALESCE(categories, '') AS categories, location, organizer, attendees, is_meeting, \
-     type_id, type_manually_set, created_at, updated_at, synced_at";
+     type_id, type_manually_set, project_id, activity_id, \n     COALESCE(mapping_manually_set, 0) AS mapping_manually_set, \n     created_at, updated_at, synced_at";
 
 /// The same shape as `EVENT_COLUMNS`, but `description` comes back as NULL
 /// instead of being read from the row.
@@ -52,7 +52,7 @@ const EVENT_COLUMNS: &str = "id, graph_id, title, description, start_date, end_d
 const EVENT_LIST_COLUMNS: &str = "id, graph_id, title, NULL AS description, start_date, end_date, \
      COALESCE(is_all_day, 0) AS is_all_day, COALESCE(show_as, 'busy') AS show_as, \
      COALESCE(categories, '') AS categories, location, organizer, attendees, is_meeting, \
-     type_id, type_manually_set, created_at, updated_at, synced_at";
+     type_id, type_manually_set, project_id, activity_id, \n     COALESCE(mapping_manually_set, 0) AS mapping_manually_set, \n     created_at, updated_at, synced_at";
 
 /// The subset of `Event` a caller supplies to create one. No `id` (assigned
 /// by SQLite), and no `location`/`organizer`/`attendees`/`is_meeting`/

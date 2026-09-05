@@ -1,15 +1,16 @@
 import React, { useMemo, useRef, useState, useCallback } from 'react'
-import { Table, Typography, Tag, Tooltip, Button, Input, Space } from 'antd'
+import { Table, Typography, Tag, Tooltip, Button, Input, Space, Select } from 'antd'
 import { DownloadOutlined } from '@ant-design/icons'
 import type { ColumnsType, FilterDropdownProps } from 'antd/es/table'
 import type { TableRef } from 'antd/es/table'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import ExcelJS from 'exceljs'
-import { Event, EventType } from '../../types'
+import { Event, EventType, Project, Activity } from '../../types'
 import { calculateEventDuration } from '../../utils/eventUtils'
 import { useMessage } from '../../contexts/MessageContext'
 import { saveFile } from '../../api/files'
+import { mapEvents, unmapEvents } from '../../api/mapping'
 
 const { Text } = Typography
 
@@ -27,7 +28,123 @@ interface EventTableProps {
   setIsModalVisible: (visible: boolean) => void
   userTimezone: string
   eventTypes: EventType[]
+  projects: Project[]
+  activities: Activity[]
+  /** Called after an inline mapping change, so the grid can reload. */
+  onMappingChanged?: () => void
   onExportReady?: (exportFn: () => void) => void
+}
+
+/** Sentinel for "no activity" / "not mapped" — a real answer, not an absence. */
+const NONE = -1
+
+/**
+ * One editable mapping cell. Reads as plain text until clicked, then becomes a
+ * Select, so a grid of 500 rows is not 1,000 mounted form controls.
+ *
+ * Changing the project clears the activity: activities are not project-scoped
+ * today, but an activity chosen for one project is a claim about that project,
+ * and silently carrying it across is worse than asking again.
+ */
+export const MappingCell: React.FC<{
+  record: TableEvent
+  projects: Project[]
+  activities: Activity[]
+  field: 'project' | 'activity'
+  onChanged?: () => void
+}> = ({ record, projects, activities, field, onChanged }) => {
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const messageApi = useMessage()
+
+  const commit = async (value: number) => {
+    const chosen = value === NONE ? null : value
+    // Changing the project clears the activity; changing the activity keeps
+    // the project it belongs to.
+    const projectId = field === 'project' ? chosen : (record.project_id ?? null)
+    const activityId = field === 'project' ? null : chosen
+
+    setSaving(true)
+    try {
+      if (projectId == null) {
+        await unmapEvents([record.id!])
+      } else {
+        await mapEvents([record.id!], projectId, activityId)
+      }
+      setEditing(false)
+      onChanged?.()
+    } catch (error) {
+      console.error('Error changing mapping:', error)
+      messageApi.error('Failed to change the mapping')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    const label =
+      field === 'project'
+        ? record.project
+          ? `${record.project.code} — ${record.project.name}`
+          : null
+        : record.activity?.name ?? null
+
+    return (
+      <Button
+        type="link"
+        size="small"
+        aria-label={`Change ${field} for ${record.title}`}
+        onClick={e => {
+          e.stopPropagation()
+          setEditing(true)
+        }}
+        style={{
+          padding: 0,
+          height: 'auto',
+          fontSize: '12px',
+          textAlign: 'left',
+          maxWidth: '100%',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          color: label ? undefined : 'rgba(0,0,0,0.25)'
+        }}
+      >
+        {label ?? 'Unmapped'}
+      </Button>
+    )
+  }
+
+  const options =
+    field === 'project'
+      ? [
+          { value: NONE, label: 'Unmapped' },
+          ...projects
+            .filter(p => p.is_active || p.id === record.project_id)
+            .map(p => ({ value: p.id!, label: `${p.code} — ${p.name}` }))
+        ]
+      : [
+          { value: NONE, label: 'No activity' },
+          ...activities
+            .filter(a => a.is_active || a.id === record.activity_id)
+            .map(a => ({ value: a.id!, label: a.name }))
+        ]
+
+  return (
+    <Select
+      autoFocus
+      defaultOpen
+      size="small"
+      loading={saving}
+      style={{ width: '100%' }}
+      value={(field === 'project' ? record.project_id : record.activity_id) ?? NONE}
+      options={options}
+      onChange={commit}
+      onBlur={() => setEditing(false)}
+      onClick={e => e.stopPropagation()}
+      aria-label={`${field} for ${record.title}`}
+    />
+  )
 }
 
 interface TableEvent extends Event {
@@ -36,6 +153,8 @@ interface TableEvent extends Event {
   endDateTime?: Dayjs
   duration: string
   eventType?: EventType
+  project?: Project
+  activity?: Activity
   displayStartTime: string
   displayEndTime: string
   displayDate: string
@@ -50,6 +169,9 @@ const EventTable: React.FC<EventTableProps> = ({
   setIsModalVisible,
   userTimezone,
   eventTypes,
+  projects,
+  activities,
+  onMappingChanged,
   onExportReady
 }) => {
   const tableRef = useRef<TableRef>(null)
@@ -113,6 +235,10 @@ const EventTable: React.FC<EventTableProps> = ({
         
         // Find event type
         const eventType = event.type_id ? eventTypes.find(t => t.id === event.type_id) : undefined
+        const project = event.project_id ? projects.find(p => p.id === event.project_id) : undefined
+        const activity = event.activity_id
+          ? activities.find(a => a.id === event.activity_id)
+          : undefined
         
         // Calculate duration using shared utility
         const duration = calculateEventDuration(
@@ -129,6 +255,8 @@ const EventTable: React.FC<EventTableProps> = ({
           endDateTime,
           duration,
           eventType,
+          project,
+          activity,
           displayStartTime: event.is_all_day ? 'All Day' : startDateTime.format('h:mm A'),
           displayEndTime: event.is_all_day ? 'All Day' : (endDateTime ? endDateTime.format('h:mm A') : ''),
           displayDate: startDateTime.format('MMM D, YYYY')
@@ -142,7 +270,7 @@ const EventTable: React.FC<EventTableProps> = ({
     
     // Sort events by start date/time
     return events.sort((a, b) => a.startDateTime.valueOf() - b.startDateTime.valueOf())
-  }, [dateRange, getEventsForDate, userTimezone, eventTypes])
+  }, [dateRange, getEventsForDate, userTimezone, eventTypes, projects, activities])
 
   // Generate filter options based on actual data
   const filterOptions = useMemo(() => {
@@ -457,6 +585,61 @@ const EventTable: React.FC<EventTableProps> = ({
         <Text style={{ fontSize: '12px' }}>
           {record.show_as || 'unknown'}
         </Text>
+      )
+    },
+    {
+      title: 'Project',
+      key: 'project',
+      width: 190,
+      filters: projects.map(p => ({ text: `${p.code} — ${p.name}`, value: p.id! })),
+      onFilter: (value, record) => record.project_id === value,
+      sorter: (a, b) => (a.project?.name ?? '').localeCompare(b.project?.name ?? ''),
+      /* Editable in place: the grid is where you notice a mapping is wrong,
+         and making the user go to another screen to fix it is the kind of
+         friction that leaves it wrong. */
+      render: (_, record) => (
+        <MappingCell
+          record={record}
+          projects={projects}
+          activities={activities}
+          field="project"
+          onChanged={onMappingChanged}
+        />
+      )
+    },
+    {
+      title: 'Program',
+      key: 'program',
+      width: 150,
+      filters: Array.from(
+        new Set(projects.map(p => p.program).filter((x): x is string => !!x))
+      ).map(program => ({ text: program, value: program })),
+      onFilter: (value, record) => record.project?.program === value,
+      sorter: (a, b) => (a.project?.program ?? '').localeCompare(b.project?.program ?? ''),
+      /* Read-only, and deliberately: a program belongs to the project, so it
+         is changed on the Projects tab rather than per event. */
+      render: (_, record) =>
+        record.project?.program ? (
+          <Text style={{ fontSize: '12px' }}>{record.project.program}</Text>
+        ) : (
+          <Text type="secondary" style={{ fontSize: '12px' }}>—</Text>
+        )
+    },
+    {
+      title: 'Activity',
+      key: 'activity',
+      width: 190,
+      filters: activities.map(a => ({ text: a.name, value: a.id! })),
+      onFilter: (value, record) => record.activity_id === value,
+      sorter: (a, b) => (a.activity?.name ?? '').localeCompare(b.activity?.name ?? ''),
+      render: (_, record) => (
+        <MappingCell
+          record={record}
+          projects={projects}
+          activities={activities}
+          field="activity"
+          onChanged={onMappingChanged}
+        />
       )
     },
     {

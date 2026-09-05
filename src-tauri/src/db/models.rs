@@ -36,6 +36,12 @@ pub struct Event {
     pub is_meeting: Option<bool>,
     pub type_id: Option<i64>,
     pub type_manually_set: Option<bool>,
+    /// Where this event's time is booked. Both nullable, and an event may
+    /// have a project with no activity — that is a real answer, not a gap.
+    pub project_id: Option<i64>,
+    pub activity_id: Option<i64>,
+    /// Set when a human mapped it, which stops any rule moving it again.
+    pub mapping_manually_set: Option<bool>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
     pub synced_at: Option<String>,
@@ -62,6 +68,9 @@ impl Event {
             is_meeting: row.get("is_meeting")?,
             type_id: row.get("type_id")?,
             type_manually_set: row.get("type_manually_set")?,
+            project_id: row.get("project_id")?,
+            activity_id: row.get("activity_id")?,
+            mapping_manually_set: row.get("mapping_manually_set")?,
             created_at: row.get("created_at")?,
             updated_at: row.get("updated_at")?,
             synced_at: row.get("synced_at")?,
