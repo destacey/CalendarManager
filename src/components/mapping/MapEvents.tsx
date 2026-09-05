@@ -113,10 +113,12 @@ export const GroupCard: React.FC<{
   )
 }
 
-const ProjectRow: React.FC<{ project: Project; children?: React.ReactNode }> = ({
-  project,
-  children
-}) => {
+const ProjectRow: React.FC<{
+  project: Project
+  /** False when the program is already the group heading above. */
+  showProgram?: boolean
+  children?: React.ReactNode
+}> = ({ project, showProgram = true, children }) => {
   const { token } = theme.useToken()
   const { setNodeRef, isOver } = useDroppable({ id: `project-${project.id}`, data: { project } })
 
@@ -134,11 +136,13 @@ const ProjectRow: React.FC<{ project: Project; children?: React.ReactNode }> = (
         gap: 8
       }}
     >
-      <Text code>{project.code}</Text>
+      <Text code style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+        {project.code}
+      </Text>
       <Text strong type={project.is_active ? undefined : 'secondary'}>
         {project.name}
       </Text>
-      {project.program && (
+      {showProgram && project.program && (
         <Text type="secondary" style={{ fontSize: 12 }}>
           {project.program}
         </Text>
@@ -190,6 +194,7 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
   const [billableOnly, setBillableOnly] = useState(true)
   const [search, setSearch] = useState('')
   const [includeInactiveProjects, setIncludeInactiveProjects] = useState(false)
+  const [groupByProgram, setGroupByProgram] = useState(false)
   const [month, setMonth] = useState<Dayjs>(dayjs())
   const [dragging, setDragging] = useState<UnmappedGroup | null>(null)
   const [picker, setPicker] = useState<PickerState | null>(null)
@@ -275,6 +280,30 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
   )
 
   const inactiveProjectCount = projects.filter(p => !p.is_active).length
+
+  /* Programs in alphabetical order, with the projects that have none last -
+     "no program" is an absence, not a name, so sorting it in among real ones
+     would be arbitrary. Order within a group is left as the backend returned
+     it, which is already by name. */
+  const projectGroups = useMemo(() => {
+    const byProgram = new Map<string, Project[]>()
+    for (const project of visibleProjects) {
+      const key = project.program?.trim() || ''
+      const existing = byProgram.get(key)
+      if (existing) existing.push(project)
+      else byProgram.set(key, [project])
+    }
+
+    return Array.from(byProgram.entries())
+      .sort(([a], [b]) => {
+        if (a === '') return 1
+        if (b === '') return -1
+        return a.localeCompare(b)
+      })
+      .map(([program, items]) => ({ program, projects: items }))
+  }, [visibleProjects])
+
+  const programCount = projectGroups.filter(g => g.program !== '').length
 
   const totalSelectedEvents = selectedGroups.reduce((n, g) => n + g.eventCount, 0)
 
@@ -370,10 +399,12 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
                 style={{
                   height: '100%',
                   overflowY: 'auto',
-                  paddingRight: 12,
+                  // Right padding keeps the toggle clear of the splitter bar;
+                  // a little left padding stops the cards touching the frame.
+                  padding: '2px 16px 2px 2px',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 10
+                  gap: 12
                 }}
               >
                 <Flex align="center" gap={8} style={{ flexShrink: 0 }}>
@@ -403,7 +434,7 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
                   </Space>
                 </Flex>
 
-                <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
+                <Text type="secondary" style={{ fontSize: 11, flexShrink: 0, marginTop: -4 }}>
                   ctrl-click to add to the selection
                 </Text>
 
@@ -451,10 +482,12 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
                 style={{
                   height: '100%',
                   overflowY: 'auto',
-                  paddingLeft: 12,
+                  // Right padding matters here too: without it the toggle and
+                  // the rows run under the panel's own scrollbar.
+                  padding: '2px 16px 2px 16px',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 10
+                  gap: 12
                 }}
               >
                 <Flex align="center" gap={8} style={{ flexShrink: 0 }} wrap>
@@ -462,6 +495,19 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
                     Projects
                   </Text>
                   <div style={{ flexGrow: 1 }} />
+                  {programCount > 0 && (
+                    <Space size={6}>
+                      <Switch
+                        size="small"
+                        checked={groupByProgram}
+                        onChange={setGroupByProgram}
+                        aria-label="Group by program"
+                      />
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        Group by program
+                      </Text>
+                    </Space>
+                  )}
                   {inactiveProjectCount > 0 && (
                     <Space size={6}>
                       <Switch
@@ -475,10 +521,11 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
                       </Text>
                     </Space>
                   )}
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    Drop the selection on a project
-                  </Text>
                 </Flex>
+
+                <Text type="secondary" style={{ fontSize: 11, flexShrink: 0, marginTop: -4 }}>
+                  Drop the selection on a project
+                </Text>
 
                 {visibleProjects.length === 0 ? (
                   <Empty
@@ -490,9 +537,37 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
                   />
                 ) : (
                   <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-                    {visibleProjects.map(project => (
-                      <ProjectRow key={project.id} project={project} />
-                    ))}
+                    {groupByProgram
+                      ? projectGroups.map(group => (
+                          <div key={group.program || '__none__'} style={{ width: '100%' }}>
+                            <Text
+                              type="secondary"
+                              style={{
+                                fontSize: 11,
+                                textTransform: 'uppercase',
+                                letterSpacing: '.04em'
+                              }}
+                            >
+                              {group.program || 'No program'}
+                            </Text>
+                            <Space
+                              orientation="vertical"
+                              size={8}
+                              style={{ width: '100%', marginTop: 6 }}
+                            >
+                              {group.projects.map(project => (
+                                <ProjectRow
+                                  key={project.id}
+                                  project={project}
+                                  showProgram={false}
+                                />
+                              ))}
+                            </Space>
+                          </div>
+                        ))
+                      : visibleProjects.map(project => (
+                          <ProjectRow key={project.id} project={project} />
+                        ))}
                   </Space>
                 )}
               </div>

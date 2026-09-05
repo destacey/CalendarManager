@@ -56,6 +56,9 @@ const mockGroups = [
 
 const mockProjects = [
   { id: 1, name: 'Website Rebuild', code: 'PRJ-001', program: 'Platform', is_active: true },
+  { id: 3, name: 'Billing Migration', code: 'PRJ-002', program: 'Finance', is_active: true },
+  { id: 4, name: 'Job Distribution', code: 'PRJ-003', program: 'Platform', is_active: true },
+  { id: 5, name: 'Internal', code: 'PRJ-004', program: null, is_active: true },
   { id: 2, name: 'Retired Project', code: 'PRJ-OLD', program: null, is_active: false }
 ]
 
@@ -368,6 +371,95 @@ describe('MapEvents', () => {
 
     await waitFor(() => {
       expect(screen.getByText('No projects — add one in Settings')).toBeInTheDocument()
+    })
+  })
+
+  describe('grouping projects by program', () => {
+    /* Flat: the program is repeated on each of the two Platform rows.
+       Grouped: it appears once, as the heading, and the rows stop repeating
+       it. The count is what distinguishes the two modes. */
+    it('is off by default, repeating the program on each row', async () => {
+      render(<MapEvents />)
+
+      await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+      expect(screen.getByRole('switch', { name: /group by program/i })).not.toBeChecked()
+      expect(screen.getAllByText('Platform')).toHaveLength(2)
+    })
+
+    it('groups under a single program heading when switched on', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+
+      await user.click(screen.getByRole('switch', { name: /group by program/i }))
+
+      expect(screen.getAllByText('Platform')).toHaveLength(1)
+      expect(screen.getByText('Finance')).toBeInTheDocument()
+    })
+
+    /* "No program" is an absence rather than a name, so sorting it in among
+       real programs would be arbitrary - it goes last. */
+    it('puts projects with no program last, under their own heading', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+
+      await user.click(screen.getByRole('switch', { name: /group by program/i }))
+
+      const finance = screen.getByText('Finance')
+      const none = screen.getByText('No program')
+
+      expect(none).toBeInTheDocument()
+      expect(
+        finance.compareDocumentPosition(none) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
+    })
+
+    it('keeps every project visible when grouped', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+
+      await user.click(screen.getByRole('switch', { name: /group by program/i }))
+
+      for (const name of ['Website Rebuild', 'Billing Migration', 'Job Distribution', 'Internal']) {
+        expect(screen.getByText(name)).toBeInTheDocument()
+      }
+    })
+
+    /* Grouping is a view change; the rows must still be drop targets. */
+    it('leaves each project a drop target when grouped', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+
+      await user.click(screen.getByRole('switch', { name: /group by program/i }))
+
+      expect(screen.getByTestId('project-drop-1')).toBeInTheDocument()
+      expect(screen.getByTestId('project-drop-3')).toBeInTheDocument()
+    })
+
+    it('offers no toggle when no project has a program', async () => {
+      vi.mocked(getProjects).mockResolvedValue([
+        { id: 5, name: 'Internal', code: 'PRJ-004', program: null, is_active: true }
+      ])
+      render(<MapEvents />)
+
+      await waitFor(() => expect(screen.getByText('Internal')).toBeInTheDocument())
+      expect(
+        screen.queryByRole('switch', { name: /group by program/i })
+      ).not.toBeInTheDocument()
+    })
+
+    it('does not reload when toggled', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+      const before = vi.mocked(getProjects).mock.calls.length
+
+      await user.click(screen.getByRole('switch', { name: /group by program/i }))
+
+      expect(vi.mocked(getProjects).mock.calls.length).toBe(before)
     })
   })
 
