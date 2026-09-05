@@ -15,6 +15,7 @@ pub mod projects;
 pub mod rules;
 pub mod schema;
 pub mod sync;
+pub mod timecards;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
