@@ -23,7 +23,7 @@ const mockEventTypes: EventType[] = [
     name: 'Work',
     color: '#1890ff',
     is_default: false,
-    is_billable: false,
+    is_billable: false, all_day_hours: 8,
     created_at: '2023-01-01T00:00:00Z'
   },
   {
@@ -31,7 +31,7 @@ const mockEventTypes: EventType[] = [
     name: 'Personal',
     color: '#52c41a',
     is_default: true,
-    is_billable: false,
+    is_billable: false, all_day_hours: 8,
     created_at: '2023-01-01T00:00:00Z'
   }
 ]
@@ -42,7 +42,7 @@ describe('EventTypesSettings', () => {
 
     // Default mock implementations
     mockEventTypesApi.getEventTypes.mockResolvedValue(mockEventTypes)
-    mockEventTypesApi.createEventType.mockResolvedValue({ id: 3, name: 'New Type', color: '#000000', is_billable: false })
+    mockEventTypesApi.createEventType.mockResolvedValue({ id: 3, name: 'New Type', color: '#000000', is_billable: false, all_day_hours: 8 })
     mockEventTypesApi.updateEventType.mockResolvedValue(mockEventTypes[0])
     mockEventTypesApi.deleteEventType.mockResolvedValue({ deleted: true, eventsReassigned: 0, rulesRemoved: 0, reassignedTo: null })
     mockEventTypesApi.setDefaultEventType.mockResolvedValue(true)

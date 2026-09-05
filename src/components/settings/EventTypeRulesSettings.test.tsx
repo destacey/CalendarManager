@@ -36,14 +36,14 @@ const mockEventTypes: EventType[] = [
     name: 'Work',
     color: '#1890ff',
     is_default: false,
-    is_billable: false
+    is_billable: false, all_day_hours: 8
   },
   {
     id: 2,
     name: 'Personal',
     color: '#52c41a',
     is_default: true,
-    is_billable: false
+    is_billable: false, all_day_hours: 8
   }
 ]
 

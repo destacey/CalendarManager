@@ -8,7 +8,7 @@ use super::error::DbError;
 
 /// Bumped whenever a migration is added. Stored in SQLite's built-in
 /// PRAGMA user_version, so no bookkeeping table is needed.
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 /// Migration 1 is the complete schema as electron/main.js left it. It is
 /// written to be idempotent — CREATE TABLE IF NOT EXISTS, and column adds
@@ -240,6 +240,20 @@ const MIGRATION_4: &str = r#"
     CREATE INDEX IF NOT EXISTS idx_events_project_id ON events(project_id);
 "#;
 
+/// Migration 5: how many hours one day of an all-day event is worth, per
+/// event type.
+///
+/// Per type rather than one global number, because a day of Training and a day
+/// of PTO are not obviously the same amount of billable time. `0` means "does
+/// not count", which is how a Birthday or a company Holiday type opts out
+/// without needing a separate flag.
+///
+/// The default is 8 rather than 24. Until now the billable footer valued an
+/// all-day day at 1440 minutes, so a five-day PTO block counted as 120 hours.
+const MIGRATION_5_COLUMNS: &[(&str, &str, &str)] = &[
+    ("event_types", "all_day_hours", "REAL NOT NULL DEFAULT 8"),
+];
+
 fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, DbError> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
@@ -290,6 +304,7 @@ fn apply_migration(conn: &Connection, version: i64) -> Result<(), DbError> {
         2 => apply_migration_2(conn),
         3 => apply_migration_3(conn),
         4 => apply_migration_4(conn),
+        5 => apply_migration_5(conn),
         other => Err(DbError::Other(format!("no migration defined for schema version {other}"))),
     }
 }
@@ -326,6 +341,16 @@ fn apply_migration_4(conn: &Connection) -> Result<(), DbError> {
     }
 
     conn.execute_batch(MIGRATION_4)?;
+
+    Ok(())
+}
+
+fn apply_migration_5(conn: &Connection) -> Result<(), DbError> {
+    for (table, column, definition) in MIGRATION_5_COLUMNS {
+        if !has_column(conn, table, column)? {
+            conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition};"))?;
+        }
+    }
 
     Ok(())
 }
@@ -546,6 +571,37 @@ mod tests {
             [],
         );
         assert!(dangling_project.is_err(), "a rule may not target a missing project");
+    }
+
+    /// 8, not 24: the billable footer valued an all-day day at 1440 minutes,
+    /// so a five-day PTO block counted as 120 hours.
+    #[test]
+    fn migration_5_gives_every_event_type_eight_all_day_hours() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        conn.execute("INSERT INTO event_types (name) VALUES ('Work')", []).unwrap();
+
+        let hours: f64 = conn
+            .query_row("SELECT all_day_hours FROM event_types WHERE name = 'Work'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+
+        assert_eq!(hours, 8.0);
+    }
+
+    /// 0 is how a Birthday or Holiday type opts out of counting at all.
+    #[test]
+    fn all_day_hours_may_be_zero() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let inserted = conn.execute(
+            "INSERT INTO event_types (name, all_day_hours) VALUES ('Holiday', 0)",
+            [],
+        );
+
+        assert!(inserted.is_ok());
     }
 
     #[test]
