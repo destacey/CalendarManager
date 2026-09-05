@@ -23,15 +23,13 @@ import { getActivities } from '../../api/activities'
 
 const { Text, Title } = Typography
 
-// Deliberately no `onEventsUpdated`. The obvious thing here is to tell
-// App.tsx that events changed, but its only mechanism is bumping
-// `eventsRefreshKey`, and `<CalendarView key={eventsRefreshKey} />` DESTROYS
-// AND REBUILDS the whole calendar subtree — documented in docs/backlog.md as
-// the wrong mechanism, and measured at hundreds of milliseconds. The calendar
-// renders no project or activity data, so that work bought nothing and was
-// half of the flash after every drop. If mapping ever surfaces there, it
-// should come back as a data reload, not a remount.
-type MapEventsProps = Record<string, never>
+interface MapEventsProps {
+  /* Tells the app events changed so the calendar reloads when next shown.
+     Deliberately NOT a remount: `<CalendarView key={...} />` destroyed and
+     rebuilt the whole subtree, which docs/backlog.md records as the wrong
+     mechanism and which was half the flash after every drop. */
+  onEventsChanged?: () => void
+}
 
 /** What a drop is about to map, once the user picks an activity. */
 interface PickerState {
@@ -175,7 +173,7 @@ function formatEffort(group: UnmappedGroup): string {
   return parts.join(' · ') || '—'
 }
 
-const MapEvents: React.FC<MapEventsProps> = () => {
+const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
   const { token } = theme.useToken()
   const messageApi = useMessage()
   const [groups, setGroups] = useState<UnmappedGroup[]>([])
@@ -558,6 +556,7 @@ const MapEvents: React.FC<MapEventsProps> = () => {
           activities={activities}
           onDone={() => {
             setPicker(null)
+            onEventsChanged?.()
             load()
           }}
           onCancel={() => setPicker(null)}

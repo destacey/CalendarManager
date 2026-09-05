@@ -21,6 +21,7 @@ import { useMessage } from '../../contexts/MessageContext'
 import { getEventTypes } from '../../api/eventTypes'
 import { getProjects } from '../../api/projects'
 import { getActivities } from '../../api/activities'
+import { useRefreshOnShow } from '../../hooks/useRefreshOnShow'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -28,7 +29,19 @@ dayjs.extend(timezone)
 const { useBreakpoint } = Grid
 const { Title, Text } = Typography
 
-const CalendarView: React.FC = () => {
+interface CalendarViewProps {
+  /** True while this is the visible screen. */
+  isActive?: boolean
+  /** Something changed events elsewhere; reload when next shown. */
+  needsRefresh?: boolean
+  onRefreshed?: () => void
+}
+
+const CalendarView: React.FC<CalendarViewProps> = ({
+  isActive = true,
+  needsRefresh = false,
+  onRefreshed
+}) => {
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
   const [eventTypes, setEventTypes] = useState<EventType[]>([])
@@ -77,6 +90,15 @@ const CalendarView: React.FC = () => {
     loadEventTypes()
     loadMappingLookups()
   }, [])
+
+  /* Reload lazily when this screen is next shown - see the hook for why this
+     is not a remount. */
+  useRefreshOnShow(isActive, needsRefresh, () => {
+    refreshEvents?.()
+    loadEventTypes()
+    loadMappingLookups()
+    onRefreshed?.()
+  })
 
   // Show error messages when they occur
   useEffect(() => {
