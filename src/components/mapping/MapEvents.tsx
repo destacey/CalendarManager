@@ -137,11 +137,18 @@ const ProjectRow: React.FC<{ project: Project; children?: React.ReactNode }> = (
       }}
     >
       <Text code>{project.code}</Text>
-      <Text strong>{project.name}</Text>
+      <Text strong type={project.is_active ? undefined : 'secondary'}>
+        {project.name}
+      </Text>
       {project.program && (
         <Text type="secondary" style={{ fontSize: 12 }}>
           {project.program}
         </Text>
+      )}
+      {/* Shown rather than merely dimmed: dropping onto a retired project is
+          a real choice, and it should be an obvious one. */}
+      {!project.is_active && (
+        <Tag style={{ marginInlineEnd: 0, fontSize: 11 }}>Inactive</Tag>
       )}
       <div style={{ flexGrow: 1 }} />
       {children}
@@ -184,6 +191,7 @@ const MapEvents: React.FC<MapEventsProps> = () => {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [billableOnly, setBillableOnly] = useState(true)
   const [search, setSearch] = useState('')
+  const [includeInactiveProjects, setIncludeInactiveProjects] = useState(false)
   const [month, setMonth] = useState<Dayjs>(dayjs())
   const [dragging, setDragging] = useState<UnmappedGroup | null>(null)
   const [picker, setPicker] = useState<PickerState | null>(null)
@@ -219,7 +227,7 @@ const MapEvents: React.FC<MapEventsProps> = () => {
         getActivities()
       ])
       setGroups(g)
-      setProjects(p.filter(x => x.is_active))
+      setProjects(p)
       setActivities(a.filter(x => x.is_active))
       setSelectedKeys([])
     } catch (error) {
@@ -258,6 +266,17 @@ const MapEvents: React.FC<MapEventsProps> = () => {
   const hiddenSelectedCount = selectedGroups.filter(
     g => !visibleGroups.some(v => v.key === g.key)
   ).length
+
+  /* Filtered here rather than at load, so toggling costs no round trip.
+     Retired projects are hidden by default because mapping new work to one is
+     almost always a mistake - but "almost" is why the toggle exists, for
+     backfilling a month that predates the project being retired. */
+  const visibleProjects = useMemo(
+    () => (includeInactiveProjects ? projects : projects.filter(p => p.is_active)),
+    [projects, includeInactiveProjects]
+  )
+
+  const inactiveProjectCount = projects.filter(p => !p.is_active).length
 
   const totalSelectedEvents = selectedGroups.reduce((n, g) => n + g.eventCount, 0)
 
@@ -436,21 +455,40 @@ const MapEvents: React.FC<MapEventsProps> = () => {
                   gap: 10
                 }}
               >
-                <Flex align="center" gap={8} style={{ flexShrink: 0 }}>
+                <Flex align="center" gap={8} style={{ flexShrink: 0 }} wrap>
                   <Text strong style={{ fontSize: 13 }}>
                     Projects
                   </Text>
                   <div style={{ flexGrow: 1 }} />
+                  {inactiveProjectCount > 0 && (
+                    <Space size={6}>
+                      <Switch
+                        size="small"
+                        checked={includeInactiveProjects}
+                        onChange={setIncludeInactiveProjects}
+                        aria-label="Include inactive projects"
+                      />
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        Include inactive ({inactiveProjectCount})
+                      </Text>
+                    </Space>
+                  )}
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     Drop the selection on a project
                   </Text>
                 </Flex>
 
-                {projects.length === 0 ? (
-                  <Empty description="No active projects — add one in Settings" />
+                {visibleProjects.length === 0 ? (
+                  <Empty
+                    description={
+                      projects.length === 0
+                        ? 'No projects — add one in Settings'
+                        : 'No active projects — switch on "Include inactive" or add one in Settings'
+                    }
+                  />
                 ) : (
                   <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-                    {projects.map(project => (
+                    {visibleProjects.map(project => (
                       <ProjectRow key={project.id} project={project} />
                     ))}
                   </Space>

@@ -337,12 +337,90 @@ describe('MapEvents', () => {
     })
   })
 
-  it('says so when there are no projects to map onto', async () => {
+  it('says so when there are no projects at all', async () => {
     vi.mocked(getProjects).mockResolvedValue([])
     render(<MapEvents />)
 
     await waitFor(() => {
-      expect(screen.getByText('No active projects — add one in Settings')).toBeInTheDocument()
+      expect(screen.getByText('No projects — add one in Settings')).toBeInTheDocument()
+    })
+  })
+
+  describe('inactive projects', () => {
+    /* Retired projects are hidden by default: mapping new work to one is
+       almost always a mistake. */
+    it('hides them until asked for', async () => {
+      render(<MapEvents />)
+
+      await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+      expect(screen.queryByText('Retired Project')).not.toBeInTheDocument()
+    })
+
+    it('shows them when the toggle is switched on', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+
+      await user.click(screen.getByRole('switch', { name: /include inactive projects/i }))
+
+      expect(screen.getByText('Retired Project')).toBeInTheDocument()
+    })
+
+    /* Dropping onto a retired project is a real choice, so it has to be an
+       obvious one rather than a row that looks like any other. */
+    it('marks a shown inactive project as inactive', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+
+      await user.click(screen.getByRole('switch', { name: /include inactive projects/i }))
+
+      expect(screen.getByText('Inactive')).toBeInTheDocument()
+    })
+
+    it('says how many there are to include', async () => {
+      render(<MapEvents />)
+
+      await waitFor(() => expect(screen.getByText('Include inactive (1)')).toBeInTheDocument())
+    })
+
+    /* Toggling is a view change, not a query - it must not refetch. */
+    it('does not reload when toggled', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+      const before = vi.mocked(getProjects).mock.calls.length
+
+      await user.click(screen.getByRole('switch', { name: /include inactive projects/i }))
+
+      expect(vi.mocked(getProjects).mock.calls.length).toBe(before)
+    })
+
+    it('offers no toggle when every project is active', async () => {
+      vi.mocked(getProjects).mockResolvedValue([
+        { id: 1, name: 'Website Rebuild', code: 'PRJ-001', program: 'Platform', is_active: true }
+      ])
+      render(<MapEvents />)
+
+      await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+      expect(
+        screen.queryByRole('switch', { name: /include inactive projects/i })
+      ).not.toBeInTheDocument()
+    })
+
+    /* All projects retired is a different problem from having none, and the
+       fix is different too. */
+    it('points at the toggle when every project is inactive', async () => {
+      vi.mocked(getProjects).mockResolvedValue([
+        { id: 2, name: 'Retired Project', code: 'PRJ-OLD', program: null, is_active: false }
+      ])
+      render(<MapEvents />)
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/switch on "Include inactive" or add one in Settings/)
+        ).toBeInTheDocument()
+      })
     })
   })
 
