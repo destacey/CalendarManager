@@ -35,13 +35,9 @@ use super::models::{EventType, EventTypeRule};
 /// `String` — see `events::EVENT_COLUMNS`'s doc comment for why a NULL there
 /// would otherwise fail the whole query, not just one row. The default
 /// matches the column's own `DEFAULT '#1890ff'`.
-const EVENT_TYPE_COLUMNS: &str = "id, name, COALESCE(color, '#1890ff') AS color, is_default, is_billable, \n     COALESCE(all_day_hours, 8) AS all_day_hours, created_at";
+const EVENT_TYPE_COLUMNS: &str = "id, name, COALESCE(color, '#1890ff') AS color, is_default, is_billable, created_at";
 const EVENT_TYPE_RULE_COLUMNS: &str =
     "id, name, priority, field_name, operator, value, target_type_id, created_at";
-
-fn default_all_day_hours() -> f64 {
-    8.0
-}
 
 /// What a caller supplies to create an event type: no `id` or `created_at`,
 /// both assigned by SQLite.
@@ -60,12 +56,6 @@ pub struct NewEventType {
     #[serde(default)]
     pub is_default: bool,
     pub is_billable: bool,
-    /// Defaults to 8, not 0. antd's `validateFields()` omits a field the modal
-    /// did not register, and a `#[serde(default)]` on f64 is 0.0 - which means
-    /// "does not count", so an omitted field would silently make every day of
-    /// an all-day event worth nothing.
-    #[serde(default = "default_all_day_hours")]
-    pub all_day_hours: f64,
 }
 
 /// The same four columns `db:updateEventType` (main.js:515) touched.
@@ -78,12 +68,6 @@ pub struct EventTypeUpdate {
     #[serde(default)]
     pub is_default: bool,
     pub is_billable: bool,
-    /// Defaults to 8, not 0. antd's `validateFields()` omits a field the modal
-    /// did not register, and a `#[serde(default)]` on f64 is 0.0 - which means
-    /// "does not count", so an omitted field would silently make every day of
-    /// an all-day event worth nothing.
-    #[serde(default = "default_all_day_hours")]
-    pub all_day_hours: f64,
 }
 
 /// What a caller supplies to create a rule: no `id` or `created_at`.
@@ -134,15 +118,8 @@ pub fn get_event_types(conn: &Connection) -> DbResult<Vec<EventType>> {
 /// coercion and defaults are what the caller actually gets back.
 pub fn create_event_type(conn: &Connection, new_type: &NewEventType) -> DbResult<EventType> {
     conn.execute(
-        "INSERT INTO event_types (name, color, is_default, is_billable, all_day_hours)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![
-            new_type.name,
-            new_type.color,
-            new_type.is_default,
-            new_type.is_billable,
-            new_type.all_day_hours
-        ],
+        "INSERT INTO event_types (name, color, is_default, is_billable) VALUES (?1, ?2, ?3, ?4)",
+        params![new_type.name, new_type.color, new_type.is_default, new_type.is_billable],
     )?;
     let id = conn.last_insert_rowid();
     get_event_type_by_id(conn, id)?
@@ -153,17 +130,8 @@ pub fn create_event_type(conn: &Connection, new_type: &NewEventType) -> DbResult
 /// `result.changes > 0 ? {...} : null`.
 pub fn update_event_type(conn: &Connection, id: i64, update: &EventTypeUpdate) -> DbResult<Option<EventType>> {
     let changed = conn.execute(
-        "UPDATE event_types SET name = ?1, color = ?2, is_default = ?3, is_billable = ?4,
-                                all_day_hours = ?5
-         WHERE id = ?6",
-        params![
-            update.name,
-            update.color,
-            update.is_default,
-            update.is_billable,
-            update.all_day_hours,
-            id
-        ],
+        "UPDATE event_types SET name = ?1, color = ?2, is_default = ?3, is_billable = ?4 WHERE id = ?5",
+        params![update.name, update.color, update.is_default, update.is_billable, id],
     )?;
     if changed == 0 {
         return Ok(None);
@@ -415,7 +383,6 @@ mod tests {
             color: "#123456".to_string(),
             is_default,
             is_billable,
-            all_day_hours: 8.0,
         }
     }
 
@@ -487,58 +454,6 @@ mod tests {
     }
 
     /// Enumerated case: `update_event_type` returns `None` for a missing id.
-    /// A near-miss worth guarding: an earlier version of the UPDATE reused
-    /// the same placeholder for `all_day_hours` and `WHERE id`, which would
-    /// have written the row's own id into the hours column.
-    #[test]
-    fn all_day_hours_round_trips_through_create_and_update() {
-        let conn = setup();
-        let mut input = new_type("Training", false, true);
-        input.all_day_hours = 6.5;
-
-        let created = create_event_type(&conn, &input).unwrap();
-        assert_eq!(created.all_day_hours, 6.5);
-
-        let updated = update_event_type(
-            &conn,
-            created.id.unwrap(),
-            &EventTypeUpdate {
-                name: "Training".to_string(),
-                color: "#123456".to_string(),
-                is_default: false,
-                is_billable: true,
-                all_day_hours: 4.0,
-            },
-        )
-        .unwrap()
-        .unwrap();
-
-        assert_eq!(updated.all_day_hours, 4.0);
-        assert_eq!(updated.id, created.id, "the id must not have been overwritten");
-    }
-
-    /// antd omits a field its modal never registered, and 0 means "does not
-    /// count" - so an omitted value must not silently zero the type.
-    #[test]
-    fn new_event_type_defaults_all_day_hours_to_eight_when_absent() {
-        let parsed: NewEventType = serde_json::from_str(
-            r##"{"name":"Work","color":"#1890ff","is_billable":true}"##,
-        )
-        .unwrap();
-
-        assert_eq!(parsed.all_day_hours, 8.0);
-    }
-
-    #[test]
-    fn an_explicit_zero_survives_deserialization() {
-        let parsed: NewEventType = serde_json::from_str(
-            r##"{"name":"Holiday","color":"#cccccc","is_billable":false,"all_day_hours":0}"##,
-        )
-        .unwrap();
-
-        assert_eq!(parsed.all_day_hours, 0.0, "0 is how a type opts out of counting");
-    }
-
     #[test]
     fn update_event_type_returns_none_for_missing_id() {
         let conn = setup();
@@ -547,7 +462,6 @@ mod tests {
             color: "#000000".to_string(),
             is_default: false,
             is_billable: false,
-            all_day_hours: 8.0,
         })
         .unwrap();
         assert!(result.is_none());
@@ -566,7 +480,6 @@ mod tests {
                 color: "#abcdef".to_string(),
                 is_default: true,
                 is_billable: true,
-                all_day_hours: 8.0,
             },
         )
         .unwrap()

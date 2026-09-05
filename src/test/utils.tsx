@@ -310,7 +310,7 @@ export const mockBillableEventType = {
   id: 1,
   name: 'Work',
   color: '#52c41a',
-  is_billable: true, all_day_hours: 8,
+  is_billable: true,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z'
 }
@@ -319,7 +319,7 @@ export const mockNonBillableEventType = {
   id: 2,
   name: 'Personal',
   color: '#1890ff',
-  is_billable: false, all_day_hours: 8,
+  is_billable: false,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z'
 }

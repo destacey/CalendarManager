@@ -86,8 +86,6 @@ export interface EventType {
   color: string
   is_default?: boolean
   is_billable: boolean
-  /** Hours one day of an all-day event of this type is worth; 0 means it doesn't count. */
-  all_day_hours: number
   created_at?: string
 }
 

@@ -537,6 +537,65 @@ describe('EventTable', () => {
   // vi.importActual) because the self-mocked component never calls
   // handleExport at all — it's a hand-rolled table that doesn't reproduce the
   // export logic. Only the real component exercises the actual save path.
+  /* The calendar does not know how many hours an all-day event is worth. It
+     used to count `days * 1440`, so a five-day PTO block reported 120 hours -
+     wrong for every all-day event this app has shown. Valuing one is a
+     timecard decision, so here they are counted, not converted. */
+  describe('all-day events in the billable summary', () => {
+    const renderRealTable = async (events: unknown[]) => {
+      const { default: RealEventTable } = await vi.importActual<typeof import('./EventTable')>(
+        './EventTable'
+      )
+      const props = createEventTableProps({
+        getEventsForDate: vi.fn(() => events),
+        eventTypes: [
+          { id: 1, name: 'Work', color: '#1890ff', is_default: true, is_billable: true }
+        ]
+      })
+      render(<RealEventTable {...props} />)
+    }
+
+    it('does not fold an all-day event into billable hours', async () => {
+      await renderRealTable([
+        { ...mockBillableEvent, id: 9, is_all_day: true,
+          start_date: '2024-01-15T00:00:00Z', end_date: '2024-01-20T00:00:00Z' }
+      ])
+
+      await waitFor(() => {
+        // 120h was the old answer; any hours figure at all is a guess.
+        expect(screen.queryByText(/120h/)).not.toBeInTheDocument()
+      })
+      expect(screen.queryByText(/\d+h/)).not.toBeInTheDocument()
+    })
+
+    it('reports all-day events as a count instead', async () => {
+      await renderRealTable([
+        { ...mockBillableEvent, id: 9, is_all_day: true,
+          start_date: '2024-01-15T00:00:00Z', end_date: '2024-01-20T00:00:00Z' }
+      ])
+
+      await waitFor(() => {
+        expect(screen.getByText(/\+ 1 all-day/)).toBeInTheDocument()
+      })
+    })
+
+    /* The contrast is the point: a timed event still produces an hours figure
+       where an all-day one produces none. The figure is 1h rather than 8h
+       because test/setup.ts's dayjs mock makes every diff() return 60 - which
+       is exactly why the all-day assertions above check for the ABSENCE of
+       hours rather than a specific wrong number. */
+    it('still totals timed events, unlike all-day ones', async () => {
+      await renderRealTable([mockBillableEvent])
+
+      // The Duration column shows hours too, hence getAllByText.
+      await waitFor(() => {
+        expect(screen.getAllByText(/1h/).length).toBeGreaterThan(0)
+      })
+      // Scoped to the billable badge; the Summary line always says "N all-day".
+      expect(screen.queryByText(/\+ \d+ all-day/)).not.toBeInTheDocument()
+    })
+  })
+
   describe('Excel Export', () => {
     const captureExportFn = async (overrides = {}) => {
       const { default: RealEventTable } = await vi.importActual<typeof import('./EventTable')>(

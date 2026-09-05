@@ -327,7 +327,7 @@ mod tests {
     fn create_type(conn: &Connection, name: &str, is_default: bool) -> i64 {
         event_types::create_event_type(
             conn,
-            &NewEventType { name: name.to_string(), color: "#123456".to_string(), is_default, is_billable: false, all_day_hours: 8.0 },
+            &NewEventType { name: name.to_string(), color: "#123456".to_string(), is_default, is_billable: false },
         )
         .unwrap()
         .id

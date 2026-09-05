@@ -400,7 +400,6 @@ mod tests {
                 color: "#ff0000".to_string(),
                 is_default: false,
                 is_billable: true,
-                all_day_hours: 8.0,
             },
         )
         .unwrap();

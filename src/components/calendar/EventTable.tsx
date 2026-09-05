@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react'
+import React, { useMemo, useRef, useState, useCallback } from 'react'
 import { Table, Typography, Tag, Tooltip, Button, Input, Space, Select } from 'antd'
 import { DownloadOutlined } from '@ant-design/icons'
 import type { ColumnsType, FilterDropdownProps } from 'antd/es/table'
@@ -11,8 +11,6 @@ import { calculateEventDuration } from '../../utils/eventUtils'
 import { useMessage } from '../../contexts/MessageContext'
 import { saveFile } from '../../api/files'
 import { mapEvents, unmapEvents } from '../../api/mapping'
-import { allDayEventHours, DEFAULT_ALL_DAY_SETTINGS, type AllDaySettings } from '../../utils/allDayHours'
-import { storageService } from '../../services/storage'
 
 const { Text } = Typography
 
@@ -178,16 +176,6 @@ const EventTable: React.FC<EventTableProps> = ({
 }) => {
   const tableRef = useRef<TableRef>(null)
   const [filteredData, setFilteredData] = useState<TableEvent[]>([])
-
-  /* Loaded here rather than passed in, so nothing above the table has to know
-     that valuing an all-day event needs a working week. */
-  const [allDaySettings, setAllDaySettings] = useState<AllDaySettings>(DEFAULT_ALL_DAY_SETTINGS)
-
-  useEffect(() => {
-    Promise.all([storageService.getWorkingDays(), storageService.getWorkdayStart()])
-      .then(([workingDays, workdayStart]) => setAllDaySettings({ workingDays, workdayStart }))
-      .catch(error => console.error('Error loading all-day settings:', error))
-  }, [])
 
   /* A virtual table needs `scroll.y` as a number — antd warns and falls back
      to unvirtualised rendering when given a CSS `calc()` string, which is how
@@ -799,25 +787,20 @@ const EventTable: React.FC<EventTableProps> = ({
     allDayEvents: currentData.filter(event => event.is_all_day).length,
     timedEvents: currentData.filter(event => !event.is_all_day).length,
     billableEvents: currentData.filter(event => event.eventType?.is_billable).length,
-    /* All-day events are worth their TYPE's hours per working day, not 24.
-       This used to be `days * 1440`, so a five-day PTO block counted as 120
-       hours instead of 40 - wrong for every all-day event this app has ever
-       shown. */
+    /* TIMED events only. An all-day event has no hours - the calendar simply
+       does not know whether a day off is worth 8 hours, 24, or none. This used
+       to count `days * 1440`, so a five-day PTO block reported 120 hours.
+       Valuing an all-day event is a timecard decision, not a calendar one, so
+       the days are reported as days below rather than guessed at here. */
     totalBillableMinutes: currentData
-      .filter(event => event.eventType?.is_billable)
-      .reduce((total, event) => {
-        if (event.is_all_day) {
-          const hours = allDayEventHours(
-            event.start_date,
-            event.end_date,
-            event.eventType?.all_day_hours ?? 8,
-            allDaySettings
-          )
-          return total + Math.round(hours * 60)
-        }
-        if (!event.endDateTime) return total
-        return total + event.endDateTime.diff(event.startDateTime, 'minute')
-      }, 0)
+      .filter(event => event.eventType?.is_billable && !event.is_all_day && event.endDateTime)
+      .reduce(
+        (total, event) => total + event.endDateTime!.diff(event.startDateTime, 'minute'),
+        0
+      ),
+    billableAllDayEvents: currentData.filter(
+      event => event.eventType?.is_billable && event.is_all_day
+    ).length
   }
 
   const billableHours = Math.floor(summaryData.totalBillableMinutes / 60)
@@ -876,6 +859,13 @@ const EventTable: React.FC<EventTableProps> = ({
           {summaryData.totalBillableMinutes > 0 && (
             <Text strong type="primary" style={{ marginLeft: '8px' }}>
               {billableHours > 0 ? `${billableHours}h ` : ''}{remainingBillableMinutes > 0 ? `${remainingBillableMinutes}m` : ''}
+            </Text>
+          )}
+          {/* Counted, not valued: how many hours an all-day event is worth is
+              a timecard question the calendar cannot answer. */}
+          {summaryData.billableAllDayEvents > 0 && (
+            <Text type="secondary" style={{ marginLeft: '8px' }}>
+              + {summaryData.billableAllDayEvents} all-day
             </Text>
           )}
         </Text>
