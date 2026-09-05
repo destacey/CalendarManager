@@ -108,7 +108,7 @@ describe('ActivitiesSettings', () => {
 
   it('deletes an activity after the confirmation is accepted', async () => {
     const user = userEvent.setup()
-    vi.mocked(deleteActivity).mockResolvedValue(true)
+    vi.mocked(deleteActivity).mockResolvedValue({ deleted: true, eventsCleared: 0, rulesCleared: 0 })
     render(<ActivitiesSettings />)
     await waitFor(() => expect(screen.getByText('Architecture')).toBeInTheDocument())
 
@@ -117,6 +117,24 @@ describe('ActivitiesSettings', () => {
 
     await waitFor(() => {
       expect(deleteActivity).toHaveBeenCalledWith(1)
+    })
+  })
+
+  /* An activity in use is cleared from events and rules rather than blocking
+     the delete, so the message says how far that reached. */
+  it('reports what deleting an activity was cleared from', async () => {
+    const user = userEvent.setup()
+    vi.mocked(deleteActivity).mockResolvedValue({
+      deleted: true, eventsCleared: 12, rulesCleared: 1
+    })
+    render(<ActivitiesSettings />)
+    await waitFor(() => expect(screen.getByText('Architecture')).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: 'Delete Architecture' }))
+    await user.click(await screen.findByRole('button', { name: /^yes$/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/cleared from 12 events and 1 rule/)).toBeInTheDocument()
     })
   })
 

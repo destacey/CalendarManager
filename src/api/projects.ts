@@ -64,6 +64,19 @@ export async function updateProject(id: number, project: ProjectUpdate): Promise
   }
 }
 
-export function deleteProject(id: number): Promise<boolean> {
-  return invoke<boolean>('delete_project', { id })
+/**
+ * What `deleteProject` actually did. Events and mapping rules now reference
+ * projects and foreign keys are enforced, so a bare delete would fail on real
+ * data. Events are *unmapped* rather than moved — there is no sensible default
+ * project — and rules targeting it are removed, because their `project_id` is
+ * NOT NULL. The Settings screen reports this instead of a bare success.
+ */
+export interface DeleteProjectOutcome {
+  deleted: boolean
+  eventsUnmapped: number
+  rulesRemoved: number
+}
+
+export function deleteProject(id: number): Promise<DeleteProjectOutcome> {
+  return invoke<DeleteProjectOutcome>('delete_project', { id })
 }

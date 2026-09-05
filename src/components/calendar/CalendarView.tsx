@@ -5,7 +5,7 @@ import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
-import { Event, EventType } from '../../types'
+import { Event, EventType, Project, Activity } from '../../types'
 import { useCalendarEvents } from '../../hooks/useCalendarEvents'
 // import { useCalendarViewEvents } from '../../hooks/useCalendarViewEvents' // Disabled temporarily
 import { useCalendarState } from '../../hooks/useCalendarState'
@@ -19,6 +19,9 @@ import CalendarHeader from './CalendarHeader'
 import { getEventBackgroundColor } from '../../utils/eventUtils'
 import { useMessage } from '../../contexts/MessageContext'
 import { getEventTypes } from '../../api/eventTypes'
+import { getProjects } from '../../api/projects'
+import { getActivities } from '../../api/activities'
+import { useRefreshOnShow } from '../../hooks/useRefreshOnShow'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -26,10 +29,27 @@ dayjs.extend(timezone)
 const { useBreakpoint } = Grid
 const { Title, Text } = Typography
 
-const CalendarView: React.FC = () => {
+interface CalendarViewProps {
+  /** True while this is the visible screen. */
+  isActive?: boolean
+  /** Something changed events elsewhere; reload when next shown. */
+  needsRefresh?: boolean
+  onRefreshed?: () => void
+}
+
+const CalendarView: React.FC<CalendarViewProps> = ({
+  isActive = true,
+  needsRefresh = false,
+  onRefreshed
+}) => {
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
   const [eventTypes, setEventTypes] = useState<EventType[]>([])
+  /* Loaded here and passed down for the same reason event types are: the table
+     and the modal hold ids, and every row would otherwise resolve names on its
+     own. Both lists are small and change rarely. */
+  const [projects, setProjects] = useState<Project[]>([])
+  const [activities, setActivities] = useState<Activity[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const [exportFunction, setExportFunction] = useState<(() => void) | null>(null)
   
@@ -68,7 +88,17 @@ const CalendarView: React.FC = () => {
 
   useEffect(() => {
     loadEventTypes()
+    loadMappingLookups()
   }, [])
+
+  /* Reload lazily when this screen is next shown - see the hook for why this
+     is not a remount. */
+  useRefreshOnShow(isActive, needsRefresh, () => {
+    refreshEvents?.()
+    loadEventTypes()
+    loadMappingLookups()
+    onRefreshed?.()
+  })
 
   // Show error messages when they occur
   useEffect(() => {
@@ -83,6 +113,16 @@ const CalendarView: React.FC = () => {
       setEventTypes(types)
     } catch (error) {
       console.error('Error loading event types:', error)
+    }
+  }
+
+  const loadMappingLookups = async () => {
+    try {
+      const [p, a] = await Promise.all([getProjects(), getActivities()])
+      setProjects(p)
+      setActivities(a)
+    } catch (error) {
+      console.error('Error loading projects and activities:', error)
     }
   }
 
@@ -271,6 +311,9 @@ const CalendarView: React.FC = () => {
               setIsModalVisible={setIsModalVisible}
               userTimezone={userTimezone || ''}
               eventTypes={eventTypes}
+              projects={projects}
+              activities={activities}
+              onMappingChanged={() => refreshEvents?.()}
               onExportReady={handleExportReady}
             />
           </Flex>
@@ -285,6 +328,8 @@ const CalendarView: React.FC = () => {
         getEventColor={getEventColor}
         getShowAsDisplay={getShowAsDisplay}
         userTimezone={userTimezone}
+        projects={projects}
+        activities={activities}
         onEventUpdated={() => {
           refreshEvents?.()
           loadEventTypes()

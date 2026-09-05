@@ -8,7 +8,7 @@ use super::error::DbError;
 
 /// Bumped whenever a migration is added. Stored in SQLite's built-in
 /// PRAGMA user_version, so no bookkeeping table is needed.
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 /// Migration 1 is the complete schema as electron/main.js left it. It is
 /// written to be idempotent — CREATE TABLE IF NOT EXISTS, and column adds
@@ -196,6 +196,50 @@ const MIGRATION_3: &str = r#"
     );
 "#;
 
+/// Migration 4 maps events onto projects and activities.
+///
+/// Two halves. The `events` columns say where an event was mapped, mirroring
+/// `type_id`/`type_manually_set` exactly - a hand-mapped event is never
+/// re-mapped by a rule. The `mapping_rules` table is how future events map
+/// themselves.
+///
+/// A rule matches on an event's name, its categories, its event type, or any
+/// combination - all supplied conditions must hold. `show_as` is deliberately
+/// NOT a condition: the user marks client meetings away from the office as
+/// out-of-office, so it means "not at my desk", not "not working". The
+/// existing `event_type_rules` already fold `show_as = free` into the Info
+/// type, so matching on `type_id` gets that signal second-hand, curated.
+///
+/// `activity_id` is nullable on both tables: mapping to a project without an
+/// activity is a real answer, not a missing one.
+///
+/// The column adds are guarded by `has_column` for the same reason migration
+/// 1's are: `run_migrations` re-applies the whole ladder for a `user_version`
+/// 0 database, and the real database is still at 0.
+const MIGRATION_4_COLUMNS: &[(&str, &str, &str)] = &[
+    ("events", "project_id", "INTEGER REFERENCES projects(id)"),
+    ("events", "activity_id", "INTEGER REFERENCES activities(id)"),
+    ("events", "mapping_manually_set", "BOOLEAN DEFAULT 0"),
+];
+
+const MIGRATION_4: &str = r#"
+    CREATE TABLE IF NOT EXISTS mapping_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      priority INTEGER NOT NULL,
+      name_operator TEXT,
+      name_value TEXT,
+      category_value TEXT,
+      type_id INTEGER REFERENCES event_types(id),
+      project_id INTEGER NOT NULL REFERENCES projects(id),
+      activity_id INTEGER REFERENCES activities(id),
+      is_active BOOLEAN NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mapping_rules_priority ON mapping_rules(priority);
+    CREATE INDEX IF NOT EXISTS idx_events_project_id ON events(project_id);
+"#;
+
 fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, DbError> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
@@ -245,6 +289,7 @@ fn apply_migration(conn: &Connection, version: i64) -> Result<(), DbError> {
         1 => apply_migration_1(conn),
         2 => apply_migration_2(conn),
         3 => apply_migration_3(conn),
+        4 => apply_migration_4(conn),
         other => Err(DbError::Other(format!("no migration defined for schema version {other}"))),
     }
 }
@@ -268,6 +313,20 @@ fn apply_migration_2(conn: &Connection) -> Result<(), DbError> {
 
 fn apply_migration_3(conn: &Connection) -> Result<(), DbError> {
     conn.execute_batch(MIGRATION_3)?;
+    Ok(())
+}
+
+fn apply_migration_4(conn: &Connection) -> Result<(), DbError> {
+    // Columns first: MIGRATION_4 indexes events(project_id), which does not
+    // exist until the ALTER TABLE below has run.
+    for (table, column, definition) in MIGRATION_4_COLUMNS {
+        if !has_column(conn, table, column)? {
+            conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition};"))?;
+        }
+    }
+
+    conn.execute_batch(MIGRATION_4)?;
+
     Ok(())
 }
 
@@ -430,6 +489,63 @@ mod tests {
             [],
         );
         assert!(duplicate_name.is_ok(), "two projects may share a name");
+    }
+
+    #[test]
+    fn migration_4_adds_the_mapping_columns_to_events() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let cols = columns(&conn, "events");
+        for expected in ["project_id", "activity_id", "mapping_manually_set"] {
+            assert!(cols.contains(&expected.to_string()), "events is missing {expected}");
+        }
+    }
+
+    #[test]
+    fn migration_4_creates_an_empty_mapping_rules_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mapping_rules", [], |row| row.get(0))
+            .unwrap();
+
+        assert_eq!(count, 0, "mapping rules are the user's own - there is no seed");
+        assert_eq!(
+            columns(&conn, "mapping_rules"),
+            vec![
+                "id", "priority", "name_operator", "name_value", "category_value",
+                "type_id", "project_id", "activity_id", "is_active", "created_at"
+            ]
+        );
+    }
+
+    /// A rule must point at a project that exists; the activity is optional
+    /// because "project, no activity" is a real answer.
+    #[test]
+    fn a_mapping_rule_requires_a_real_project_but_not_an_activity() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, name, code) VALUES (1, 'Rebuild', 'PRJ-001')",
+            [],
+        )
+        .unwrap();
+
+        let no_activity = conn.execute(
+            "INSERT INTO mapping_rules (priority, name_operator, name_value, project_id)
+             VALUES (1, 'is', 'Standup', 1)",
+            [],
+        );
+        assert!(no_activity.is_ok(), "a rule may map to a project with no activity");
+
+        let dangling_project = conn.execute(
+            "INSERT INTO mapping_rules (priority, name_operator, name_value, project_id)
+             VALUES (2, 'is', 'Ghost', 9999)",
+            [],
+        );
+        assert!(dangling_project.is_err(), "a rule may not target a missing project");
     }
 
     #[test]

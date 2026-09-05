@@ -163,7 +163,7 @@ describe('ProjectsSettings', () => {
 
   it('deletes a project after the confirmation is accepted', async () => {
     const user = userEvent.setup()
-    vi.mocked(deleteProject).mockResolvedValue(true)
+    vi.mocked(deleteProject).mockResolvedValue({ deleted: true, eventsUnmapped: 0, rulesRemoved: 0 })
     render(<ProjectsSettings />)
     await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
 
@@ -172,6 +172,24 @@ describe('ProjectsSettings', () => {
 
     await waitFor(() => {
       expect(deleteProject).toHaveBeenCalledWith(1)
+    })
+  })
+
+  /* Deleting a project now unmaps time and removes rules. Saying only
+     "deleted" would hide both, so the message has to carry them. */
+  it('reports what deleting a project took with it', async () => {
+    const user = userEvent.setup()
+    vi.mocked(deleteProject).mockResolvedValue({
+      deleted: true, eventsUnmapped: 34, rulesRemoved: 2
+    })
+    render(<ProjectsSettings />)
+    await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: 'Delete Website Rebuild' }))
+    await user.click(await screen.findByRole('button', { name: /^yes$/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/34 events unmapped, 2 rules removed/)).toBeInTheDocument()
     })
   })
 

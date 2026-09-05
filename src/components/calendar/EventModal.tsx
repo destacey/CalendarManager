@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react'
-import { Modal, Descriptions, Tag, Space, Select, Button, theme } from 'antd'
+import { Modal, Descriptions, Tag, Space, Select, Button, Typography, theme } from 'antd'
 import { LockOutlined, EditOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
-import { Event, EventType } from '../../types'
+import { Activity, Event, EventType, Project } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
 import { calculateEventDuration } from '../../utils/eventUtils'
 import { getEventTypes, setEventTypeManually, resetEventTypeToAuto } from '../../api/eventTypes'
+import { mapEvents, unmapEvents } from '../../api/mapping'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
+
+const { Text } = Typography
 
 interface EventModalProps {
   isVisible: boolean
@@ -19,12 +22,16 @@ interface EventModalProps {
   getEventColor: (showAs: string) => string
   getShowAsDisplay: (showAs: string) => string
   userTimezone: string
+  projects: Project[]
+  activities: Activity[]
   onEventUpdated?: () => void
 }
 
 const EventModal: React.FC<EventModalProps> = ({
   isVisible,
   onClose,
+  projects,
+  activities,
   event,
   getEventColor,
   getShowAsDisplay,
@@ -36,11 +43,18 @@ const EventModal: React.FC<EventModalProps> = ({
   const [eventTypes, setEventTypes] = useState<EventType[]>([])
   const [selectedTypeId, setSelectedTypeId] = useState<number | undefined>()
   const [isEditingType, setIsEditingType] = useState(false)
+  const [isEditingMapping, setIsEditingMapping] = useState(false)
+  const [draftProjectId, setDraftProjectId] = useState<number | null>(null)
+  const [draftActivityId, setDraftActivityId] = useState<number | null>(null)
+  const [savingMapping, setSavingMapping] = useState(false)
 
   useEffect(() => {
     if (isVisible && event) {
       loadEventTypes()
       setSelectedTypeId(event.type_id)
+      setDraftProjectId(event.project_id ?? null)
+      setDraftActivityId(event.activity_id ?? null)
+      setIsEditingMapping(false)
       setIsEditingType(false)
     }
   }, [isVisible, event])
@@ -73,6 +87,27 @@ const EventModal: React.FC<EventModalProps> = ({
     } catch (error) {
       console.error('Error updating event type:', error)
       messageApi.error('Failed to update event type')
+    }
+  }
+
+  const handleSaveMapping = async () => {
+    if (!event?.id) return
+    setSavingMapping(true)
+    try {
+      if (draftProjectId == null) {
+        // No project means no mapping at all, and it hands the event back to
+        // the rules rather than pinning it as a hand-made blank.
+        await unmapEvents([event.id])
+      } else {
+        await mapEvents([event.id], draftProjectId, draftActivityId)
+      }
+      setIsEditingMapping(false)
+      onEventUpdated?.()
+    } catch (error) {
+      console.error('Error saving mapping:', error)
+      messageApi.error('Failed to save the mapping')
+    } finally {
+      setSavingMapping(false)
     }
   }
 
@@ -243,6 +278,103 @@ const EventModal: React.FC<EventModalProps> = ({
             </Space>
           </Descriptions.Item>
           
+          <Descriptions.Item label="Mapping">
+            <Space wrap>
+              {isEditingMapping ? (
+                <>
+                  <Select
+                    size="small"
+                    style={{ minWidth: 200 }}
+                    value={draftProjectId ?? -1}
+                    aria-label="Project"
+                    onChange={value => {
+                      const next = value === -1 ? null : value
+                      setDraftProjectId(next)
+                      // A different project makes the old activity a claim
+                      // about work that is no longer there.
+                      setDraftActivityId(null)
+                    }}
+                    options={[
+                      { value: -1, label: 'Unmapped' },
+                      ...projects
+                        .filter(p => p.is_active || p.id === event.project_id)
+                        .map(p => ({ value: p.id!, label: `${p.code} — ${p.name}` }))
+                    ]}
+                  />
+                  <Select
+                    size="small"
+                    style={{ minWidth: 180 }}
+                    value={draftActivityId ?? -1}
+                    aria-label="Activity"
+                    disabled={draftProjectId == null}
+                    onChange={value => setDraftActivityId(value === -1 ? null : value)}
+                    options={[
+                      { value: -1, label: 'No activity' },
+                      ...activities
+                        .filter(a => a.is_active || a.id === event.activity_id)
+                        .map(a => ({ value: a.id!, label: a.name }))
+                    ]}
+                  />
+                  <Button
+                    type="primary"
+                    size="small"
+                    loading={savingMapping}
+                    onClick={handleSaveMapping}
+                  >
+                    Save
+                  </Button>
+                  <Button size="small" onClick={() => setIsEditingMapping(false)}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {(() => {
+                    const project = projects.find(p => p.id === event.project_id)
+                    const activity = activities.find(a => a.id === event.activity_id)
+                    if (!project) {
+                      return <Tag color="default">Unmapped</Tag>
+                    }
+                    return (
+                      <Space size={6} wrap>
+                        <Text code>{project.code}</Text>
+                        <Text>{project.name}</Text>
+                        {project.program && (
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {project.program}
+                          </Text>
+                        )}
+                        {activity ? (
+                          <Tag color={activity.color} style={{ margin: 0 }}>
+                            {activity.name}
+                          </Tag>
+                        ) : (
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            no activity
+                          </Text>
+                        )}
+                      </Space>
+                    )
+                  })()}
+                  {event.mapping_manually_set && (
+                    <LockOutlined
+                      style={{ color: token.colorTextTertiary, fontSize: 12 }}
+                      title="Mapped by hand (rules won't change it)"
+                    />
+                  )}
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => setIsEditingMapping(true)}
+                  >
+                    Edit
+                  </Button>
+                </>
+              )}
+            </Space>
+          </Descriptions.Item>
+
           {event.location && (
             <Descriptions.Item label="Location">
               {event.location}

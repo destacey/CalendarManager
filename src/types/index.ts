@@ -55,6 +55,11 @@ export interface Event {
   is_meeting?: boolean
   type_id?: number
   type_manually_set?: boolean
+  /** Where this event's time is booked. A project with no activity is valid. */
+  project_id?: number | null
+  activity_id?: number | null
+  /** Set when a human mapped it, which stops any rule moving it again. */
+  mapping_manually_set?: boolean
   created_at?: string
   updated_at?: string
   synced_at?: string
@@ -109,6 +114,21 @@ export interface Project {
   name: string
   code: string
   program?: string | null
+  is_active: boolean
+  created_at?: string
+}
+
+export interface MappingRule {
+  id?: number
+  priority: number
+  /** null when the rule does not test the name at all. */
+  name_operator?: 'is' | 'contains' | null
+  name_value?: string | null
+  category_value?: string | null
+  type_id?: number | null
+  project_id: number
+  /** null means "this project, no activity" — a real answer, not a gap. */
+  activity_id?: number | null
   is_active: boolean
   created_at?: string
 }

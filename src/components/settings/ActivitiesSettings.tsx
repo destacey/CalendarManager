@@ -57,8 +57,15 @@ const ActivitiesSettings: React.FC<ActivitiesSettingsProps> = ({ searchTerm = ''
 
   const handleDelete = async (activity: Activity) => {
     try {
-      await deleteActivity(activity.id!)
-      messageApi.success('Activity deleted')
+      const outcome = await deleteActivity(activity.id!)
+      // Events and rules keep their project and simply lose the activity, so
+      // this is worth saying rather than a bare success.
+      const cleared = outcome.eventsCleared + outcome.rulesCleared
+      messageApi.success(
+        cleared > 0
+          ? `Activity deleted — cleared from ${outcome.eventsCleared} event${outcome.eventsCleared === 1 ? '' : 's'} and ${outcome.rulesCleared} rule${outcome.rulesCleared === 1 ? '' : 's'}`
+          : 'Activity deleted'
+      )
       loadActivities()
     } catch (error) {
       console.error('Error deleting activity:', error)

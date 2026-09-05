@@ -1,6 +1,11 @@
 import React from 'react'
 import { Layout, Menu } from 'antd'
-import { HomeOutlined, CalendarOutlined, SettingOutlined } from '@ant-design/icons'
+import {
+  CalendarOutlined,
+  DeploymentUnitOutlined,
+  HomeOutlined,
+  SettingOutlined
+} from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { useTheme } from '../contexts/ThemeContext'
 
@@ -24,6 +29,11 @@ const menuItems: MenuItem[] = [
     key: 'calendar',
     icon: <CalendarOutlined />,
     label: 'Calendar',
+  },
+  {
+    key: 'map-events',
+    icon: <DeploymentUnitOutlined />,
+    label: 'Map Events',
   },
   {
     key: 'settings',

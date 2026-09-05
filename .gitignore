@@ -72,3 +72,7 @@ src-tauri/*.key
 
 # TypeScript incremental build info (tsc -b)
 *.tsbuildinfo
+
+# Design canvas: keep the sources, not the 2MB seeded output
+.design/*.html
+!.design/*.dc.html
