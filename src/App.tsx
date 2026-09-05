@@ -7,6 +7,7 @@ import TitleBar from './components/TitleBar'
 import LoadingScreen from './components/LoadingScreen'
 import SideNavigation from './components/SideNavigation'
 import MapEvents from './components/mapping/MapEvents'
+import Timecards from './components/timecards/Timecards'
 import DataManagement from './components/DataManagement'
 import Settings from './components/settings/Settings'
 import { ThemeProvider, useTheme } from './contexts/ThemeContext'
@@ -129,6 +130,12 @@ function AppContent() {
           height: '100%'
         }}>
           <MapEvents onEventsChanged={() => setEventsDirty(true)} />
+        </div>
+        <div style={{ 
+          display: selectedNavKey === 'timecards' ? 'block' : 'none',
+          height: '100%'
+        }}>
+          <Timecards />
         </div>
         <div style={{ 
           display: selectedNavKey === 'settings' ? 'block' : 'none',
