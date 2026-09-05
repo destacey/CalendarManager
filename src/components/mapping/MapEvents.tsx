@@ -39,11 +39,16 @@ interface PickerState {
   groups: UnmappedGroup[]
 }
 
-const GroupCard: React.FC<{
+/* Exported for its own tests: the dimming below depends on a drag being in
+   progress, and dnd-kit cannot be driven in jsdom, so the only way to cover it
+   is to render the card directly with `dragActive` set. */
+export const GroupCard: React.FC<{
   group: UnmappedGroup
   selected: boolean
+  /** True while ANY card of the current selection is being dragged. */
+  dragActive: boolean
   onSelect: (group: UnmappedGroup, additive: boolean) => void
-}> = ({ group, selected, onSelect }) => {
+}> = ({ group, selected, dragActive, onSelect }) => {
   const { token } = theme.useToken()
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: group.key,
@@ -67,7 +72,11 @@ const GroupCard: React.FC<{
         borderRadius: token.borderRadius,
         padding: '9px 12px',
         cursor: 'grab',
-        opacity: isDragging ? 0.4 : 1,
+        /* Every selected card dims, not just the one under the cursor.
+           `isDragging` is true only for the card holding the handle, so a
+           three-group drag used to leave two of them looking untouched -
+           which read as if only one was coming along. */
+        opacity: isDragging || (dragActive && selected) ? 0.4 : 1,
         display: 'flex',
         flexDirection: 'column',
         gap: 5
@@ -407,6 +416,7 @@ const MapEvents: React.FC<MapEventsProps> = () => {
                         key={group.key}
                         group={group}
                         selected={selectedKeys.includes(group.key)}
+                        dragActive={dragging !== null}
                         onSelect={handleSelect}
                       />
                     ))}
@@ -451,8 +461,30 @@ const MapEvents: React.FC<MapEventsProps> = () => {
 
           <DragOverlay>
             {dragging && (
+              <div style={{ position: 'relative', width: 216 }}>
+                {/* Ghost layers behind the card, one per extra group, so a
+                    multi-group drag looks like a stack rather than a single
+                    card that merely claims to be three. */}
+                {selectedGroups.length > 1 &&
+                  [...Array(Math.min(selectedGroups.length - 1, 2))].map((_, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        position: 'absolute',
+                        top: (i + 1) * 4,
+                        left: (i + 1) * 4,
+                        right: -(i + 1) * 4,
+                        height: '100%',
+                        border: `1px solid ${token.colorPrimaryBorder}`,
+                        borderRadius: token.borderRadius,
+                        background: token.colorBgElevated,
+                        opacity: 0.75 - i * 0.25
+                      }}
+                    />
+                  ))}
               <div
                 style={{
+                  position: 'relative',
                   border: `1px solid ${token.colorPrimary}`,
                   borderRadius: token.borderRadius,
                   background: token.colorBgElevated,
@@ -461,7 +493,8 @@ const MapEvents: React.FC<MapEventsProps> = () => {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
-                  width: 216
+                  width: 216,
+                  boxSizing: 'border-box'
                 }}
               >
                 <HolderOutlined style={{ color: token.colorPrimary }} />
@@ -472,6 +505,7 @@ const MapEvents: React.FC<MapEventsProps> = () => {
                 <Tag color="blue" style={{ marginInlineEnd: 0 }}>
                   {selectedGroups.length > 1 ? totalSelectedEvents : dragging.eventCount}
                 </Tag>
+              </div>
               </div>
             )}
           </DragOverlay>
