@@ -3,6 +3,7 @@ import { Tabs, Typography, Input, Space } from "antd";
 import { SearchOutlined, TagOutlined } from "@ant-design/icons";
 import MicrosoftGraphSettings from "./MicrosoftGraphSettings";
 import TimezoneSettings from "./TimezoneSettings";
+import WorkingDaysSettings from "./WorkingDaysSettings";
 import EventTypesSettings from "./EventTypesSettings";
 import EventTypeRulesSettings from "./EventTypeRulesSettings";
 import ActivitiesSettings from "./ActivitiesSettings";
@@ -27,6 +28,7 @@ const Settings: React.FC<SettingsProps> = ({ onEventsUpdated }) => {
         <div style={{ maxWidth: "800px" }}>
           <MicrosoftGraphSettings searchTerm={searchTerm} />
           <TimezoneSettings searchTerm={searchTerm} />
+          <WorkingDaysSettings searchTerm={searchTerm} />
 
           <div style={{ marginBottom: "32px" }}>
             <Title

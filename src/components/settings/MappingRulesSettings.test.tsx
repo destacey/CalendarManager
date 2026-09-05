@@ -58,8 +58,8 @@ const mockActivities = [
   { id: 5, name: 'Software Development', color: '#1890ff', is_active: true }
 ]
 const mockTypes = [
-  { id: 10, name: 'Work', color: '#0a8bed', is_billable: true },
-  { id: 11, name: 'Info', color: '#0b8000', is_billable: false }
+  { id: 10, name: 'Work', color: '#0a8bed', is_billable: true, all_day_hours: 8 },
+  { id: 11, name: 'Info', color: '#0b8000', is_billable: false, all_day_hours: 8 }
 ]
 
 describe('MappingRulesSettings', () => {

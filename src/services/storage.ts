@@ -91,6 +91,53 @@ class StorageService {
     }
   }
 
+  /**
+   * Which weekdays count when splitting a MULTI-DAY all-day event, as
+   * 0 = Sunday .. 6 = Saturday. Defaults to Mon–Fri.
+   *
+   * This is deliberately not a filter on what counts generally — work on a
+   * Saturday still counts. It only decides which days a week-long block is
+   * spread across.
+   */
+  async getWorkingDays(): Promise<number[]> {
+    const monToFri = [1, 2, 3, 4, 5]
+    try {
+      const stored = await getConfig<number[]>('workingDays')
+      // An empty array would make every multi-day event worth nothing, which
+      // is never what someone means by "no working days".
+      return stored && stored.length > 0 ? stored : monToFri
+    } catch (error) {
+      console.error('Error getting working days:', error)
+      return monToFri
+    }
+  }
+
+  async setWorkingDays(days: number[]): Promise<void> {
+    try {
+      await setConfig('workingDays', days)
+    } catch (error) {
+      console.error('Error setting working days:', error)
+    }
+  }
+
+  /** When a synthesised all-day working day starts, as "HH:mm". */
+  async getWorkdayStart(): Promise<string> {
+    try {
+      return (await getConfig<string>('workdayStart')) ?? '08:00'
+    } catch (error) {
+      console.error('Error getting workday start:', error)
+      return '08:00'
+    }
+  }
+
+  async setWorkdayStart(time: string): Promise<void> {
+    try {
+      await setConfig('workdayStart', time)
+    } catch (error) {
+      console.error('Error setting workday start:', error)
+    }
+  }
+
   async clearConfig(): Promise<void> {
     try {
       await clearConfig()
