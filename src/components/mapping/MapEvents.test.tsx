@@ -605,4 +605,64 @@ describe('MapEvents', () => {
       )
     })
   })
+
+  describe('ordering the queue', () => {
+    /** The cards in the order they are rendered — they are the only things
+        on the screen carrying aria-pressed. */
+    const cardOrder = () =>
+      Array.from(document.querySelectorAll('[aria-pressed]')).map(
+        el => el.getAttribute('aria-label') ?? ''
+      )
+
+    it('starts with the biggest group first', async () => {
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+
+      expect(cardOrder()[0]).toContain('Daily Standup')
+    })
+
+    it('sorts by title, in whichever direction is set', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+
+      await user.click(screen.getByRole('combobox', { name: 'Sort events by' }))
+      await user.click(await screen.findByTitle('Title'))
+
+      // The direction carries over from what it already was: descending.
+      await waitFor(() => expect(cardOrder()[0]).toContain('Sprint Planning'))
+
+      await user.click(screen.getByRole('button', { name: /sort ascending instead/i }))
+
+      await waitFor(() => expect(cardOrder()[0]).toContain('Daily Standup'))
+    })
+
+    it('turns the order around', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+      const first = cardOrder()[0]
+
+      await user.click(screen.getByRole('button', { name: /sort ascending instead/i }))
+
+      await waitFor(() => expect(cardOrder()[0]).not.toBe(first))
+      // And the button now offers the way back.
+      expect(screen.getByRole('button', { name: /sort descending instead/i })).toBeInTheDocument()
+    })
+
+    /* Sorting and searching are independent: narrowing the list must not put
+       it back in its original order. */
+    it('keeps the chosen order while searching', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+
+      await user.click(screen.getByRole('button', { name: /sort ascending instead/i }))
+      await user.type(screen.getByPlaceholderText('Search events and categories'), 'e')
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /sort descending instead/i })).toBeInTheDocument()
+      )
+    })
+  })
 })

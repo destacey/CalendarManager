@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Typography, Space, Button, Empty, Spin, Switch, Flex, Tag, theme, Splitter, Input } from 'antd'
-import { HolderOutlined, LeftOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons'
+import {
+  Typography, Space, Button, Empty, Spin, Switch, Flex, Tag, theme, Splitter, Input, Select,
+  Tooltip
+} from 'antd'
+import {
+  HolderOutlined, LeftOutlined, RightOutlined, SearchOutlined,
+  SortAscendingOutlined, SortDescendingOutlined
+} from '@ant-design/icons'
 import {
   DndContext,
   DragOverlay,
@@ -23,6 +29,50 @@ import { getActivities } from '../../api/activities'
 import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
 
 const { Text, Title } = Typography
+
+export type SortBy = 'count' | 'title' | 'category'
+
+/**
+ * Orders the queue.
+ *
+ * `count` first is the default because the group worth deciding about is the
+ * one covering the most events. Title and category are for finding a specific
+ * thing rather than working through the backlog.
+ *
+ * A group with no categories sorts last whichever way the list runs: an
+ * absence is not a name, so putting it among the As or the Zs would only ever
+ * be arbitrary. Ties break on title, so the order never wobbles between
+ * renders.
+ */
+export function sortGroups(
+  groups: UnmappedGroup[],
+  sortBy: SortBy,
+  descending: boolean
+): UnmappedGroup[] {
+  const direction = descending ? -1 : 1
+
+  return [...groups].sort((a, b) => {
+    if (sortBy === 'category') {
+      const left = a.categories.trim()
+      const right = b.categories.trim()
+      if (left === '' && right !== '') return 1
+      if (right === '' && left !== '') return -1
+      const byCategory = left.localeCompare(right) * direction
+      if (byCategory !== 0) return byCategory
+      return a.title.localeCompare(b.title)
+    }
+
+    if (sortBy === 'title') {
+      const byTitle = a.title.localeCompare(b.title) * direction
+      if (byTitle !== 0) return byTitle
+      return a.categories.localeCompare(b.categories)
+    }
+
+    const byCount = (a.eventCount - b.eventCount) * direction
+    if (byCount !== 0) return byCount
+    return a.title.localeCompare(b.title)
+  })
+}
 
 interface MapEventsProps {
   /* Tells the app events changed so the calendar reloads when next shown.
@@ -194,6 +244,8 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [billableOnly, setBillableOnly] = useState(true)
   const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState<SortBy>('count')
+  const [sortDescending, setSortDescending] = useState(true)
   const [projectSearch, setProjectSearch] = useState('')
   const [includeInactiveProjects, setIncludeInactiveProjects] = useState(false)
   const [groupByProgram, setGroupByProgram] = useState(false)
@@ -257,12 +309,15 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
      both — "Scrum" should find the standups even though no title contains it. */
   const visibleGroups = useMemo(() => {
     const term = search.trim().toLowerCase()
-    if (!term) return groups
-    return groups.filter(
-      g =>
-        g.title.toLowerCase().includes(term) || g.categories.toLowerCase().includes(term)
-    )
-  }, [groups, search])
+    const matching = term
+      ? groups.filter(
+          g =>
+            g.title.toLowerCase().includes(term) || g.categories.toLowerCase().includes(term)
+        )
+      : groups
+
+    return sortGroups(matching, sortBy, sortDescending)
+  }, [groups, search, sortBy, sortDescending])
 
   /* Deliberately over ALL groups, not the visible ones: a selection made
      before a search is still a selection, and dropping maps it in full. The
@@ -454,14 +509,35 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
                   ctrl-click to add to the selection
                 </Text>
 
-                <Input
-                  allowClear
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search events and categories"
-                  prefix={<SearchOutlined style={{ color: token.colorTextQuaternary }} />}
-                  style={{ flexShrink: 0 }}
-                />
+                <Flex gap={8} style={{ flexShrink: 0 }}>
+                  <Input
+                    allowClear
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Search events and categories"
+                    prefix={<SearchOutlined style={{ color: token.colorTextQuaternary }} />}
+                  />
+                  <Select
+                    value={sortBy}
+                    onChange={setSortBy}
+                    aria-label="Sort events by"
+                    style={{ width: 130, flexShrink: 0 }}
+                    options={[
+                      { value: 'count', label: 'Most events' },
+                      { value: 'title', label: 'Title' },
+                      { value: 'category', label: 'Category' }
+                    ]}
+                  />
+                  <Tooltip title={sortDescending ? 'Descending' : 'Ascending'}>
+                    <Button
+                      icon={sortDescending ? <SortDescendingOutlined /> : <SortAscendingOutlined />}
+                      onClick={() => setSortDescending(d => !d)}
+                      aria-label={
+                        sortDescending ? 'Sort ascending instead' : 'Sort descending instead'
+                      }
+                    />
+                  </Tooltip>
+                </Flex>
 
                 {/* Says which selected groups the search is hiding, so the
                     count above can never look like it came from nowhere. */}
