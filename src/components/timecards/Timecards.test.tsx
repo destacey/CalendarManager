@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+// The New timecard modal uses a month picker, which needs a real dayjs rather
+// than the fixed-value mock `src/test/setup.ts` installs globally.
+vi.unmock('dayjs')
+
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
@@ -54,6 +59,15 @@ const november = {
   generated_at: '2026-11-30T18:00:00'
 }
 
+/** Opens the month panel and walks it to December 2026. */
+const pickDecember2026 = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await screen.findByRole('textbox', { name: 'Month' }))
+  for (let year = new Date().getFullYear(); year < 2026; year++) {
+    await user.click(screen.getByRole('button', { name: /next year/i }))
+  }
+  await user.click(await screen.findByText('Dec'))
+}
+
 describe('Timecards', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -95,9 +109,7 @@ describe('Timecards', () => {
     await waitFor(() => expect(screen.getByText('October 2026')).toBeInTheDocument())
 
     await user.click(screen.getByRole('button', { name: /new timecard/i }))
-    const month = await screen.findByPlaceholderText('2026-10')
-    await user.clear(month)
-    await user.type(month, '2026-12')
+    await pickDecember2026(user)
     await user.click(screen.getByRole('button', { name: /^create$/i }))
 
     await waitFor(() =>

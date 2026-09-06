@@ -1,5 +1,8 @@
 import React, { useState } from 'react'
-import { Typography, Space, Button, Table, Modal, Form, Input, Tag, Popconfirm, Flex, Empty } from 'antd'
+import {
+  Typography, Space, Button, Table, Modal, Form, Input, DatePicker, Tag, Popconfirm, Flex, Empty
+} from 'antd'
+import dayjs, { Dayjs } from 'dayjs'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
 import { Timecard } from '../../api/timecards'
 
@@ -38,10 +41,7 @@ function monthBounds(month: string): { start: string; end: string; name: string 
   }
 }
 
-function thisMonth(): string {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-}
+
 
 const TimecardList: React.FC<TimecardListProps> = ({
   timecards,
@@ -62,7 +62,9 @@ const TimecardList: React.FC<TimecardListProps> = ({
       return
     }
 
-    const bounds = monthBounds(values.month)
+    // The picker hands back a dayjs; the period maths stays a pure function
+    // over "YYYY-MM" so it can be tested without one.
+    const bounds = monthBounds((values.month as Dayjs).format('YYYY-MM'))
     if (!bounds) return
 
     setSaving(true)
@@ -165,7 +167,7 @@ const TimecardList: React.FC<TimecardListProps> = ({
           icon={<PlusOutlined />}
           onClick={() => {
             form.resetFields()
-            form.setFieldsValue({ month: thisMonth(), name: '' })
+            form.setFieldsValue({ month: dayjs(), name: '' })
             setModalVisible(true)
           }}
         >
@@ -198,20 +200,15 @@ const TimecardList: React.FC<TimecardListProps> = ({
           <Form.Item
             label="Month"
             name="month"
-            rules={[
-              { required: true, message: 'Please enter a month' },
-              {
-                validator: (_, value) =>
-                  monthBounds(value ?? '')
-                    ? Promise.resolve()
-                    : Promise.reject(new Error('Use YYYY-MM, e.g. 2026-10'))
-              }
-            ]}
+            rules={[{ required: true, message: 'Please choose a month' }]}
           >
-            {/* A plain text month rather than a DatePicker: test/setup.ts
-                mocks dayjs globally without `.minute()`, so antd's pickers
-                cannot render in any test. */}
-            <Input placeholder="2026-10" />
+            <DatePicker
+              picker="month"
+              format="MMMM YYYY"
+              allowClear={false}
+              style={{ width: '100%' }}
+              aria-label="Month"
+            />
           </Form.Item>
 
           <Form.Item label="Name" name="name">

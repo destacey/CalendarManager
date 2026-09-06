@@ -1,4 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
+
+// The month picker needs a real dayjs. `src/test/setup.ts` replaces dayjs
+// globally with a mock that answers every call with the same fixed value,
+// which no antd picker can work against; this file opts out of that mock.
+vi.unmock('dayjs')
+
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
@@ -86,14 +92,30 @@ describe('TimecardList', () => {
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }))
   })
 
-  it('creates a timecard for a month, defaulting the name', async () => {
+  it('opens on the current month', async () => {
+    const user = userEvent.setup()
+    renderList()
+
+    await user.click(screen.getByRole('button', { name: /new timecard/i }))
+
+    const month = await screen.findByRole('textbox', { name: 'Month' })
+    expect(month).toHaveValue(
+      new Date().toLocaleString('en-GB', { month: 'long', year: 'numeric' })
+    )
+  })
+
+  it('creates a timecard for the month picked, defaulting the name', async () => {
     const user = userEvent.setup()
     const { onCreate } = renderList()
 
     await user.click(screen.getByRole('button', { name: /new timecard/i }))
-    const month = await screen.findByPlaceholderText('2026-10')
-    await user.clear(month)
-    await user.type(month, '2026-12')
+    await user.click(await screen.findByRole('textbox', { name: 'Month' }))
+    // The panel opens on this year; step it to 2026 and take December.
+    const year = new Date().getFullYear()
+    for (let i = year; i < 2026; i++) {
+      await user.click(screen.getByRole('button', { name: /next year/i }))
+    }
+    await user.click(await screen.findByText('Dec'))
     await user.click(screen.getByRole('button', { name: /^create$/i }))
 
     await waitFor(() => {
@@ -101,20 +123,22 @@ describe('TimecardList', () => {
     })
   })
 
-  it('refuses a month it cannot parse', async () => {
+  /* No free text to get wrong, and no way to end up with no month at all:
+     clearing the box and leaving it puts the month back. */
+  it('cannot be left without a month', async () => {
     const user = userEvent.setup()
     const { onCreate } = renderList()
 
     await user.click(screen.getByRole('button', { name: /new timecard/i }))
-    const month = await screen.findByPlaceholderText('2026-10')
+    const month = await screen.findByRole('textbox', { name: 'Month' })
     await user.clear(month)
-    await user.type(month, 'December')
     await user.click(screen.getByRole('button', { name: /^create$/i }))
 
-    await waitFor(() => {
-      expect(screen.getByText('Use YYYY-MM, e.g. 2026-10')).toBeInTheDocument()
-    })
-    expect(onCreate).not.toHaveBeenCalled()
+    const now = new Date()
+    const first = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith(expect.any(String), first, expect.any(String))
+    )
   })
 
   it('deletes after the confirmation is accepted', async () => {
