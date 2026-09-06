@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { Typography, theme } from 'antd'
+import { Typography, Checkbox, theme } from 'antd'
 import { Project, Activity } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
-import { mapEvents, UnmappedGroup } from '../../api/mapping'
+import { mapEvents, createMappingRule, UnmappedGroup } from '../../api/mapping'
 
 const { Text } = Typography
 
@@ -41,6 +41,7 @@ const ActivityPicker: React.FC<ActivityPickerProps> = ({
   const { token } = theme.useToken()
   const messageApi = useMessage()
   const [busy, setBusy] = useState(false)
+  const [alsoRule, setAlsoRule] = useState(false)
 
   // Escape cancels, as it would for any modal surface.
   useEffect(() => {
@@ -66,6 +67,34 @@ const ActivityPicker: React.FC<ActivityPickerProps> = ({
         `${n} event${n === 1 ? '' : 's'} mapped to ${project.name}` +
           (activityName ? ` · ${activityName}` : '')
       )
+
+      if (alsoRule) {
+        // One rule per group, matched on the event name. A rule failing must
+        // not undo or obscure the mapping that already succeeded, so it is
+        // reported on its own and the drop still counts as done.
+        try {
+          for (const group of groups) {
+            await createMappingRule({
+              name_operator: 'is',
+              name_value: group.title,
+              category_value: null,
+              type_id: null,
+              project_id: project.id!,
+              activity_id: activityId,
+              is_active: true
+            })
+          }
+          messageApi.success(
+            groups.length === 1
+              ? `Future events named "${groups[0].title}" will map here too`
+              : `${groups.length} rules made for future events`
+          )
+        } catch (error) {
+          console.error('Error creating a mapping rule:', error)
+          messageApi.warning('Events mapped, but the rule could not be made')
+        }
+      }
+
       onDone()
     } catch (error) {
       console.error('Error mapping events:', error)
@@ -121,6 +150,20 @@ const ActivityPicker: React.FC<ActivityPickerProps> = ({
           <Text type="secondary" style={{ fontSize: 12 }}>
             {eventCount} event{eventCount === 1 ? '' : 's'} &rarr; {project.name}
           </Text>
+
+          {/* Ticked before the activity is chosen, so one click still
+              finishes: the rule is made with whatever that click picks. */}
+          <Checkbox
+            checked={alsoRule}
+            onChange={e => setAlsoRule(e.target.checked)}
+            style={{ marginTop: 8, fontSize: 12 }}
+          >
+            {groups.length === 1 ? (
+              <>Also map future events named &ldquo;{groups[0].title}&rdquo; here</>
+            ) : (
+              <>Also map future events with these {groups.length} names here</>
+            )}
+          </Checkbox>
         </div>
 
         {/* First, not buried: mapping to a project with no activity is a real

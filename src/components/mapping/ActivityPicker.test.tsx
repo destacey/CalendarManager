@@ -3,9 +3,9 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
 import ActivityPicker from './ActivityPicker'
-import { mapEvents } from '../../api/mapping'
+import { mapEvents, createMappingRule } from '../../api/mapping'
 
-vi.mock('../../api/mapping', () => ({ mapEvents: vi.fn() }))
+vi.mock('../../api/mapping', () => ({ mapEvents: vi.fn(), createMappingRule: vi.fn() }))
 
 const project = { id: 1, name: 'Website Rebuild', code: 'PRJ-001', program: 'Platform', is_active: true }
 
@@ -39,6 +39,7 @@ describe('ActivityPicker', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(mapEvents).mockResolvedValue(28)
+    vi.mocked(createMappingRule).mockResolvedValue({} as never)
   })
 
   /* "Project only" is a real answer and often the right one, so it sits first
@@ -181,5 +182,73 @@ describe('ActivityPicker', () => {
     )
 
     await waitFor(() => expect(mapEvents).toHaveBeenCalled())
+  })
+
+  /* The concept from the mockups: decide once, and stop deciding again every
+     time the meeting recurs. */
+  describe('making a rule at the same time', () => {
+    it('makes none unless asked', async () => {
+      const user = userEvent.setup()
+      renderPicker()
+
+      await user.click(screen.getByRole('menuitem', { name: 'Software Development' }))
+
+      await waitFor(() => expect(mapEvents).toHaveBeenCalled())
+      expect(createMappingRule).not.toHaveBeenCalled()
+    })
+
+    /* Ticked BEFORE the activity is picked, because picking one commits —
+       so the rule has to be made with whatever that same click chose. */
+    it('makes a rule per group with the activity that was picked', async () => {
+      const user = userEvent.setup()
+      renderPicker()
+
+      await user.click(screen.getByRole('checkbox'))
+      await user.click(screen.getByRole('menuitem', { name: 'Architecture' }))
+
+      await waitFor(() => expect(createMappingRule).toHaveBeenCalledTimes(2))
+      expect(createMappingRule).toHaveBeenCalledWith({
+        name_operator: 'is',
+        name_value: 'Daily Standup',
+        category_value: null,
+        type_id: null,
+        project_id: 1,
+        activity_id: 7,
+        is_active: true
+      })
+    })
+
+    it('makes a rule with no activity when that is what was picked', async () => {
+      const user = userEvent.setup()
+      renderPicker({ groups: [groups[0]] })
+
+      await user.click(screen.getByRole('checkbox'))
+      await user.click(screen.getByRole('menuitem', { name: /project only/i }))
+
+      await waitFor(() =>
+        expect(createMappingRule).toHaveBeenCalledWith(
+          expect.objectContaining({ activity_id: null })
+        )
+      )
+    })
+
+    it('names the events it will catch', async () => {
+      renderPicker({ groups: [groups[0]] })
+
+      expect(screen.getByText(/Also map future events named/)).toHaveTextContent('Daily Standup')
+    })
+
+    /* A failed rule must not make a successful mapping look like a failure. */
+    it('keeps the mapping when the rule cannot be made', async () => {
+      const user = userEvent.setup()
+      vi.mocked(createMappingRule).mockRejectedValue(new Error('boom'))
+      const { onDone } = renderPicker()
+
+      await user.click(screen.getByRole('checkbox'))
+      await user.click(screen.getByRole('menuitem', { name: 'Architecture' }))
+
+      await waitFor(() => expect(onDone).toHaveBeenCalled())
+      expect(mapEvents).toHaveBeenCalledTimes(1)
+    })
   })
 })
