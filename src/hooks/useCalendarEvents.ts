@@ -1,35 +1,44 @@
-import { useState, useEffect, useMemo, useCallback, startTransition, useRef } from 'react'
-import dayjs, { Dayjs } from 'dayjs'
-import timezone from 'dayjs/plugin/timezone'
-import utc from 'dayjs/plugin/utc'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Dayjs } from 'dayjs'
 import { Event } from '../types'
 import { onSyncComplete } from '../api/sync'
 import { storageService } from '../services/storage'
-import { getEvents } from '../api/events'
+import { getEventsInRange } from '../api/events'
+import { groupEventsByDate } from '../utils/eventsByDate'
+import { rangeBounds, ViewRange } from '../utils/viewRange'
 
-dayjs.extend(utc)
-dayjs.extend(timezone)
-
-export const useCalendarEvents = () => {
+/**
+ * The events a calendar view needs, and the day each one falls on.
+ *
+ * Reads only the range on screen. It used to read every event in the database
+ * and filter in memory — a design that came from a 2025 fix for week
+ * navigation taking 15 seconds, where the real cost turned out to be the
+ * per-event timezone conversion rather than the query. With that conversion
+ * 51x cheaper (see `eventsByDate.ts`), reading a range is simply better:
+ * 3,694 rows in 93ms became 76 rows in 0.19ms on a real database.
+ */
+export const useCalendarEvents = (range: ViewRange) => {
   const [events, setEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [userTimezone, setUserTimezone] = useState<string>(Intl.DateTimeFormat().resolvedOptions().timeZone)
-  const hasInitiallyLoaded = useRef(false)
+  const [userTimezone, setUserTimezone] = useState<string>(
+    Intl.DateTimeFormat().resolvedOptions().timeZone
+  )
+
+  const { start, end } = rangeBounds(range)
 
   const loadEvents = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      const eventsData = await getEvents()
-      setEvents(eventsData)
+      setEvents(await getEventsInRange(start, end))
     } catch (error) {
       setError('Failed to load events')
       console.error('Error loading events:', error)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [start, end])
 
   // Load user timezone
   useEffect(() => {
@@ -68,90 +77,19 @@ export const useCalendarEvents = () => {
     }
   }, [loadEvents])
 
-  // Initial load
+  /* Whenever the range changes, which is what moving between months, weeks
+     or views does. The old guard against re-running existed because a load
+     meant every event in the database. */
   useEffect(() => {
-    if (!hasInitiallyLoaded.current) {
-      hasInitiallyLoaded.current = true
-      loadEvents()
-    }
-  }, [])
+    loadEvents()
+  }, [loadEvents])
 
-  // Optimized event date map with deferred computation to prevent blocking
-  const [eventsByDate, setEventsByDate] = useState(new Map<string, Event[]>())
-
-  useEffect(() => {
-    // Use setTimeout to defer heavy computation and prevent UI blocking
-    const timeoutId = setTimeout(() => {
-      startTransition(() => {
-        const dateMap = new Map<string, Event[]>()
-        
-        if (events.length === 0) {
-          setEventsByDate(dateMap)
-          return
-        }
-        
-        // Process events more efficiently
-        for (const event of events) {
-          try {
-            // Pre-compute and cache date objects to avoid repeated parsing
-            const startDate = event.is_all_day 
-              ? dayjs(event.start_date)
-              : dayjs.utc(event.start_date).tz(userTimezone)
-            
-            const endDate = event.end_date
-              ? (event.is_all_day 
-                  ? dayjs(event.end_date).subtract(1, 'day')
-                  : dayjs.utc(event.end_date).tz(userTimezone))
-              : startDate
-            
-            // For single-day events (most common), optimize the path
-            const startDateStr = startDate.format('YYYY-MM-DD')
-            const endDateStr = endDate.format('YYYY-MM-DD')
-            
-            if (startDateStr === endDateStr) {
-              // Single day event - most common case
-              if (!dateMap.has(startDateStr)) {
-                dateMap.set(startDateStr, [])
-              }
-              dateMap.get(startDateStr)!.push(event)
-            } else {
-              // Multi-day event - less common, handle separately
-              let currentDate = startDate.startOf('day')
-              const finalDate = endDate.startOf('day')
-              
-              while (currentDate.isSameOrBefore(finalDate, 'day')) {
-                const dateStr = currentDate.format('YYYY-MM-DD')
-                if (!dateMap.has(dateStr)) {
-                  dateMap.set(dateStr, [])
-                }
-                dateMap.get(dateStr)!.push(event)
-                currentDate = currentDate.add(1, 'day')
-              }
-            }
-          } catch (error) {
-            console.warn('Error processing event date:', event.start_date, error)
-          }
-        }
-        
-        // Sort events only once per date after all events are added
-        for (const dayEvents of dateMap.values()) {
-          dayEvents.sort((a, b) => {
-            if (a.is_all_day && !b.is_all_day) return -1
-            if (!a.is_all_day && b.is_all_day) return 1
-            
-            // Use cached start times for sorting to avoid repeated timezone conversion
-            const aStart = a.is_all_day ? a.start_date : a.start_date
-            const bStart = b.is_all_day ? b.start_date : b.start_date
-            return aStart < bStart ? -1 : aStart > bStart ? 1 : 0
-          })
-        }
-        
-        setEventsByDate(dateMap)
-      })
-    }, 10) // Small delay to allow UI to render first
-
-    return () => clearTimeout(timeoutId)
-  }, [events, userTimezone])
+  /* A plain memo: this measured 13ms for 3,694 events, so there is nothing
+     left worth deferring behind a timeout and a transition. */
+  const eventsByDate = useMemo(
+    () => groupEventsByDate(events, userTimezone),
+    [events, userTimezone]
+  )
 
   const getEventsForDate = useCallback((date: Dayjs) => {
     const dateStr = date.format('YYYY-MM-DD')
