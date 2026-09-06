@@ -232,17 +232,7 @@ fn normalise_categories(categories: &str) -> String {
     parts.join(",")
 }
 
-/// Naive difference in minutes. Both ends are stored as ISO strings in the
-/// same zone, so this needs no timezone handling - and a malformed or absent
-/// end simply contributes nothing rather than failing the whole query.
-fn minutes_between(start: &str, end: Option<&str>) -> i64 {
-    let Some(end) = end else { return 0 };
-    let parse = |s: &str| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").ok();
-    match (parse(start), parse(end)) {
-        (Some(a), Some(b)) => (b - a).num_minutes().max(0),
-        _ => 0,
-    }
-}
+use crate::db::datetime::minutes_between;
 
 #[cfg(test)]
 mod tests {

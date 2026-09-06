@@ -3,6 +3,7 @@
 pub mod activities;
 pub mod assignment;
 pub mod categories;
+pub mod datetime;
 pub mod error;
 pub mod event_types;
 pub mod events;

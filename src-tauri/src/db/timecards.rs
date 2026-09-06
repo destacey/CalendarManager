@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+use super::datetime::{day_of, minutes_between};
 use super::error::{DbError, DbResult};
 
 const TIMECARD_COLUMNS: &str =
@@ -558,17 +559,8 @@ fn event_days(event: &SourceEvent, working_days: &HashSet<u32>) -> Vec<(String, 
         .collect()
 }
 
-fn day_of(datetime: &str) -> String {
-    datetime.chars().take(10).collect()
-}
-
 fn timed_hours(start: &str, end: Option<&str>) -> f64 {
-    let Some(end) = end else { return 0.0 };
-    let parse = |s: &str| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").ok();
-    match (parse(start), parse(end)) {
-        (Some(a), Some(b)) => ((b - a).num_minutes().max(0) as f64) / 60.0,
-        _ => 0.0,
-    }
+    minutes_between(start, end) as f64 / 60.0
 }
 
 /// Mirrors `src/utils/allDayHours.ts` exactly, and for the same reasons:
@@ -845,6 +837,32 @@ mod tests {
         assert_eq!(result.events_read, 1);
         assert_eq!(result.entries_created, 0);
         assert_eq!(result.unmapped_events, 1, "counted, so the UI can say what needs attention");
+    }
+
+    /// The regression that made every cell read 0.00: Graph sends seven
+    /// fractional digits and `transform` stores them verbatim, so a test
+    /// using clean datetimes proves nothing about the real table.
+    #[test]
+    fn an_event_in_graphs_own_datetime_format_is_worth_its_hours() {
+        let conn = setup();
+        let tc = card(&conn);
+        add_event(
+            &conn,
+            1,
+            "2026-10-05T09:00:00.0000000",
+            "2026-10-05T10:30:00.0000000",
+            false,
+            Some(1),
+            None,
+            10,
+        );
+
+        generate_entries(&conn, tc, &settings()).unwrap();
+
+        let entries = list_entries(&conn, tc).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].hours, 1.5);
+        assert_eq!(entries[0].date, MON);
     }
 
     // --- regeneration and ownership ---
