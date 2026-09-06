@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
 import {
   Typography, Space, Button, Empty, Spin, Switch, Flex, Tag, theme, Splitter, Input, Select,
   Tooltip
@@ -91,13 +91,19 @@ interface PickerState {
 /* Exported for its own tests: the dimming below depends on a drag being in
    progress, and dnd-kit cannot be driven in jsdom, so the only way to cover it
    is to render the card directly with `dragActive` set. */
+/**
+ * Memoised, and the queue is why: a real one runs to a couple of hundred
+ * cards, and without this every keystroke in the search box, every selection
+ * and every frame of a drag re-rendered all of them. `onSelect` is a
+ * useCallback in the parent so the memo is not defeated on the first render.
+ */
 export const GroupCard: React.FC<{
   group: UnmappedGroup
   selected: boolean
   /** True while ANY card of the current selection is being dragged. */
   dragActive: boolean
   onSelect: (group: UnmappedGroup, additive: boolean) => void
-}> = ({ group, selected, dragActive, onSelect }) => {
+}> = memo(({ group, selected, dragActive, onSelect }) => {
   const { token } = theme.useToken()
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: group.key,
@@ -162,7 +168,7 @@ export const GroupCard: React.FC<{
       </Flex>
     </div>
   )
-}
+})
 
 const ProjectRow: React.FC<{
   project: Project
@@ -378,7 +384,7 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
 
   const totalSelectedEvents = selectedGroups.reduce((n, g) => n + g.eventCount, 0)
 
-  const handleSelect = (group: UnmappedGroup, additive: boolean) => {
+  const handleSelect = useCallback((group: UnmappedGroup, additive: boolean) => {
     setSelectedKeys(keys => {
       if (additive) {
         return keys.includes(group.key) ? keys.filter(k => k !== group.key) : [...keys, group.key]
@@ -386,7 +392,7 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
       // A plain click replaces the selection; ctrl/cmd/shift extends it.
       return keys.length === 1 && keys[0] === group.key ? [] : [group.key]
     })
-  }
+  }, [])
 
   const handleDragStart = (event: DragStartEvent) => {
     const group = event.active.data.current?.group as UnmappedGroup | undefined

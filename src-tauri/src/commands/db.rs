@@ -24,6 +24,13 @@ use crate::db::events::{self, EventUpdate, NewEvent};
 use crate::db::models::{Activity, Category, Event, EventType, EventTypeRule, Project};
 use crate::db::Db;
 
+/// The distinct categories across all events, for the rule editors. Counted
+/// in SQL rather than by shipping every event to the frontend.
+#[tauri::command]
+pub async fn get_event_categories(db: State<'_, Db>) -> DbResult<Vec<String>> {
+    db.call(events::list_event_categories).await
+}
+
 #[tauri::command]
 pub async fn get_events(db: State<'_, Db>) -> DbResult<Vec<Event>> {
     db.call(events::get_events).await

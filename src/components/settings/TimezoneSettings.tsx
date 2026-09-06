@@ -5,6 +5,7 @@ import { storageService } from '../../services/storage'
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
+import { useScreenIsActive } from '../../contexts/ScreenVisibilityContext'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -104,6 +105,7 @@ interface TimezoneSettingsProps {
 }
 
 const TimezoneSettings: React.FC<TimezoneSettingsProps> = ({ searchTerm = '' }) => {
+  const screenIsActive = useScreenIsActive()
   const [selectedTimezone, setSelectedTimezone] = useState<string>('')
   const [currentTime, setCurrentTime] = useState<string>('')
   const [saved, setSaved] = useState(false)
@@ -132,13 +134,20 @@ const TimezoneSettings: React.FC<TimezoneSettingsProps> = ({ searchTerm = '' }) 
     loadTimezone()
   }, [])
 
+  /* Only while Settings is the screen on show. Screens stay mounted, so this
+     otherwise ticked once a second for the rest of the session — re-rendering
+     a panel nobody was looking at, from the moment Settings was first
+     opened. */
   useEffect(() => {
+    if (!screenIsActive) return
+
+    updateCurrentTime(selectedTimezone)
     const interval = setInterval(() => {
       updateCurrentTime(selectedTimezone)
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [selectedTimezone])
+  }, [selectedTimezone, screenIsActive])
 
   const updateCurrentTime = (tz: string) => {
     try {

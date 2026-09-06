@@ -205,6 +205,7 @@ pub fn run() {
             commands::auth::get_account,
             commands::auth::has_session,
             commands::db::get_events,
+            commands::db::get_event_categories,
             commands::db::get_events_in_range,
             commands::db::create_event,
             commands::db::update_event,

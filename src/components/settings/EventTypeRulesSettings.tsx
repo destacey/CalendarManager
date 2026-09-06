@@ -9,7 +9,7 @@ import { EventType, EventTypeRule } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
 import { getEventTypeRules, createEventTypeRule, updateEventTypeRule, deleteEventTypeRule, updateRulePriorities, InvalidTargetTypeError } from '../../api/rules'
 import { getEventTypes, reprocessEventTypes } from '../../api/eventTypes'
-import { getEvents } from '../../api/events'
+import { getEventCategories } from '../../api/events'
 import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
 
 const { Text } = Typography
@@ -91,28 +91,14 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
   const loadData = async () => {
     try {
       setLoading(true)
-      const [rulesData, typesData, eventsData] = await Promise.all([
+      const [rulesData, typesData, categories] = await Promise.all([
         getEventTypeRules(),
         getEventTypes(),
-        getEvents()
+        getEventCategories()
       ])
       setRules(rulesData)
       setEventTypes(typesData)
-
-      // Extract unique categories from existing events
-      const categoriesSet = new Set<string>()
-      eventsData.forEach(event => {
-        if (event.categories && event.categories.trim()) {
-          // Split comma-separated categories and add each one
-          event.categories.split(',').forEach(cat => {
-            const trimmedCat = cat.trim()
-            if (trimmedCat) {
-              categoriesSet.add(trimmedCat)
-            }
-          })
-        }
-      })
-      setExistingCategories(Array.from(categoriesSet).sort())
+      setExistingCategories(categories)
     } catch (error) {
       console.error('Error loading rules:', error)
       messageApi.error('Failed to load rules')

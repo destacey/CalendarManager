@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor, act } from '@testing-library/react'
+import { screen, waitFor, act, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
 import EventTypeRulesSettings from './EventTypeRulesSettings'
-import type { EventType, EventTypeRule, Event } from '../../types'
+import type { EventType, EventTypeRule } from '../../types'
 import * as rulesApi from '../../api/rules'
 import * as eventTypesApi from '../../api/eventTypes'
 import * as eventsApi from '../../api/events'
@@ -22,7 +23,7 @@ vi.mock('../../api/eventTypes', () => ({
 }))
 
 vi.mock('../../api/events', () => ({
-  getEvents: vi.fn()
+  getEventCategories: vi.fn()
 }))
 
 const mockRulesApi = vi.mocked(rulesApi)
@@ -68,19 +69,6 @@ const mockRules: EventTypeRule[] = [
   }
 ]
 
-const mockEvents: Event[] = [
-  {
-    id: '1',
-    title: 'Work Meeting',
-    start_date: '2023-01-01T09:00:00Z',
-    end_date: '2023-01-01T10:00:00Z',
-    is_all_day: false,
-    show_as: 'busy',
-    categories: 'work,meeting',
-    type_id: 1,
-    type_manually_set: false
-  }
-]
 
 describe('EventTypeRulesSettings', () => {
   const mockOnEventsUpdated = vi.fn()
@@ -91,7 +79,9 @@ describe('EventTypeRulesSettings', () => {
     // Default mock implementations
     mockRulesApi.getEventTypeRules.mockResolvedValue(mockRules)
     mockEventTypesApi.getEventTypes.mockResolvedValue(mockEventTypes)
-    mockEventsApi.getEvents.mockResolvedValue(mockEvents)
+    // The categories the rule editor offers, straight from SQL rather than
+    // reduced out of every event in the database.
+    mockEventsApi.getEventCategories.mockResolvedValue(['Personal', 'Work'])
     mockEventTypesApi.reprocessEventTypes.mockResolvedValue({ success: true, message: 'Success' })
   })
 
@@ -114,7 +104,7 @@ describe('EventTypeRulesSettings', () => {
     await waitFor(() => {
       expect(mockRulesApi.getEventTypeRules).toHaveBeenCalled()
       expect(mockEventTypesApi.getEventTypes).toHaveBeenCalled()
-      expect(mockEventsApi.getEvents).toHaveBeenCalled()
+      expect(mockEventsApi.getEventCategories).toHaveBeenCalled()
     })
     
     await waitFor(() => {
@@ -220,17 +210,23 @@ describe('EventTypeRulesSettings', () => {
     consoleSpy.mockRestore()
   })
 
-  it('extracts categories from events for autocomplete', async () => {
+  /* The categories exist to be offered in the rule editor, so that is what
+     is worth asserting — the old version of this test only checked that an
+     API call had happened. */
+  it('offers the categories when a rule tests one', async () => {
+    const user = userEvent.setup()
     await act(async () => {
       render(<EventTypeRulesSettings onEventsUpdated={mockOnEventsUpdated} />)
     })
-    
-    await waitFor(() => {
-      expect(mockEventsApi.getEvents).toHaveBeenCalled()
-    })
-    
-    // The component should extract categories from the mock events
-    // We can't easily test the autocomplete options without complex modal interactions
-    // but we can verify the API was called to get the events
+    await waitFor(() => expect(mockEventsApi.getEventCategories).toHaveBeenCalled())
+
+    await user.click(screen.getByRole('button', { name: /add rule/i }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByLabelText(/field/i))
+    await user.click(await screen.findByTitle('Categories'))
+    await user.click(within(dialog).getByLabelText(/^value/i))
+
+    expect(await screen.findByTitle('Work')).toBeInTheDocument()
+    expect(screen.getByTitle('Personal')).toBeInTheDocument()
   })
 })
