@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, memo } from 'react'
 import { ConfigProvider, Layout, App as AntApp, Modal, Grid, Typography } from 'antd'
 import CalendarView from './components/calendar/CalendarView'
 import AppSetup from './components/AppSetup'
@@ -10,6 +10,7 @@ import MapEvents from './components/mapping/MapEvents'
 import Timecards from './components/timecards/Timecards'
 import DataManagement from './components/DataManagement'
 import Settings from './components/settings/Settings'
+
 import { ThemeProvider, useTheme } from './contexts/ThemeContext'
 import { MessageProvider } from './contexts/MessageContext'
 import { storageService } from './services/storage'
@@ -19,6 +20,15 @@ import './App.css'
 const { Content } = Layout
 const { useBreakpoint } = Grid
 const { Title, Paragraph } = Typography
+
+/* Screens are kept mounted and hidden so they hold their state, which means a
+   re-render of AppContent - a breakpoint crossing, and a resize drag causes
+   several - would otherwise reconcile every screen's whole tree at once.
+   Memoised, they re-render only when their own props change. */
+const CalendarScreen = memo(CalendarView)
+const MapEventsScreen = memo(MapEvents)
+const TimecardsScreen = memo(Timecards)
+const SettingsScreen = memo(Settings)
 
 type AppState = 'loading' | 'setup' | 'login' | 'dashboard'
 
@@ -31,7 +41,21 @@ function AppContent() {
      when it is next shown, rather than being remounted with a changing `key`
      - which destroyed and rebuilt the whole subtree for every change. */
   const [eventsDirty, setEventsDirty] = useState(false)
+  /* A screen is built the first time it is asked for, and kept from then on.
+     Every screen used to mount at startup, so sitting on Home still meant
+     loading every event, grouping them for Map Events and filling the
+     settings tables - all before anything had been asked for. */
+  const [visited, setVisited] = useState<Set<string>>(() => new Set(['home']))
   const screens = useBreakpoint()
+
+  useEffect(() => {
+    setVisited(current =>
+      current.has(selectedNavKey) ? current : new Set(current).add(selectedNavKey)
+    )
+  }, [selectedNavKey])
+
+  const markEventsDirty = useCallback(() => setEventsDirty(true), [])
+  const markEventsClean = useCallback(() => setEventsDirty(false), [])
 
   // Use mobile navigation on small screens (sm and below)
   const isMobile = !screens.md // md breakpoint is 768px, so this covers screens < 768px
@@ -115,34 +139,42 @@ function AppContent() {
           <Title>Welcome to Calendar Manager</Title>
           <Paragraph>Select Calendar from the sidebar to view your events, or Settings to configure the application.</Paragraph>
         </div>
-        <div style={{ 
-          display: selectedNavKey === 'calendar' ? 'block' : 'none',
-          height: '100%'
-        }}>
-          <CalendarView
-            isActive={selectedNavKey === 'calendar'}
-            needsRefresh={eventsDirty}
-            onRefreshed={() => setEventsDirty(false)}
-          />
-        </div>
-        <div style={{ 
-          display: selectedNavKey === 'map-events' ? 'block' : 'none',
-          height: '100%'
-        }}>
-          <MapEvents onEventsChanged={() => setEventsDirty(true)} />
-        </div>
-        <div style={{ 
-          display: selectedNavKey === 'timecards' ? 'block' : 'none',
-          height: '100%'
-        }}>
-          <Timecards />
-        </div>
-        <div style={{ 
-          display: selectedNavKey === 'settings' ? 'block' : 'none',
-          height: '100%'
-        }}>
-          <Settings onEventsUpdated={() => setEventsDirty(true)} />
-        </div>
+        {visited.has('calendar') && (
+          <div style={{
+            display: selectedNavKey === 'calendar' ? 'block' : 'none',
+            height: '100%'
+          }}>
+            <CalendarScreen
+              isActive={selectedNavKey === 'calendar'}
+              needsRefresh={eventsDirty}
+              onRefreshed={markEventsClean}
+            />
+          </div>
+        )}
+        {visited.has('map-events') && (
+          <div style={{
+            display: selectedNavKey === 'map-events' ? 'block' : 'none',
+            height: '100%'
+          }}>
+            <MapEventsScreen onEventsChanged={markEventsDirty} />
+          </div>
+        )}
+        {visited.has('timecards') && (
+          <div style={{
+            display: selectedNavKey === 'timecards' ? 'block' : 'none',
+            height: '100%'
+          }}>
+            <TimecardsScreen />
+          </div>
+        )}
+        {visited.has('settings') && (
+          <div style={{
+            display: selectedNavKey === 'settings' ? 'block' : 'none',
+            height: '100%'
+          }}>
+            <SettingsScreen onEventsUpdated={markEventsDirty} />
+          </div>
+        )}
       </div>
     )
   }
