@@ -13,6 +13,7 @@ import {
   createTimecard,
   deleteTimecard,
   getTimecardEntries,
+  generateTimecardEntries,
   submitTimecard
 } from '../../api/timecards'
 import { getProjects } from '../../api/projects'
@@ -76,6 +77,9 @@ describe('Timecards', () => {
     vi.mocked(getProjects).mockResolvedValue([])
     vi.mocked(getActivities).mockResolvedValue([])
     vi.mocked(storageService.getWorkingDays).mockResolvedValue([1, 2, 3, 4, 5])
+    vi.mocked(generateTimecardEntries).mockResolvedValue({
+      eventsRead: 20, entriesCreated: 18, manualEntriesKept: 0, unmappedEvents: 0
+    })
   })
 
   it('lists the timecards', async () => {
@@ -119,8 +123,28 @@ describe('Timecards', () => {
         end_date: '2026-12-31'
       })
     )
-    // Straight into the new card: it is empty until it pulls from events.
+    // Straight into the new card, already filled: an empty one looks broken,
+    // and pulling is what anyone would do next anyway.
+    await waitFor(() => expect(generateTimecardEntries).toHaveBeenCalledWith(3, [1, 2, 3, 4, 5]))
     await waitFor(() => expect(getTimecardEntries).toHaveBeenCalledWith(3))
+  })
+
+  /* The card exists either way, and Pull from events is right there. */
+  it('still opens the new timecard when the pull fails', async () => {
+    const user = userEvent.setup()
+    const created = { ...october, id: 3, name: 'December 2026' }
+    vi.mocked(createTimecard).mockResolvedValue(created)
+    vi.mocked(getTimecards).mockResolvedValue([october, november, created])
+    vi.mocked(generateTimecardEntries).mockRejectedValue(new Error('boom'))
+    render(<Timecards />)
+    await waitFor(() => expect(screen.getByText('October 2026')).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: /new timecard/i }))
+    await pickDecember2026(user)
+    await user.click(screen.getByRole('button', { name: /^create$/i }))
+
+    await waitFor(() => expect(getTimecardEntries).toHaveBeenCalledWith(3))
+    expect(screen.getByText(/pulling from events failed/i)).toBeInTheDocument()
   })
 
   it('deletes a timecard after confirmation', async () => {

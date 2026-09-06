@@ -5,8 +5,10 @@ import {
   Timecard,
   getTimecards,
   createTimecard,
-  deleteTimecard
+  deleteTimecard,
+  generateTimecardEntries
 } from '../../api/timecards'
+import { storageService } from '../../services/storage'
 import TimecardList from './TimecardList'
 import TimecardDetail from './TimecardDetail'
 
@@ -45,15 +47,31 @@ const Timecards: React.FC = () => {
   const open = timecards.find(t => t.id === openId) ?? null
 
   const handleCreate = async (name: string, startDate: string, endDate: string) => {
+    let created: Timecard
     try {
-      const created = await createTimecard({ name, start_date: startDate, end_date: endDate })
-      messageApi.success('Timecard created')
-      await load()
-      setOpenId(created.id ?? null)
+      created = await createTimecard({ name, start_date: startDate, end_date: endDate })
     } catch (error) {
       console.error('Error creating timecard:', error)
       messageApi.error('Failed to create the timecard')
+      return
     }
+
+    // Pull straight away: a new timecard that opens empty looks broken, and
+    // pulling is what someone would do first anyway. A failure here is not
+    // fatal — the card exists, and Pull from events is right there.
+    try {
+      const workingDays = await storageService.getWorkingDays()
+      const result = await generateTimecardEntries(created.id!, workingDays)
+      messageApi.success(
+        `Timecard created from ${result.eventsRead} event${result.eventsRead === 1 ? '' : 's'}`
+      )
+    } catch (error) {
+      console.error('Error pulling events into the new timecard:', error)
+      messageApi.warning('Timecard created, but pulling from events failed')
+    }
+
+    await load()
+    setOpenId(created.id ?? null)
   }
 
   const handleDelete = async (timecard: Timecard) => {
