@@ -194,6 +194,7 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [billableOnly, setBillableOnly] = useState(true)
   const [search, setSearch] = useState('')
+  const [projectSearch, setProjectSearch] = useState('')
   const [includeInactiveProjects, setIncludeInactiveProjects] = useState(false)
   const [groupByProgram, setGroupByProgram] = useState(false)
   const [month, setMonth] = useState<Dayjs>(dayjs())
@@ -279,10 +280,20 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
      Retired projects are hidden by default because mapping new work to one is
      almost always a mistake - but "almost" is why the toggle exists, for
      backfilling a month that predates the project being retired. */
-  const visibleProjects = useMemo(
-    () => (includeInactiveProjects ? projects : projects.filter(p => p.is_active)),
-    [projects, includeInactiveProjects]
-  )
+  const visibleProjects = useMemo(() => {
+    const active = includeInactiveProjects ? projects : projects.filter(p => p.is_active)
+    const term = projectSearch.trim().toLowerCase()
+    if (!term) return active
+
+    // Code, name and program, because any of the three is a way someone
+    // remembers a project — and the program is what the grouping is by.
+    return active.filter(
+      p =>
+        p.code.toLowerCase().includes(term) ||
+        p.name.toLowerCase().includes(term) ||
+        (p.program ?? '').toLowerCase().includes(term)
+    )
+  }, [projects, includeInactiveProjects, projectSearch])
 
   const inactiveProjectCount = projects.filter(p => !p.is_active).length
 
@@ -528,6 +539,16 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
                   )}
                 </Flex>
 
+                <Input
+                  value={projectSearch}
+                  onChange={e => setProjectSearch(e.target.value)}
+                  placeholder="Search projects, codes and programs"
+                  prefix={<SearchOutlined style={{ color: token.colorTextQuaternary }} />}
+                  allowClear
+                  size="small"
+                  style={{ flexShrink: 0 }}
+                />
+
                 <Text type="secondary" style={{ fontSize: 11, flexShrink: 0, marginTop: -4 }}>
                   Drop the selection on a project
                 </Text>
@@ -535,9 +556,11 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
                 {visibleProjects.length === 0 ? (
                   <Empty
                     description={
-                      projects.length === 0
-                        ? 'No projects — add one in Settings'
-                        : 'No active projects — switch on "Include inactive" or add one in Settings'
+                      projectSearch.trim()
+                        ? `No projects match "${projectSearch.trim()}"`
+                        : projects.length === 0
+                          ? 'No projects — add one in Settings'
+                          : 'No active projects — switch on "Include inactive" or add one in Settings'
                     }
                   />
                 ) : (

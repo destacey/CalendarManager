@@ -549,4 +549,60 @@ describe('MapEvents', () => {
       expect(screen.getByText('Failed to load unmapped events')).toBeInTheDocument()
     })
   })
+
+  describe('searching the projects', () => {
+    const searchProjects = async (user: ReturnType<typeof userEvent.setup>, term: string) => {
+      render(<MapEvents />)
+      await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+      await user.type(screen.getByPlaceholderText('Search projects, codes and programs'), term)
+    }
+
+    it('finds a project by name', async () => {
+      const user = userEvent.setup()
+      await searchProjects(user, 'billing')
+
+      await waitFor(() => expect(screen.getByText('Billing Migration')).toBeInTheDocument())
+      expect(screen.queryByText('Website Rebuild')).not.toBeInTheDocument()
+    })
+
+    /* The code is what most people actually remember. */
+    it('finds a project by code', async () => {
+      const user = userEvent.setup()
+      await searchProjects(user, 'PRJ-003')
+
+      await waitFor(() => expect(screen.getByText('Job Distribution')).toBeInTheDocument())
+      expect(screen.queryByText('Billing Migration')).not.toBeInTheDocument()
+    })
+
+    /* Searching a program is how you narrow to a whole area of work, and it
+       is what the grouping is by. */
+    it('finds every project in a program', async () => {
+      const user = userEvent.setup()
+      await searchProjects(user, 'platform')
+
+      await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
+      expect(screen.getByText('Job Distribution')).toBeInTheDocument()
+      expect(screen.queryByText('Billing Migration')).not.toBeInTheDocument()
+    })
+
+    it('says when nothing matches rather than showing an empty panel', async () => {
+      const user = userEvent.setup()
+      await searchProjects(user, 'nothing like this')
+
+      await waitFor(() =>
+        expect(screen.getByText('No projects match "nothing like this"')).toBeInTheDocument()
+      )
+    })
+
+    /* The search narrows what is already shown; it does not bring back a
+       project the inactive toggle is hiding. */
+    it('does not surface an inactive project', async () => {
+      const user = userEvent.setup()
+      await searchProjects(user, 'retired')
+
+      await waitFor(() =>
+        expect(screen.getByText(/No projects match/)).toBeInTheDocument()
+      )
+    })
+  })
 })
