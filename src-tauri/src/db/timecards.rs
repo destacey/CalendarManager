@@ -60,7 +60,14 @@ pub struct TimecardEntry {
     pub hours: f64,
     pub project_id: Option<i64>,
     pub activity_id: Option<i64>,
-    /// `event` (generated, replaceable) or `manual` (a human's, never replaced).
+    /// What owns this entry, and therefore what a regeneration may do to it:
+    ///
+    /// - `event`   generated from a calendar event; replaced on every refresh.
+    /// - `manual`  an item the user added or edited. Never replaced. If it
+    ///             still carries an `event_id`, that event's time on that date
+    ///             is theirs now, so generation stops producing it.
+    /// - `cell`    the user typed a number over a whole grid cell. Never
+    ///             replaced, and no event may add to that cell again.
     pub source: String,
     pub note: Option<String>,
     pub created_at: Option<String>,
@@ -306,6 +313,81 @@ pub fn delete_entry(conn: &Connection, id: i64) -> DbResult<bool> {
     Ok(changed > 0)
 }
 
+/// One cell of the week grid: a day, a project and an activity.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CellInput {
+    pub date: String,
+    pub project_id: Option<i64>,
+    pub activity_id: Option<i64>,
+    pub hours: f64,
+}
+
+/// Sets what one grid cell is worth, replacing whatever was behind it.
+///
+/// A cell can be backed by several entries - three meetings on the same
+/// project and activity on the same day. Typing a number over it is the user
+/// saying "this is what that day was worth", so everything behind it goes and
+/// one `cell` entry takes its place. A refresh then neither replaces that
+/// entry nor adds event time back into the cell beside it - which is the
+/// difference between typing over a cell and adding an item to a day.
+///
+/// Zero (or less) clears the cell instead of storing a zero-hour entry.
+///
+/// The whole thing is one transaction, so a cell can never be left with its
+/// old entries deleted and no replacement written.
+pub fn set_cell(
+    conn: &Connection,
+    timecard_id: i64,
+    cell: &CellInput,
+) -> DbResult<Option<TimecardEntry>> {
+    ensure_editable(conn, timecard_id)?;
+
+    // `IS` rather than `=`, because a cell is identified by NULLs as much as
+    // by ids: the Unassigned row and the no-activity row are real rows.
+    const MATCH: &str = "timecard_id = ?1 AND date = ?2 AND project_id IS ?3 AND activity_id IS ?4";
+
+    let tx = conn.unchecked_transaction()?;
+
+    // A note is the one thing the entries carry that the cell cannot show, so
+    // it is carried forward rather than dropped when a single entry is being
+    // replaced. Several notes cannot be merged into one, so those are left to
+    // the day view, which can show them individually.
+    let sql = format!(
+        "SELECT note FROM timecard_entries WHERE {MATCH} AND note IS NOT NULL AND note != ''"
+    );
+    let notes: Vec<String> = tx
+        .prepare(&sql)?
+        .query_map(
+            params![timecard_id, cell.date, cell.project_id, cell.activity_id],
+            |r| r.get(0),
+        )?
+        .collect::<Result<_, _>>()?;
+    let note = if notes.len() == 1 { notes.into_iter().next() } else { None };
+
+    tx.execute(
+        &format!("DELETE FROM timecard_entries WHERE {MATCH}"),
+        params![timecard_id, cell.date, cell.project_id, cell.activity_id],
+    )?;
+
+    if cell.hours <= 0.0 {
+        tx.commit()?;
+        return Ok(None);
+    }
+
+    tx.execute(
+        "INSERT INTO timecard_entries
+         (timecard_id, event_id, date, hours, project_id, activity_id, source, note)
+         VALUES (?1, NULL, ?2, ?3, ?4, ?5, 'cell', ?6)",
+        params![timecard_id, cell.date, cell.hours, cell.project_id, cell.activity_id, note],
+    )?;
+
+    let id = tx.last_insert_rowid();
+    let sql = format!("SELECT {ENTRY_COLUMNS} FROM timecard_entries WHERE id = ?1");
+    let entry = tx.query_row(&sql, params![id], TimecardEntry::from_row)?;
+    tx.commit()?;
+    Ok(Some(entry))
+}
+
 /// One event, as generation needs to see it.
 struct SourceEvent {
     id: i64,
@@ -320,9 +402,10 @@ struct SourceEvent {
 /// Builds (or rebuilds) the entries for a timecard from the events in its
 /// period.
 ///
-/// Replaces every `event`-sourced entry and touches no `manual` one. That is
-/// what makes a refresh safe: anything a human made or edited is theirs, and
-/// regeneration only owns what it generated.
+/// Replaces every `event`-sourced entry and touches nothing the user owns.
+/// That is what makes a refresh safe: anything a human made, edited or typed
+/// over is theirs, and regeneration only owns what it generated - including
+/// not re-creating an event's entry beside the user's own version of it.
 ///
 /// An event with no project produces no entry - it is counted and reported so
 /// the UI can say "9 events still need a project" rather than silently
@@ -340,10 +423,30 @@ pub fn generate_entries(
     let events = read_events_in_period(conn, &card.start_date, &card.end_date)?;
 
     let manual_kept: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM timecard_entries WHERE timecard_id = ?1 AND source = 'manual'",
+        "SELECT COUNT(*) FROM timecard_entries WHERE timecard_id = ?1 AND source != 'event'",
         params![timecard_id],
         |r| r.get(0),
     )?;
+
+    // One event's time on one date, already taken over by the user - they
+    // edited the entry it produced, or moved it to another project. Generating
+    // it again would count those hours twice.
+    let claimed: HashSet<(i64, String)> = conn
+        .prepare(
+            "SELECT event_id, date FROM timecard_entries
+             WHERE timecard_id = ?1 AND source != 'event' AND event_id IS NOT NULL",
+        )?
+        .query_map(params![timecard_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+
+    // A whole cell the user typed a number into. Nothing may be added to it.
+    let owned: HashSet<(String, Option<i64>, Option<i64>)> = conn
+        .prepare(
+            "SELECT date, project_id, activity_id FROM timecard_entries
+             WHERE timecard_id = ?1 AND source = 'cell'",
+        )?
+        .query_map(params![timecard_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<Result<_, _>>()?;
 
     let working: HashSet<u32> = settings.working_days.iter().copied().collect();
 
@@ -365,6 +468,14 @@ pub fn generate_entries(
         };
 
         for (date, hours) in event_days(event, &working) {
+            // Per date, not per event: overriding one Wednesday of a week-long
+            // block leaves the other four days to regenerate normally.
+            if claimed.contains(&(event.id, date.clone()))
+                || owned.contains(&(date.clone(), Some(project_id), event.activity_id))
+            {
+                continue;
+            }
+
             tx.execute(
                 "INSERT INTO timecard_entries
                  (timecard_id, event_id, date, hours, project_id, activity_id, source)
@@ -785,8 +896,72 @@ mod tests {
         generate_entries(&conn, tc, &settings()).unwrap();
 
         let after = list_entries(&conn, tc).unwrap();
-        assert_eq!(after.len(), 2, "the edited one survives AND the event regenerates");
-        assert!(after.iter().any(|e| e.hours == 2.0 && e.source == "manual"));
+        // Not two. Regenerating the event beside the user's own version of it
+        // would count that hour twice.
+        assert_eq!(after.len(), 1, "the event must not regenerate beside the edit");
+        assert_eq!(after[0].hours, 2.0);
+        assert_eq!(after[0].source, "manual");
+    }
+
+    /// Moving an entry to another project frees its original cell, so the cell
+    /// check alone would let the event refill it - the claim is what stops it.
+    #[test]
+    fn moving_an_entry_to_another_project_does_not_leave_its_event_to_regenerate() {
+        let conn = setup();
+        let tc = card(&conn);
+        conn.execute("INSERT INTO projects (id, name, code) VALUES (2, 'Billing', 'PRJ-002')", [])
+            .unwrap();
+        add_event(&conn, 1, "2026-10-05T09:00:00", "2026-10-05T10:00:00", false, Some(1), None, 10);
+        generate_entries(&conn, tc, &settings()).unwrap();
+        let generated = list_entries(&conn, tc).unwrap().remove(0);
+
+        update_entry(&conn, generated.id.unwrap(), &EntryInput {
+            project_id: Some(2), ..entry(MON, 1.0)
+        })
+        .unwrap();
+        generate_entries(&conn, tc, &settings()).unwrap();
+
+        let after = list_entries(&conn, tc).unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].project_id, Some(2));
+    }
+
+    /// Ownership is per date, not per event: a week of PTO with one day
+    /// corrected must still regenerate the other four.
+    #[test]
+    fn overriding_one_day_of_a_multi_day_event_leaves_the_rest_generating() {
+        let conn = setup();
+        let tc = card(&conn);
+        // Mon 5th to Fri 9th; Graph's end date is exclusive.
+        add_event(&conn, 1, "2026-10-05", "2026-10-10", true, Some(1), None, 10);
+        generate_entries(&conn, tc, &settings()).unwrap();
+        assert_eq!(list_entries(&conn, tc).unwrap().len(), 5);
+
+        set_cell(&conn, tc, &cell("2026-10-07", 4.0)).unwrap();
+        generate_entries(&conn, tc, &settings()).unwrap();
+
+        let after = list_entries(&conn, tc).unwrap();
+        assert_eq!(after.len(), 5);
+        let wednesday = after.iter().find(|e| e.date == "2026-10-07").unwrap();
+        assert_eq!(wednesday.hours, 4.0);
+        assert_eq!(wednesday.source, "cell");
+        assert!(after.iter().filter(|e| e.date != "2026-10-07").all(|e| e.hours == 8.0));
+    }
+
+    /// Adding an item to a day is not the same as typing over the cell: the
+    /// added time is extra, and the event's time still belongs there.
+    #[test]
+    fn an_added_item_does_not_stop_events_filling_its_cell() {
+        let conn = setup();
+        let tc = card(&conn);
+        add_event(&conn, 1, "2026-10-05T09:00:00", "2026-10-05T11:00:00", false, Some(1), None, 10);
+        add_manual_entry(&conn, tc, &entry(MON, 1.0)).unwrap();
+
+        generate_entries(&conn, tc, &settings()).unwrap();
+
+        let after = list_entries(&conn, tc).unwrap();
+        assert_eq!(after.len(), 2, "the addition and the event's own time");
+        assert_eq!(after.iter().map(|e| e.hours).sum::<f64>(), 3.0);
     }
 
     // --- submitted timecards ---
@@ -871,5 +1046,133 @@ mod tests {
 
         assert!(delete_entry(&conn, created.id.unwrap()).unwrap());
         assert!(!delete_entry(&conn, created.id.unwrap()).unwrap());
+    }
+
+    fn cell(date: &str, hours: f64) -> CellInput {
+        CellInput { date: date.into(), project_id: Some(1), activity_id: None, hours }
+    }
+
+    #[test]
+    fn setting_a_cell_replaces_every_entry_behind_it_with_one() {
+        let conn = setup();
+        let id = card(&conn);
+        // Three meetings on the same project and day, as generation would
+        // leave them.
+        for _ in 0..3 {
+            add_manual_entry(&conn, id, &entry(MON, 1.0)).unwrap();
+        }
+
+        let written = set_cell(&conn, id, &cell(MON, 4.0)).unwrap().unwrap();
+
+        assert_eq!(written.hours, 4.0);
+        let entries = list_entries(&conn, id).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].hours, 4.0);
+    }
+
+    #[test]
+    fn a_cell_survives_a_refresh_and_no_event_refills_it() {
+        let conn = setup();
+        let id = card(&conn);
+        add_event(&conn, 1, &format!("{MON}T09:00:00"), &format!("{MON}T10:00:00"), false, Some(1), None, 10);
+        generate_entries(&conn, id, &settings()).unwrap();
+
+        set_cell(&conn, id, &cell(MON, 6.0)).unwrap();
+        generate_entries(&conn, id, &settings()).unwrap();
+
+        let entries = list_entries(&conn, id).unwrap();
+        assert_eq!(entries.len(), 1, "regeneration must not resurrect the event entry");
+        assert_eq!(entries[0].hours, 6.0);
+        assert_eq!(entries[0].source, "cell");
+    }
+
+    #[test]
+    fn clearing_a_cell_deletes_it_rather_than_storing_a_zero() {
+        let conn = setup();
+        let id = card(&conn);
+        add_manual_entry(&conn, id, &entry(MON, 3.0)).unwrap();
+
+        let written = set_cell(&conn, id, &cell(MON, 0.0)).unwrap();
+
+        assert!(written.is_none());
+        assert!(list_entries(&conn, id).unwrap().is_empty());
+    }
+
+    /// The Unassigned row and the no-activity row are real rows, and NULL does
+    /// not match itself under `=`.
+    #[test]
+    fn a_cell_with_no_project_is_a_cell_of_its_own() {
+        let conn = setup();
+        let id = card(&conn);
+        set_cell(&conn, id, &CellInput {
+            date: MON.into(), project_id: None, activity_id: None, hours: 2.0
+        }).unwrap();
+        set_cell(&conn, id, &cell(MON, 5.0)).unwrap();
+
+        let entries = list_entries(&conn, id).unwrap();
+        assert_eq!(entries.len(), 2, "setting PRJ-001 must not clear Unassigned");
+        let unassigned = entries.iter().find(|e| e.project_id.is_none()).unwrap();
+        assert_eq!(unassigned.hours, 2.0);
+    }
+
+    #[test]
+    fn a_cell_touches_neither_another_day_nor_another_activity() {
+        let conn = setup();
+        let id = card(&conn);
+        conn.execute("INSERT INTO activities (id, name) VALUES (500, 'Dev')", []).unwrap();
+        add_manual_entry(&conn, id, &entry("2026-10-06", 1.0)).unwrap();
+        add_manual_entry(&conn, id, &EntryInput { activity_id: Some(500), ..entry(MON, 1.0) }).unwrap();
+
+        set_cell(&conn, id, &cell(MON, 8.0)).unwrap();
+
+        let entries = list_entries(&conn, id).unwrap();
+        assert_eq!(entries.len(), 3);
+        assert!(entries.iter().any(|e| e.date == "2026-10-06" && e.hours == 1.0));
+        assert!(entries.iter().any(|e| e.activity_id == Some(500) && e.hours == 1.0));
+    }
+
+    /// The grid cannot show a note, so replacing a single entry must not be
+    /// the thing that silently loses one.
+    #[test]
+    fn replacing_one_entry_carries_its_note_forward() {
+        let conn = setup();
+        let id = card(&conn);
+        add_manual_entry(&conn, id, &EntryInput {
+            note: Some("Called the vendor".into()), ..entry(MON, 1.0)
+        }).unwrap();
+
+        let written = set_cell(&conn, id, &cell(MON, 2.5)).unwrap().unwrap();
+
+        assert_eq!(written.note.as_deref(), Some("Called the vendor"));
+    }
+
+    /// Two notes cannot be merged into one, so neither is claimed to survive.
+    #[test]
+    fn replacing_several_notes_keeps_none_of_them() {
+        let conn = setup();
+        let id = card(&conn);
+        for note in ["First", "Second"] {
+            add_manual_entry(&conn, id, &EntryInput {
+                note: Some(note.into()), ..entry(MON, 1.0)
+            }).unwrap();
+        }
+
+        let written = set_cell(&conn, id, &cell(MON, 2.5)).unwrap().unwrap();
+
+        assert!(written.note.is_none());
+    }
+
+    #[test]
+    fn a_submitted_timecard_refuses_a_cell_edit() {
+        let conn = setup();
+        let id = card(&conn);
+        add_manual_entry(&conn, id, &entry(MON, 3.0)).unwrap();
+        submit_timecard(&conn, id).unwrap();
+
+        let error = set_cell(&conn, id, &cell(MON, 9.0)).unwrap_err();
+
+        assert!(error.to_string().contains("has been submitted"));
+        // And the refusal is total: the delete must not have happened either.
+        assert_eq!(list_entries(&conn, id).unwrap()[0].hours, 3.0);
     }
 }

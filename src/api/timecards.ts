@@ -32,7 +32,14 @@ export interface TimecardEntry {
   hours: number
   project_id?: number | null
   activity_id?: number | null
-  /** 'event' (generated, replaceable) or 'manual' (yours, never replaced). */
+  /**
+   * What owns this entry:
+   * - 'event'  generated from a calendar event; replaced on every refresh.
+   * - 'manual' an item you added or edited. Kept, and the event behind it
+   *            stops generating so its time is never counted twice.
+   * - 'cell'   a number you typed over a whole grid cell. Kept, and no event
+   *            refills that cell.
+   */
   source: string
   note?: string | null
   created_at?: string
@@ -60,6 +67,14 @@ export interface GenerationResult {
   manualEntriesKept: number
   /** Events with no project. They produce no entry, so this needs surfacing. */
   unmappedEvents: number
+}
+
+/** One cell of the week grid: a day, a project and an activity. */
+export interface CellInput {
+  date: string
+  project_id: number | null
+  activity_id: number | null
+  hours: number
 }
 
 /** Thrown when a write is refused because the timecard has been submitted. */
@@ -156,4 +171,22 @@ export function submitTimecard(id: number): Promise<Timecard | null> {
 
 export function reopenTimecard(id: number): Promise<Timecard | null> {
   return invoke<Timecard | null>('reopen_timecard', { id })
+}
+
+/**
+ * Sets what one grid cell is worth. Everything behind it is replaced by a
+ * single entry that a later refresh will neither replace nor add to — the
+ * difference between typing over a cell and adding an item to a day.
+ *
+ * Hours of zero clears the cell, and resolves to `null`.
+ */
+export async function setTimecardCell(
+  timecardId: number,
+  cell: CellInput
+): Promise<TimecardEntry | null> {
+  try {
+    return await invoke<TimecardEntry | null>('set_timecard_cell', { timecardId, cell })
+  } catch (error) {
+    throw toReadableError(error)
+  }
 }

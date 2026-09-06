@@ -11,7 +11,8 @@ use crate::db::mapping_rules::{self, MappingRule, MappingRuleInput};
 use crate::db::project_import::{self, ProjectImportOutcome, ProjectImportPreview};
 use crate::db::projects::{self, DeleteProjectOutcome, ProjectInput};
 use crate::db::timecards::{
-    self, EntryInput, GenerationResult, GenerationSettings, NewTimecard, Timecard, TimecardEntry,
+    self, CellInput, EntryInput, GenerationResult, GenerationSettings, NewTimecard, Timecard,
+    TimecardEntry,
 };
 use crate::db::assignment::{self, EventFieldsInput, ReprocessEventTypesResult};
 use crate::db::categories::{self, NewCategory};
@@ -170,6 +171,17 @@ pub async fn update_timecard_entry(
     entry: EntryInput,
 ) -> DbResult<Option<TimecardEntry>> {
     db.call(move |conn| timecards::update_entry(conn, id, &entry)).await
+}
+
+/// One grid cell, set to what the user typed. Returns the entry that now
+/// stands behind it, or `None` when the cell was cleared.
+#[tauri::command]
+pub async fn set_timecard_cell(
+    db: State<'_, Db>,
+    timecard_id: i64,
+    cell: CellInput,
+) -> DbResult<Option<TimecardEntry>> {
+    db.call(move |conn| timecards::set_cell(conn, timecard_id, &cell)).await
 }
 
 #[tauri::command]
