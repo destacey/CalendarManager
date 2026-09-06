@@ -3,11 +3,19 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
 import ActivityPicker from './ActivityPicker'
-import { mapEvents, createMappingRule } from '../../api/mapping'
+import {
+  mapEvents, createMappingRule, updateMappingRule, getMappingRules
+} from '../../api/mapping'
 
-vi.mock('../../api/mapping', () => ({ mapEvents: vi.fn(), createMappingRule: vi.fn() }))
+vi.mock('../../api/mapping', () => ({
+  mapEvents: vi.fn(),
+  createMappingRule: vi.fn(),
+  updateMappingRule: vi.fn(),
+  getMappingRules: vi.fn()
+}))
 
 const project = { id: 1, name: 'Website Rebuild', code: 'PRJ-001', program: 'Platform', is_active: true }
+const otherProject = { id: 2, name: 'Billing', code: 'PRJ-002', program: null, is_active: true }
 
 const groups = [
   { key: 'a', title: 'Daily Standup', categories: 'Scrum', typeName: 'Work', eventCount: 23, timedMinutes: 690, allDayCount: 0, eventIds: [1, 2, 3] },
@@ -27,6 +35,7 @@ const renderPicker = (overrides = {}) => {
       project={project}
       groups={groups}
       activities={activities}
+      projects={[project, otherProject]}
       onDone={onDone}
       onCancel={onCancel}
       {...overrides}
@@ -40,6 +49,8 @@ describe('ActivityPicker', () => {
     vi.clearAllMocks()
     vi.mocked(mapEvents).mockResolvedValue(28)
     vi.mocked(createMappingRule).mockResolvedValue({} as never)
+    vi.mocked(updateMappingRule).mockResolvedValue({} as never)
+    vi.mocked(getMappingRules).mockResolvedValue([])
   })
 
   /* "Project only" is a real answer and often the right one, so it sits first
@@ -230,6 +241,96 @@ describe('ActivityPicker', () => {
           expect.objectContaining({ activity_id: null })
         )
       )
+    })
+
+    /* The duplicate case, and why it is not silent: an existing rule aimed
+       somewhere else is exactly how future events end up somewhere other
+       than the drop that was just made. */
+    describe('when a rule for that name already exists', () => {
+      const existingRule = {
+        id: 42,
+        name_operator: 'is' as const,
+        name_value: 'Daily Standup',
+        category_value: null,
+        type_id: null,
+        project_id: 2,
+        activity_id: null,
+        is_active: true,
+        priority: 1
+      }
+
+      it('points the existing rule here rather than adding a second', async () => {
+        const user = userEvent.setup()
+        vi.mocked(getMappingRules).mockResolvedValue([existingRule])
+        renderPicker({ groups: [groups[0]] })
+
+        await user.click(await screen.findByRole('checkbox'))
+        await user.click(screen.getByRole('menuitem', { name: 'Architecture' }))
+
+        await waitFor(() =>
+          expect(updateMappingRule).toHaveBeenCalledWith(42, expect.objectContaining({
+            name_value: 'Daily Standup',
+            project_id: 1,
+            activity_id: 7
+          }))
+        )
+        expect(createMappingRule).not.toHaveBeenCalled()
+      })
+
+      it('says where that rule points now, before it is changed', async () => {
+        vi.mocked(getMappingRules).mockResolvedValue([existingRule])
+        renderPicker({ groups: [groups[0]] })
+
+        expect(await screen.findByText(/point the rule for/i)).toBeInTheDocument()
+        expect(screen.getByText(/PRJ-002/)).toHaveTextContent('no activity')
+      })
+
+      it('writes nothing when the rule already says exactly this', async () => {
+        const user = userEvent.setup()
+        vi.mocked(getMappingRules).mockResolvedValue([
+          { ...existingRule, project_id: 1, activity_id: 7 }
+        ])
+        renderPicker({ groups: [groups[0]] })
+
+        await user.click(await screen.findByRole('checkbox'))
+        await user.click(screen.getByRole('menuitem', { name: 'Architecture' }))
+
+        await waitFor(() => expect(mapEvents).toHaveBeenCalled())
+        expect(createMappingRule).not.toHaveBeenCalled()
+        expect(updateMappingRule).not.toHaveBeenCalled()
+      })
+
+      /* A rule narrowed by a category is a different, more specific rule —
+         taking it over would change something nobody asked about. */
+      it('leaves a narrower rule for the same name alone', async () => {
+        const user = userEvent.setup()
+        vi.mocked(getMappingRules).mockResolvedValue([
+          { ...existingRule, category_value: 'Scrum' }
+        ])
+        renderPicker({ groups: [groups[0]] })
+
+        await user.click(await screen.findByRole('checkbox'))
+        await user.click(screen.getByRole('menuitem', { name: 'Architecture' }))
+
+        await waitFor(() => expect(createMappingRule).toHaveBeenCalled())
+        expect(updateMappingRule).not.toHaveBeenCalled()
+      })
+
+      /* The list read when the popup opened may be stale by the time a click
+         commits, and that read is all that stands between a second tick and
+         a duplicate. */
+      it('re-reads the rules at the moment it commits', async () => {
+        const user = userEvent.setup()
+        vi.mocked(getMappingRules).mockResolvedValueOnce([])
+        vi.mocked(getMappingRules).mockResolvedValue([existingRule])
+        renderPicker({ groups: [groups[0]] })
+
+        await user.click(await screen.findByRole('checkbox'))
+        await user.click(screen.getByRole('menuitem', { name: 'Architecture' }))
+
+        await waitFor(() => expect(updateMappingRule).toHaveBeenCalled())
+        expect(createMappingRule).not.toHaveBeenCalled()
+      })
     })
 
     it('names the events it will catch', async () => {

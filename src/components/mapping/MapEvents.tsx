@@ -638,6 +638,7 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
           project={picker.project}
           groups={picker.groups}
           activities={activities}
+          projects={projects}
           onDone={() => {
             setPicker(null)
             onEventsChanged?.()
