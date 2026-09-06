@@ -39,6 +39,9 @@ struct Session {
 }
 
 impl AuthState {
+    /// Test-only: production reads a session through `account` or
+    /// `fresh_token`, never as a bare "is there one".
+    #[cfg(test)]
     pub fn has_session(&self) -> bool {
         self.session.lock().expect("auth state poisoned").is_some()
     }
@@ -51,6 +54,10 @@ impl AuthState {
             .map(|session| session.account.clone())
     }
 
+    /// Test-only setup. Production always goes through
+    /// `set_session_if_current`, so that a `clear_session` racing a slow
+    /// refresh cannot be silently undone — a plain setter would lose that.
+    #[cfg(test)]
     pub fn set_session(&self, token: AccessToken, account: Account) {
         *self.session.lock().expect("auth state poisoned") =
             Some(Session { token, account });
@@ -117,6 +124,9 @@ impl AuthState {
         self.cancelled.store(true, Ordering::SeqCst);
     }
 
+    /// Test-only: the loopback listener polls the shared flag from
+    /// `cancel_flag` on its own thread rather than calling back into here.
+    #[cfg(test)]
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
     }

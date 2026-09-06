@@ -12,16 +12,19 @@ use serde::{Deserialize, Serialize};
 
 /// Microsoft Graph's `start`/`end` date-time shape.
 ///
-/// Both fields are `Option` even though Graph always sends them in practice:
+/// `date_time` is `Option` even though Graph always sends it in practice:
 /// deserialization must tolerate a missing or malformed payload rather than
 /// erroring, so nothing here is allowed to be a hard requirement.
+///
+/// Graph also sends a sibling `timeZone`, deliberately not deserialized. The
+/// sync sends no `Prefer: outlook.timezone` header, so Graph answers in UTC
+/// and `date_time` is stored as-is; carrying the field would suggest it is
+/// honoured somewhere, which it is not.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphDateTime {
     #[serde(default)]
     pub date_time: Option<String>,
-    #[serde(default)]
-    pub time_zone: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
