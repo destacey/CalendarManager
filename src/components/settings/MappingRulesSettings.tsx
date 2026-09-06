@@ -443,12 +443,16 @@ const MappingRulesSettings: React.FC<MappingRulesSettingsProps> = ({ searchTerm 
             rules={[{ required: true, message: 'Please choose a project' }]}
           >
             <Select
+              showSearch
+              optionFilterProp="label"
               options={projects.map(p => ({ value: p.id!, label: `${p.code} — ${p.name}` }))}
             />
           </Form.Item>
 
           <Form.Item label="Activity" name="activity_id">
             <Select
+              showSearch
+              optionFilterProp="label"
               options={[
                 { value: NO_ACTIVITY, label: 'Project only, no activity' },
                 ...activities.map(a => ({ value: a.id!, label: a.name }))

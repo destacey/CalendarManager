@@ -207,6 +207,23 @@ describe('TimecardWeekGrid', () => {
       ).toBeInTheDocument()
     })
 
+    /* Long project lists are the norm, so the select filters as you type —
+       while still scrolling normally for anyone who would rather look. */
+    it('narrows the project list as you type', async () => {
+      const user = userEvent.setup()
+      renderGrid()
+
+      await user.click(screen.getByRole('button', { name: /add row/i }))
+      const select = screen.getByRole('combobox', { name: 'Project for the new row' })
+      await user.click(select)
+      expect(await screen.findByTitle('PRJ-001 — Website Rebuild')).toBeInTheDocument()
+
+      await user.type(select, 'Billing')
+
+      expect(await screen.findByTitle('PRJ-002 — Billing')).toBeInTheDocument()
+      expect(screen.queryByTitle('PRJ-001 — Website Rebuild')).not.toBeInTheDocument()
+    })
+
     /* An inactive project is history: it may still hold time, but no new row. */
     it('does not offer an inactive project as a new row', async () => {
       const user = userEvent.setup()

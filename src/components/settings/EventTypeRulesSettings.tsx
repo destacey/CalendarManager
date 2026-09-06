@@ -511,7 +511,7 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
               ]}
             >
               {getValueOptions(fieldName)?.length > 0 ? (
-                <Select allowClear>
+                <Select allowClear showSearch optionFilterProp="children">
                   {getValueOptions(fieldName).map(option => (
                     <Option key={option.value} value={option.value}>
                       {option.label}

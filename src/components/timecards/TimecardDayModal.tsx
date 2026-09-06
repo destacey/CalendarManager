@@ -119,6 +119,8 @@ const TimecardDayModal: React.FC<TimecardDayModalProps> = ({
               style={{ minWidth: 220 }}
               onChange={setProject}
               aria-label="Project for the new item"
+              showSearch
+              optionFilterProp="label"
               options={[
                 { value: NONE, label: 'Unassigned' },
                 ...projects
@@ -131,6 +133,8 @@ const TimecardDayModal: React.FC<TimecardDayModalProps> = ({
               style={{ minWidth: 180 }}
               onChange={setActivity}
               aria-label="Activity for the new item"
+              showSearch
+              optionFilterProp="label"
               options={[
                 { value: NONE, label: 'No activity' },
                 ...activities.filter(a => a.is_active).map(a => ({ value: a.id!, label: a.name }))

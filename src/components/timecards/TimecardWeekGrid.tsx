@@ -269,6 +269,8 @@ const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
             style={{ minWidth: 220 }}
             onChange={setNewProject}
             aria-label="Project for the new row"
+            showSearch
+            optionFilterProp="label"
             options={[
               { value: NONE, label: 'Unassigned' },
               ...projects.filter(p => p.is_active).map(p => ({ value: p.id!, label: projectLabel(p) }))
@@ -279,6 +281,8 @@ const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
             style={{ minWidth: 180 }}
             onChange={setNewActivity}
             aria-label="Activity for the new row"
+            showSearch
+            optionFilterProp="label"
             options={[
               { value: NONE, label: 'No activity' },
               ...activities.filter(a => a.is_active).map(a => ({ value: a.id!, label: a.name }))

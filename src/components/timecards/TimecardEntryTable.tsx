@@ -88,6 +88,8 @@ const TimecardEntryTable: React.FC<TimecardEntryTableProps> = ({
           value={record.project_id ?? NONE}
           disabled={disabled}
           aria-label={`Project on ${record.date}`}
+          showSearch
+          optionFilterProp="label"
           onChange={value => onPatch(record, { project_id: value === NONE ? null : value })}
           options={[
             { value: NONE, label: 'Unassigned' },
@@ -108,6 +110,8 @@ const TimecardEntryTable: React.FC<TimecardEntryTableProps> = ({
           value={record.activity_id ?? NONE}
           disabled={disabled}
           aria-label={`Activity on ${record.date}`}
+          showSearch
+          optionFilterProp="label"
           onChange={value => onPatch(record, { activity_id: value === NONE ? null : value })}
           options={[
             { value: NONE, label: 'No activity' },

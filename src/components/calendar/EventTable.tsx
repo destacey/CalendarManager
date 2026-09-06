@@ -139,6 +139,8 @@ export const MappingCell: React.FC<{
       style={{ width: '100%' }}
       value={(field === 'project' ? record.project_id : record.activity_id) ?? NONE}
       options={options}
+      showSearch
+      optionFilterProp="label"
       onChange={commit}
       onBlur={() => setEditing(false)}
       onClick={e => e.stopPropagation()}
