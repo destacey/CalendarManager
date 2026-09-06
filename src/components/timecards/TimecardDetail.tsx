@@ -234,8 +234,10 @@ const TimecardDetail: React.FC<TimecardDetailProps> = ({ timecard, onBack, onCha
         <Alert
           type="warning"
           showIcon
-          title={`${lastRun.unmapped} event${lastRun.unmapped === 1 ? '' : 's'} produced no entry`}
-          description="They have no project. Map them on the Map Events screen, then refresh."
+          title={`${lastRun.unmapped} billable event${
+            lastRun.unmapped === 1 ? ' has' : 's have'
+          } no project`}
+          description="Their time is on the Unassigned row. Give it a project here, or map the events on the Map Events screen and refresh."
         />
       )}
 

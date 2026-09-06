@@ -298,9 +298,9 @@ describe('TimecardDetail', () => {
       })
     })
 
-    /* Unmapped events produce no entry, so silence here would be time
-       quietly going missing. */
-    it('warns when events produced no entry', async () => {
+    /* Unmapped time lands on the Unassigned row rather than a project, so it
+       has to be called out or it gets billed to nobody. */
+    it('warns when billable events have no project', async () => {
       const user = userEvent.setup()
       vi.mocked(generateTimecardEntries).mockResolvedValue({
         eventsRead: 12, entriesCreated: 8, manualEntriesKept: 0, unmappedEvents: 4
@@ -311,7 +311,7 @@ describe('TimecardDetail', () => {
       await user.click(screen.getByRole('button', { name: /refresh from events/i }))
 
       await waitFor(() => {
-        expect(screen.getByText('4 events produced no entry')).toBeInTheDocument()
+        expect(screen.getByText('4 billable events have no project')).toBeInTheDocument()
       })
     })
 

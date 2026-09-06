@@ -65,7 +65,10 @@ export interface GenerationResult {
   eventsRead: number
   entriesCreated: number
   manualEntriesKept: number
-  /** Events with no project. They produce no entry, so this needs surfacing. */
+  /**
+   * Billable events with no project. Their time lands on the Unassigned row,
+   * so this is a prompt to map them rather than a report of lost time.
+   */
   unmappedEvents: number
 }
 

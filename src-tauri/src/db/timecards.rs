@@ -132,6 +132,8 @@ pub struct GenerationResult {
     /// Existing hand-made or hand-edited entries left exactly as they were.
     pub manual_entries_kept: usize,
     /// Events with no project, which produce no entry and need attention.
+    /// Billable events with no project. They land on the Unassigned row, so
+    /// the number is a prompt to map them, not a report of lost time.
     pub unmapped_events: usize,
 }
 
@@ -398,6 +400,10 @@ struct SourceEvent {
     project_id: Option<i64>,
     activity_id: Option<i64>,
     all_day_hours: f64,
+    /// Whether its type is billable. Decides what an event with no project
+    /// means: time that still needs attributing, or time that never belonged
+    /// on a timecard at all.
+    is_billable: bool,
 }
 
 /// Builds (or rebuilds) the entries for a timecard from the events in its
@@ -408,9 +414,9 @@ struct SourceEvent {
 /// over is theirs, and regeneration only owns what it generated - including
 /// not re-creating an event's entry beside the user's own version of it.
 ///
-/// An event with no project produces no entry - it is counted and reported so
-/// the UI can say "9 events still need a project" rather than silently
-/// dropping time.
+/// A billable event with no project produces an entry with no project - the
+/// Unassigned row - and is counted, so the UI can say "9 of these still need
+/// a project" while the time itself stays visible rather than vanishing.
 pub fn generate_entries(
     conn: &Connection,
     timecard_id: i64,
@@ -463,16 +469,23 @@ pub fn generate_entries(
     let mut unmapped = 0usize;
 
     for event in &events {
-        let Some(project_id) = event.project_id else {
+        // An event with no project still goes on the card when it is billable
+        // - as Unassigned, so the time is visible and can be attributed here
+        // or mapped properly and refreshed. A non-billable one (lunch, a
+        // personal appointment) was never timecard material and is dropped.
+        if event.project_id.is_none() {
+            if !event.is_billable {
+                continue;
+            }
             unmapped += 1;
-            continue;
-        };
+        }
+        let project_id = event.project_id;
 
         for (date, hours) in event_days(event, &working) {
             // Per date, not per event: overriding one Wednesday of a week-long
             // block leaves the other four days to regenerate normally.
             if claimed.contains(&(event.id, date.clone()))
-                || owned.contains(&(date.clone(), Some(project_id), event.activity_id))
+                || owned.contains(&(date.clone(), project_id, event.activity_id))
             {
                 continue;
             }
@@ -511,7 +524,8 @@ fn read_events_in_period(
     // is compared against the end of that day rather than its midnight.
     let mut stmt = conn.prepare(
         "SELECT e.id, e.start_date, e.end_date, COALESCE(e.is_all_day, 0),
-                e.project_id, e.activity_id, COALESCE(t.all_day_hours, 8)
+                e.project_id, e.activity_id, COALESCE(t.all_day_hours, 8),
+                COALESCE(t.is_billable, 1)
          FROM events e
          LEFT JOIN event_types t ON t.id = e.type_id
          WHERE e.start_date >= ?1 AND e.start_date <= ?2 || 'T23:59:59'
@@ -527,6 +541,9 @@ fn read_events_in_period(
             project_id: row.get(4)?,
             activity_id: row.get(5)?,
             all_day_hours: row.get(6)?,
+            // An event with no type is treated as billable: better to ask
+            // about time than to drop it.
+            is_billable: row.get(7)?,
         })
     })?;
 
@@ -827,7 +844,7 @@ mod tests {
     // --- unmapped ---
 
     #[test]
-    fn an_unmapped_event_produces_no_entry_but_is_reported() {
+    fn a_billable_unmapped_event_lands_on_the_unassigned_row_and_is_reported() {
         let conn = setup();
         let tc = card(&conn);
         add_event(&conn, 1, "2026-10-05T09:00:00", "2026-10-05T10:00:00", false, None, None, 10);
@@ -835,8 +852,13 @@ mod tests {
         let result = generate_entries(&conn, tc, &settings()).unwrap();
 
         assert_eq!(result.events_read, 1);
-        assert_eq!(result.entries_created, 0);
-        assert_eq!(result.unmapped_events, 1, "counted, so the UI can say what needs attention");
+        // The hour is visible rather than silently missing, and the count is
+        // what prompts someone to go and map it.
+        assert_eq!(result.entries_created, 1);
+        assert_eq!(result.unmapped_events, 1);
+        let entries = list_entries(&conn, tc).unwrap();
+        assert_eq!(entries[0].project_id, None);
+        assert_eq!(entries[0].hours, 1.0);
     }
 
     /// The regression that made every cell read 0.00: Graph sends seven
@@ -863,6 +885,53 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].hours, 1.5);
         assert_eq!(entries[0].date, MON);
+    }
+
+    /// Lunch is not timecard material. Only billable time is worth chasing.
+    #[test]
+    fn a_non_billable_unmapped_event_is_dropped_and_not_counted() {
+        let conn = setup();
+        let tc = card(&conn);
+        // Type 11 is the non-billable one.
+        add_event(&conn, 1, "2026-10-05T12:00:00", "2026-10-05T13:00:00", false, None, None, 11);
+
+        let result = generate_entries(&conn, tc, &settings()).unwrap();
+
+        assert_eq!(result.entries_created, 0);
+        assert_eq!(result.unmapped_events, 0, "nothing to chase, so nothing to report");
+        assert!(list_entries(&conn, tc).unwrap().is_empty());
+    }
+
+    /// A mapped event is on the card because someone said so, billable or not.
+    #[test]
+    fn a_non_billable_event_with_a_project_still_generates() {
+        let conn = setup();
+        let tc = card(&conn);
+        add_event(&conn, 1, "2026-10-05T12:00:00", "2026-10-05T13:00:00", false, Some(1), None, 11);
+
+        generate_entries(&conn, tc, &settings()).unwrap();
+
+        assert_eq!(list_entries(&conn, tc).unwrap().len(), 1);
+    }
+
+    /// The Unassigned row is a real row: typing over it must replace it, not
+    /// sit beside it, and a refresh must not put the event's hour back.
+    #[test]
+    fn typing_over_the_unassigned_row_takes_it_over() {
+        let conn = setup();
+        let tc = card(&conn);
+        add_event(&conn, 1, "2026-10-05T09:00:00", "2026-10-05T10:00:00", false, None, None, 10);
+        generate_entries(&conn, tc, &settings()).unwrap();
+
+        set_cell(&conn, tc, &CellInput {
+            date: MON.into(), project_id: None, activity_id: None, hours: 3.0
+        })
+        .unwrap();
+        generate_entries(&conn, tc, &settings()).unwrap();
+
+        let entries = list_entries(&conn, tc).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].hours, 3.0);
     }
 
     // --- regeneration and ownership ---
