@@ -74,12 +74,19 @@ describe('mapping api', () => {
       expect(invoke).toHaveBeenCalledWith('reorder_mapping_rules', { ids: [3, 1, 2] })
     })
 
-    it('applies rules with no arguments', async () => {
-      vi.mocked(invoke).mockResolvedValueOnce({ evaluated: 0, mapped: 0, skippedManual: 0 })
+    /* overwriteExisting, not overwrite_existing — Tauri camelCases command
+       arguments, and a mis-cased key is silently dropped rather than erroring,
+       which here would mean a run that quietly rewrote nothing it was told to. */
+    it('says whether the run may replace existing mappings', async () => {
+      vi.mocked(invoke).mockResolvedValue({
+        evaluated: 0, mapped: 0, overwritten: 0, cleared: 0, skippedManual: 0
+      })
 
-      await applyMappingRules()
+      await applyMappingRules(false)
+      expect(invoke).toHaveBeenCalledWith('apply_mapping_rules', { overwriteExisting: false })
 
-      expect(invoke).toHaveBeenCalledWith('apply_mapping_rules')
+      await applyMappingRules(true)
+      expect(invoke).toHaveBeenCalledWith('apply_mapping_rules', { overwriteExisting: true })
     })
 
     /* billableOnly, not billable_only — the Rust parameter is snake_case and

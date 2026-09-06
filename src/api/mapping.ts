@@ -39,8 +39,15 @@ export interface UnmappedGroup {
 }
 
 export interface MappingRunResult {
+  /** Events the rules were offered. */
   evaluated: number
+  /** Events a rule mapped, whether or not they were mapped before. */
   mapped: number
+  /** Of those, the ones that already had a mapping and lost it. */
+  overwritten: number
+  /** Mappings removed because the rule that made them no longer matches. */
+  cleared: number
+  /** Events mapped by hand that no rule matched, so nothing was done. */
   skippedManual: number
 }
 
@@ -94,8 +101,16 @@ export function reorderMappingRules(ids: number[]): Promise<void> {
   return invoke<void>('reorder_mapping_rules', { ids })
 }
 
-export function applyMappingRules(): Promise<MappingRunResult> {
-  return invoke<MappingRunResult>('apply_mapping_rules')
+/**
+ * Runs every rule over the events it may change.
+ *
+ * By default that is only events with no mapping: a run fills blanks and can
+ * never take work away. `overwriteExisting` widens it to every event, which is
+ * the only way a rule moves a mapping made by hand — and the only way a
+ * mapping left behind by a deleted rule is tidied up.
+ */
+export function applyMappingRules(overwriteExisting: boolean): Promise<MappingRunResult> {
+  return invoke<MappingRunResult>('apply_mapping_rules', { overwriteExisting })
 }
 
 /**

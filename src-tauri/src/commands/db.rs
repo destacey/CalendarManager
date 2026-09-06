@@ -240,8 +240,11 @@ pub async fn reorder_mapping_rules(db: State<'_, Db>, ids: Vec<i64>) -> DbResult
 }
 
 #[tauri::command]
-pub async fn apply_mapping_rules(db: State<'_, Db>) -> DbResult<MappingRunResult> {
-    db.call(mapping::apply_rules).await
+pub async fn apply_mapping_rules(
+    db: State<'_, Db>,
+    overwrite_existing: bool,
+) -> DbResult<MappingRunResult> {
+    db.call(move |conn| mapping::apply_rules(conn, overwrite_existing)).await
 }
 
 #[tauri::command]
