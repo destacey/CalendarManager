@@ -20,6 +20,7 @@ import { getUnmappedGroups, UnmappedGroup } from '../../api/mapping'
 import ActivityPicker from './ActivityPicker'
 import { getProjects } from '../../api/projects'
 import { getActivities } from '../../api/activities'
+import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
 
 const { Text, Title } = Typography
 
@@ -246,6 +247,10 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
   useEffect(() => {
     load()
   }, [load])
+
+  // Screens stay mounted, so the effect above runs once. This is what
+  // picks up work done elsewhere while this one was hidden.
+  useReloadOnShow(() => load())
 
   /* Matches the title and the categories, because a group is identified by
      both — "Scrum" should find the standups even though no title contains it. */

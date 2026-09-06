@@ -15,6 +15,7 @@ import {
 import { getProjects } from '../../api/projects'
 import { getActivities } from '../../api/activities'
 import { getEventTypes } from '../../api/eventTypes'
+import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
 
 const { Text } = Typography
 
@@ -39,6 +40,10 @@ const MappingRulesSettings: React.FC<MappingRulesSettingsProps> = ({ searchTerm 
   useEffect(() => {
     loadAll()
   }, [])
+
+  // Screens stay mounted, so the effect above runs once. This is what
+  // picks up work done elsewhere while this one was hidden.
+  useReloadOnShow(() => loadAll())
 
   const loadAll = async () => {
     try {

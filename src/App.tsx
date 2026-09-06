@@ -13,6 +13,7 @@ import Settings from './components/settings/Settings'
 
 import { ThemeProvider, useTheme } from './contexts/ThemeContext'
 import { MessageProvider } from './contexts/MessageContext'
+import { ScreenVisibilityProvider } from './contexts/ScreenVisibilityContext'
 import { storageService } from './services/storage'
 import { authService } from './services/auth'
 import './App.css'
@@ -144,11 +145,13 @@ function AppContent() {
             display: selectedNavKey === 'calendar' ? 'block' : 'none',
             height: '100%'
           }}>
-            <CalendarScreen
-              isActive={selectedNavKey === 'calendar'}
-              needsRefresh={eventsDirty}
-              onRefreshed={markEventsClean}
-            />
+            <ScreenVisibilityProvider active={selectedNavKey === 'calendar'}>
+              <CalendarScreen
+                isActive={selectedNavKey === 'calendar'}
+                needsRefresh={eventsDirty}
+                onRefreshed={markEventsClean}
+              />
+            </ScreenVisibilityProvider>
           </div>
         )}
         {visited.has('map-events') && (
@@ -156,7 +159,9 @@ function AppContent() {
             display: selectedNavKey === 'map-events' ? 'block' : 'none',
             height: '100%'
           }}>
-            <MapEventsScreen onEventsChanged={markEventsDirty} />
+            <ScreenVisibilityProvider active={selectedNavKey === 'map-events'}>
+              <MapEventsScreen onEventsChanged={markEventsDirty} />
+            </ScreenVisibilityProvider>
           </div>
         )}
         {visited.has('timecards') && (
@@ -164,7 +169,9 @@ function AppContent() {
             display: selectedNavKey === 'timecards' ? 'block' : 'none',
             height: '100%'
           }}>
-            <TimecardsScreen />
+            <ScreenVisibilityProvider active={selectedNavKey === 'timecards'}>
+              <TimecardsScreen />
+            </ScreenVisibilityProvider>
           </div>
         )}
         {visited.has('settings') && (
@@ -172,7 +179,9 @@ function AppContent() {
             display: selectedNavKey === 'settings' ? 'block' : 'none',
             height: '100%'
           }}>
-            <SettingsScreen onEventsUpdated={markEventsDirty} />
+            <ScreenVisibilityProvider active={selectedNavKey === 'settings'}>
+              <SettingsScreen onEventsUpdated={markEventsDirty} />
+            </ScreenVisibilityProvider>
           </div>
         )}
       </div>

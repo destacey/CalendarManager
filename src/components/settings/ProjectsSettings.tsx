@@ -16,6 +16,7 @@ import {
   commitProjectImport,
   ProjectImportPreview
 } from '../../api/projectImport'
+import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
 
 const { Text } = Typography
 
@@ -36,6 +37,10 @@ const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) 
   useEffect(() => {
     loadProjects()
   }, [])
+
+  // Screens stay mounted, so the effect above runs once. This is what
+  // picks up work done elsewhere while this one was hidden.
+  useReloadOnShow(() => loadProjects())
 
   const loadProjects = async () => {
     try {

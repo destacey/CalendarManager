@@ -4,6 +4,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, StarOutlined, StarFilled } 
 import { EventType } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
 import { getEventTypes, createEventType, updateEventType, deleteEventType, setDefaultEventType } from '../../api/eventTypes'
+import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
 
 const { Text } = Typography
 
@@ -23,6 +24,10 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
   useEffect(() => {
     loadEventTypes()
   }, [])
+
+  // Screens stay mounted, so the effect above runs once. This is what
+  // picks up work done elsewhere while this one was hidden.
+  useReloadOnShow(() => loadEventTypes())
 
   const loadEventTypes = async () => {
     try {

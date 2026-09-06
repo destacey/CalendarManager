@@ -13,6 +13,7 @@ import { storageService } from '../../services/storage'
 import { monthBounds, weekBoundsForMonth } from '../../utils/timecardGrid'
 import TimecardList, { PeriodSummary } from './TimecardList'
 import TimecardPeriod from './TimecardPeriod'
+import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
 
 const { Title } = Typography
 
@@ -75,6 +76,10 @@ const Timecards: React.FC = () => {
   useEffect(() => {
     load()
   }, [load])
+
+  // Screens stay mounted, so the effect above runs once. This is what
+  // picks up work done elsewhere while this one was hidden.
+  useReloadOnShow(() => load())
 
   const periods = useMemo<PeriodSummary[]>(() => {
     const byMonth = new Map<string, Timecard[]>()

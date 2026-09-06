@@ -10,6 +10,7 @@ import {
   deleteActivity,
   DuplicateActivityError
 } from '../../api/activities'
+import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
 
 const { Text } = Typography
 
@@ -29,6 +30,10 @@ const ActivitiesSettings: React.FC<ActivitiesSettingsProps> = ({ searchTerm = ''
   useEffect(() => {
     loadActivities()
   }, [])
+
+  // Screens stay mounted, so the effect above runs once. This is what
+  // picks up work done elsewhere while this one was hidden.
+  useReloadOnShow(() => loadActivities())
 
   const loadActivities = async () => {
     try {

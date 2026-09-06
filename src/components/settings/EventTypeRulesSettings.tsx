@@ -10,6 +10,7 @@ import { useMessage } from '../../contexts/MessageContext'
 import { getEventTypeRules, createEventTypeRule, updateEventTypeRule, deleteEventTypeRule, updateRulePriorities, InvalidTargetTypeError } from '../../api/rules'
 import { getEventTypes, reprocessEventTypes } from '../../api/eventTypes'
 import { getEvents } from '../../api/events'
+import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
 
 const { Text } = Typography
 const { Option } = Select
@@ -82,6 +83,10 @@ const EventTypeRulesSettings: React.FC<EventTypeRulesSettingsProps> = ({ searchT
   useEffect(() => {
     loadData()
   }, [])
+
+  // Screens stay mounted, so the effect above runs once. This is what
+  // picks up work done elsewhere while this one was hidden.
+  useReloadOnShow(() => loadData())
 
   const loadData = async () => {
     try {
