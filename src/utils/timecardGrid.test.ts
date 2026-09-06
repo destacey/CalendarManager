@@ -157,11 +157,24 @@ describe('buildRows', () => {
     expect(rows[0].cells['2026-10-05'].owned).toBe(true)
   })
 
-  /* The grid is one week wide; the rest of the month must not leak in. */
-  it('ignores entries outside the given dates', () => {
-    const rows = buildRows([entry({ id: 1, date: '2026-10-20' })], dates)
+  /* The row is the timecard's, the cells are the week's: a row that vanished
+     when you stepped a week would hide what the finished card will say. */
+  it('keeps a row whose time is all in another week, with no cells', () => {
+    const rows = buildRows([entry({ id: 1, date: '2026-10-20', hours: 4 })], dates)
 
-    expect(rows).toEqual([])
+    expect(rows).toHaveLength(1)
+    expect(rows[0].cells).toEqual({})
+    expect(rows[0].total).toBe(0)
+  })
+
+  it('counts only this week into a row that spans two', () => {
+    const rows = buildRows(
+      [entry({ id: 1, hours: 2 }), entry({ id: 2, date: '2026-10-20', hours: 4 })],
+      dates
+    )
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0].total).toBe(2)
   })
 
   it('keeps entries with no project as their own row', () => {

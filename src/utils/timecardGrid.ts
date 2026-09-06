@@ -122,8 +122,10 @@ export function isOwned(entry: TimecardEntry): boolean {
 /**
  * Folds entries into one row per (project, activity), summing each day.
  *
- * `dates` fixes the columns, so entries outside the week are ignored and a
- * row is only ever as wide as the grid. Rows arrive unsorted: only the caller
+ * Every pair on the timecard gets a row, whether or not it has time in THIS
+ * week: a row that appears in one week and vanishes in the next hides what
+ * the finished timecard will say. `dates` fixes the columns, so only this
+ * week's hours are summed into them. Rows arrive unsorted: only the caller
  * knows project codes and activity names to sort by.
  */
 export function buildRows(entries: TimecardEntry[], dates: string[]): GridRow[] {
@@ -131,8 +133,6 @@ export function buildRows(entries: TimecardEntry[], dates: string[]): GridRow[] 
   const rows = new Map<string, GridRow>()
 
   for (const entry of entries) {
-    if (!wanted.has(entry.date)) continue
-
     const key = rowKey(entry.project_id ?? null, entry.activity_id ?? null)
     let row = rows.get(key)
     if (!row) {
@@ -145,6 +145,8 @@ export function buildRows(entries: TimecardEntry[], dates: string[]): GridRow[] 
       }
       rows.set(key, row)
     }
+
+    if (!wanted.has(entry.date)) continue
 
     const cell = row.cells[entry.date] ?? { hours: 0, entries: 0, owned: false }
     cell.hours += entry.hours

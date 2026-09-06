@@ -163,6 +163,18 @@ describe('TimecardWeekGrid', () => {
       expect(screen.getByText('No activity')).toBeInTheDocument()
     })
 
+    /* Stepping a week must not make rows appear and disappear: the point is
+       to see the shape of the whole timecard from any week. */
+    it('keeps a row for a project whose time is in another week', () => {
+      renderGrid({ entries: [entry({ date: '2026-09-15', hours: 4 })] })
+
+      expect(
+        screen.getByRole('spinbutton', { name: 'PRJ-001, Software Development on 2026-09-01' })
+      ).toHaveValue('')
+      // The row is there; the hours are not, because they are week 3's.
+      expect(screen.getByText('0.00 hours this week')).toBeInTheDocument()
+    })
+
     /* Time with no project is a prompt to go and map something. */
     it('shows unmapped time as its own row', () => {
       renderGrid({ entries: [entry({ project_id: null, activity_id: null })] })

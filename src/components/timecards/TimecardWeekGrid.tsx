@@ -155,7 +155,9 @@ const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
             {dayLabel(day)}
           </Button>
           <Text type="secondary" style={{ fontSize: 11 }}>
-            {day.inPeriod ? hours(totals.byDate[day.date] ?? 0) : 'other month'}
+            {/* A non-breaking space keeps the borrowed columns the same
+                height as the rest; the greyed date already says enough. */}
+            {day.inPeriod ? hours(totals.byDate[day.date] ?? 0) : ' '}
           </Text>
         </Flex>
       ),
