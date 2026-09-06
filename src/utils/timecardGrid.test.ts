@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   weeksOf,
   weekOf,
+  monthBounds,
+  weekBoundsForMonth,
+  weekBoundsOf,
+  isInMonth,
   buildRows,
   columnTotals,
   summarise,
@@ -99,6 +103,101 @@ describe('weeksOf', () => {
     const weeks = weeksOf('2026-12-01', '2026-12-31')
 
     expect(weeks[weeks.length - 1].days.some(d => d.date.startsWith('2027-01'))).toBe(true)
+  })
+})
+
+describe('monthBounds', () => {
+  it('gives the first and last day of a 31-day month', () => {
+    expect(monthBounds('2026-10')).toEqual({
+      start: '2026-10-01', end: '2026-10-31', name: 'October 2026'
+    })
+  })
+
+  it('gives 30 days for a 30-day month', () => {
+    expect(monthBounds('2026-11')?.end).toBe('2026-11-30')
+  })
+
+  /* Day 0 of the next month, rather than a table of month lengths - which is
+     what makes February and leap years fall out for free. */
+  it('handles February', () => {
+    expect(monthBounds('2026-02')?.end).toBe('2026-02-28')
+  })
+
+  it('handles a leap February', () => {
+    expect(monthBounds('2028-02')?.end).toBe('2028-02-29')
+  })
+
+  it('rejects anything that is not YYYY-MM', () => {
+    expect(monthBounds('October')).toBeNull()
+    expect(monthBounds('2026-13')).toBeNull()
+    expect(monthBounds('')).toBeNull()
+  })
+})
+
+describe('weekBoundsForMonth', () => {
+  /* Whole weeks, including the days they reach into the months either side:
+     the week is the timecard, so it owns all seven days. */
+  it('gives every week the month touches, Sunday to Saturday', () => {
+    const weeks = weekBoundsForMonth('2026-09')
+
+    expect(weeks).toHaveLength(5)
+    expect(weeks[0]).toEqual({
+      start: '2026-08-30',
+      end: '2026-09-05',
+      name: 'Week of 30 Aug 2026'
+    })
+    expect(weeks[4]).toEqual({
+      start: '2026-09-27',
+      end: '2026-10-03',
+      name: 'Week of 27 Sep 2026'
+    })
+  })
+
+  it('starts on the first of the month when that is a Sunday', () => {
+    const weeks = weekBoundsForMonth('2026-11')
+
+    expect(weeks[0].start).toBe('2026-11-01')
+  })
+
+  /* Two months share a week whenever one straddles the boundary, and it must
+     be the same week both times or the timecards would overlap. */
+  it('gives the same week to both months that share it', () => {
+    const august = weekBoundsForMonth('2026-08')
+    const september = weekBoundsForMonth('2026-09')
+
+    expect(august[august.length - 1]).toEqual(september[0])
+  })
+
+  it('crosses a year end', () => {
+    const weeks = weekBoundsForMonth('2026-12')
+
+    expect(weeks[weeks.length - 1].end.startsWith('2027-01')).toBe(true)
+  })
+
+  it('refuses anything that is not a month', () => {
+    expect(weekBoundsForMonth('2026-13')).toEqual([])
+    expect(weekBoundsForMonth('September')).toEqual([])
+  })
+})
+
+describe('weekBoundsOf', () => {
+  it('finds the Sunday-to-Saturday week holding a date', () => {
+    expect(weekBoundsOf('2026-09-03')).toEqual({
+      start: '2026-08-30',
+      end: '2026-09-05',
+      name: 'Week of 30 Aug 2026'
+    })
+  })
+
+  it('leaves a Sunday where it is', () => {
+    expect(weekBoundsOf('2026-08-30').start).toBe('2026-08-30')
+  })
+})
+
+describe('isInMonth', () => {
+  it('is what decides which month a day counts towards', () => {
+    expect(isInMonth('2026-09-01', '2026-09')).toBe(true)
+    expect(isInMonth('2026-08-31', '2026-09')).toBe(false)
   })
 })
 

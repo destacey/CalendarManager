@@ -1,50 +1,34 @@
 import React, { useState } from 'react'
 import {
-  Typography, Space, Button, Table, Modal, Form, Input, DatePicker, Tag, Popconfirm, Flex, Empty
+  Typography, Space, Button, Table, Modal, Form, DatePicker, Tag, Popconfirm, Flex, Empty
 } from 'antd'
 import dayjs, { Dayjs } from 'dayjs'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
-import { Timecard } from '../../api/timecards'
 
 const { Text } = Typography
 
+/** A month, and the weekly timecards that touch it. */
+export interface PeriodSummary {
+  /** "YYYY-MM". */
+  month: string
+  /** "September 2026". */
+  name: string
+  weeks: number
+  submitted: number
+  /** Hours dated inside the month, whichever week holds them. */
+  hours: number
+}
+
 interface TimecardListProps {
-  timecards: Timecard[]
+  periods: PeriodSummary[]
   loading: boolean
-  onOpen: (timecard: Timecard) => void
-  onCreate: (name: string, startDate: string, endDate: string) => Promise<void>
-  onDelete: (timecard: Timecard) => Promise<void>
+  onOpen: (month: string) => void
+  onCreate: (month: string) => Promise<void>
+  onDelete: (month: string) => Promise<void>
 }
-
-/** "2026-10" -> the first and last day of that month, as ISO dates. */
-function monthBounds(month: string): { start: string; end: string; name: string } | null {
-  const match = /^(\d{4})-(\d{2})$/.exec(month.trim())
-  if (!match) return null
-
-  const year = Number(match[1])
-  const monthIndex = Number(match[2]) - 1
-  if (monthIndex < 0 || monthIndex > 11) return null
-
-  // Day 0 of the next month is the last day of this one, which handles
-  // February and leap years without a table of month lengths.
-  const last = new Date(Date.UTC(year, monthIndex + 1, 0))
-  const pad = (n: number) => String(n).padStart(2, '0')
-
-  return {
-    start: `${year}-${pad(monthIndex + 1)}-01`,
-    end: `${year}-${pad(monthIndex + 1)}-${pad(last.getUTCDate())}`,
-    name: new Date(Date.UTC(year, monthIndex, 1)).toLocaleString('en-GB', {
-      month: 'long',
-      year: 'numeric',
-      timeZone: 'UTC'
-    })
-  }
-}
-
-
 
 const TimecardList: React.FC<TimecardListProps> = ({
-  timecards,
+  periods,
   loading,
   onOpen,
   onCreate,
@@ -62,14 +46,9 @@ const TimecardList: React.FC<TimecardListProps> = ({
       return
     }
 
-    // The picker hands back a dayjs; the period maths stays a pure function
-    // over "YYYY-MM" so it can be tested without one.
-    const bounds = monthBounds((values.month as Dayjs).format('YYYY-MM'))
-    if (!bounds) return
-
     setSaving(true)
     try {
-      await onCreate(values.name?.trim() || bounds.name, bounds.start, bounds.end)
+      await onCreate((values.month as Dayjs).format('YYYY-MM'))
       setModalVisible(false)
     } finally {
       setSaving(false)
@@ -78,71 +57,53 @@ const TimecardList: React.FC<TimecardListProps> = ({
 
   const columns = [
     {
-      title: 'Timecard',
+      title: 'Period',
       key: 'name',
-      render: (_: unknown, record: Timecard) => (
+      render: (_: unknown, record: PeriodSummary) => (
         <Button
           type="link"
           style={{ padding: 0, height: 'auto' }}
-          onClick={() => onOpen(record)}
+          onClick={() => onOpen(record.month)}
         >
           {record.name}
         </Button>
       )
     },
     {
-      title: 'Period',
-      key: 'period',
-      width: 220,
-      render: (_: unknown, record: Timecard) => (
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {record.start_date} to {record.end_date}
-        </Text>
-      )
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      width: 120,
-      render: (status: string) =>
-        status === 'submitted' ? (
+      title: 'Weeks',
+      key: 'weeks',
+      width: 200,
+      render: (_: unknown, record: PeriodSummary) =>
+        record.submitted === record.weeks ? (
           <Tag color="success" style={{ marginInlineEnd: 0 }}>
-            Submitted
+            All {record.weeks} submitted
           </Tag>
         ) : (
-          <Tag style={{ marginInlineEnd: 0 }}>Draft</Tag>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {record.submitted} of {record.weeks} submitted
+          </Text>
         )
     },
     {
-      title: 'Generated',
-      dataIndex: 'generated_at',
-      key: 'generated_at',
-      width: 170,
-      render: (generatedAt: string | null) =>
-        generatedAt ? (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {generatedAt.slice(0, 16).replace('T', ' ')}
-          </Text>
-        ) : (
-          // A timecard that has never pulled from events is empty, and that
-          // is worth saying rather than showing a blank cell.
-          <Text type="warning" style={{ fontSize: 12 }}>
-            Not yet pulled
-          </Text>
-        )
+      title: 'Hours',
+      key: 'hours',
+      width: 120,
+      align: 'right' as const,
+      render: (_: unknown, record: PeriodSummary) => (
+        <Text strong>{record.hours.toFixed(2)}</Text>
+      )
     },
     {
       title: '',
       key: 'actions',
       width: 60,
-      render: (_: unknown, record: Timecard) => (
+      render: (_: unknown, record: PeriodSummary) => (
         <Popconfirm
-          title="Delete this timecard?"
-          description="Its entries go with it. The events are untouched."
+          title={`Delete every week of ${record.name}?`}
+          description="Their entries go too, and so does any week shared with the month next door. The events are untouched."
           okText="Yes"
           cancelText="No"
-          onConfirm={() => onDelete(record)}
+          onConfirm={() => onDelete(record.month)}
         >
           <Button
             icon={<DeleteOutlined />}
@@ -157,39 +118,39 @@ const TimecardList: React.FC<TimecardListProps> = ({
 
   return (
     <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-      <Flex justify="space-between" align="center">
+      <Flex justify="space-between" align="center" gap={16}>
         <Text type="secondary">
-          A timecard pulls from your calendar for a period. Editing one never changes the
-          calendar.
+          Time is kept a week at a time and each week is submitted on its own. A month is a
+          view over the weeks it touches.
         </Text>
         <Button
           type="primary"
           icon={<PlusOutlined />}
           onClick={() => {
             form.resetFields()
-            form.setFieldsValue({ month: dayjs(), name: '' })
+            form.setFieldsValue({ month: dayjs() })
             setModalVisible(true)
           }}
         >
-          New timecard
+          New month
         </Button>
       </Flex>
 
-      {!loading && timecards.length === 0 ? (
+      {!loading && periods.length === 0 ? (
         <Empty description="No timecards yet" />
       ) : (
         <Table
           columns={columns}
-          dataSource={timecards}
+          dataSource={periods}
           loading={loading}
-          rowKey="id"
+          rowKey="month"
           pagination={false}
           size="small"
         />
       )}
 
       <Modal
-        title="New timecard"
+        title="New month"
         open={modalVisible}
         onOk={handleCreate}
         onCancel={() => setModalVisible(false)}
@@ -201,6 +162,7 @@ const TimecardList: React.FC<TimecardListProps> = ({
             label="Month"
             name="month"
             rules={[{ required: true, message: 'Please choose a month' }]}
+            extra="A timecard is created for each week the month touches, including the days either side that share a week with it."
           >
             <DatePicker
               picker="month"
@@ -210,15 +172,10 @@ const TimecardList: React.FC<TimecardListProps> = ({
               aria-label="Month"
             />
           </Form.Item>
-
-          <Form.Item label="Name" name="name">
-            <Input placeholder="Defaults to the month, e.g. October 2026" />
-          </Form.Item>
         </Form>
       </Modal>
     </Space>
   )
 }
 
-export { monthBounds }
 export default TimecardList

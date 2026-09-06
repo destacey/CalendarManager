@@ -161,6 +161,26 @@ pub fn create_timecard(conn: &Connection, input: &NewTimecard) -> DbResult<Timec
         ));
     }
 
+    // Two timecards covering the same day would each hold their own copy of
+    // it, and any total over a date range - which is what a month view is -
+    // would count that day twice. Periods therefore cannot overlap.
+    let clash: Option<String> = conn
+        .query_row(
+            "SELECT name FROM timecards
+             WHERE start_date <= ?2 AND end_date >= ?1
+             ORDER BY start_date LIMIT 1",
+            params![input.start_date, input.end_date],
+            |r| r.get(0),
+        )
+        .optional()?;
+
+    if let Some(name) = clash {
+        return Err(DbError::Other(format!(
+            "\"{name}\" already covers some of {} to {}. Delete it first, or pick another period.",
+            input.start_date, input.end_date
+        )));
+    }
+
     conn.execute(
         "INSERT INTO timecards (name, start_date, end_date) VALUES (?1, ?2, ?3)",
         params![input.name, input.start_date, input.end_date],
@@ -182,6 +202,31 @@ pub fn list_entries(conn: &Connection, timecard_id: i64) -> DbResult<Vec<Timecar
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params![timecard_id], TimecardEntry::from_row)?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+/// Every entry in a date range, whatever timecard holds it.
+///
+/// A month is a view over the weeks that touch it, not a thing of its own, so
+/// its totals are read by date rather than by timecard. Entries on days
+/// outside the range are left out even when their timecard covers them -
+/// a week spanning two months is counted into each by its own dates.
+pub fn list_entries_in_range(
+    conn: &Connection,
+    start: &str,
+    end: &str,
+) -> DbResult<Vec<TimecardEntry>> {
+    let sql = format!(
+        "SELECT {ENTRY_COLUMNS} FROM timecard_entries
+         WHERE date >= ?1 AND date <= ?2 ORDER BY date, id"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params![start, end], TimecardEntry::from_row)?;
 
     let mut out = Vec::new();
     for row in rows {
@@ -839,6 +884,88 @@ mod tests {
         generate_entries(&conn, tc, &GenerationSettings { working_days: vec![1, 2, 3, 4] }).unwrap();
 
         assert_eq!(entry_dates(&conn, tc).len(), 4);
+    }
+
+    // --- periods do not overlap ---
+
+    fn week(conn: &Connection, start: &str, end: &str) -> DbResult<Timecard> {
+        create_timecard(
+            conn,
+            &NewTimecard {
+                name: format!("Week of {start}"),
+                start_date: start.into(),
+                end_date: end.into(),
+            },
+        )
+    }
+
+    /// Weeks are the unit; a month is a view over them. Two cards holding the
+    /// same day would each carry their own copy, and a month total - which is
+    /// read by date, across cards - would count it twice.
+    #[test]
+    fn a_timecard_cannot_overlap_another() {
+        let conn = setup();
+        week(&conn, "2026-08-30", "2026-09-05").unwrap();
+
+        let error = week(&conn, "2026-09-03", "2026-09-09").unwrap_err();
+
+        assert!(error.to_string().contains("Week of 2026-08-30"), "names the clash: {error}");
+        assert_eq!(list_timecards(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn consecutive_weeks_do_not_count_as_overlapping() {
+        let conn = setup();
+        week(&conn, "2026-08-30", "2026-09-05").unwrap();
+
+        assert!(week(&conn, "2026-09-06", "2026-09-12").is_ok());
+        assert_eq!(list_timecards(&conn).unwrap().len(), 2);
+    }
+
+    /// The common case when moving to weeks: a leftover monthly card sits
+    /// across the weeks being created, and the message has to say which.
+    #[test]
+    fn a_month_long_card_blocks_the_weeks_inside_it_by_name() {
+        let conn = setup();
+        card(&conn);
+
+        let error = week(&conn, "2026-10-04", "2026-10-10").unwrap_err();
+
+        assert!(error.to_string().contains("October"), "{error}");
+    }
+
+    // --- a month reads across the weeks it touches ---
+
+    #[test]
+    fn entries_in_range_come_from_every_timecard_that_holds_them() {
+        let conn = setup();
+        let first = week(&conn, "2026-08-30", "2026-09-05").unwrap().id.unwrap();
+        let second = week(&conn, "2026-09-06", "2026-09-12").unwrap().id.unwrap();
+        add_manual_entry(&conn, first, &entry("2026-09-01", 2.0)).unwrap();
+        add_manual_entry(&conn, second, &entry("2026-09-07", 3.0)).unwrap();
+
+        let entries = list_entries_in_range(&conn, "2026-09-01", "2026-09-30").unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries.iter().map(|e| e.hours).sum::<f64>(), 5.0);
+    }
+
+    /// A week spanning two months belongs to both, and each takes only its
+    /// own days - which is why the range is read by date, not by timecard.
+    #[test]
+    fn a_week_spanning_two_months_is_split_between_them_by_date() {
+        let conn = setup();
+        let id = week(&conn, "2026-08-30", "2026-09-05").unwrap().id.unwrap();
+        add_manual_entry(&conn, id, &entry("2026-08-31", 4.0)).unwrap();
+        add_manual_entry(&conn, id, &entry("2026-09-01", 6.0)).unwrap();
+
+        let august = list_entries_in_range(&conn, "2026-08-01", "2026-08-31").unwrap();
+        let september = list_entries_in_range(&conn, "2026-09-01", "2026-09-30").unwrap();
+
+        assert_eq!(august.len(), 1);
+        assert_eq!(august[0].hours, 4.0);
+        assert_eq!(september.len(), 1);
+        assert_eq!(september[0].hours, 6.0);
     }
 
     // --- unmapped ---

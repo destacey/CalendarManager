@@ -109,6 +109,99 @@ export function weeksOf(startDate: string, endDate: string): GridWeek[] {
   return weeks
 }
 
+export interface MonthBounds {
+  /** The first day of the month, "YYYY-MM-DD". */
+  start: string
+  end: string
+  /** "September 2026". */
+  name: string
+}
+
+/** The first and last day of "YYYY-MM", and what to call it. */
+export function monthBounds(month: string): MonthBounds | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(month.trim())
+  if (!match) return null
+
+  const year = Number(match[1])
+  const monthIndex = Number(match[2]) - 1
+  if (monthIndex < 0 || monthIndex > 11) return null
+
+  // Day 0 of the next month is the last day of this one, which handles
+  // February and leap years without a table of month lengths.
+  const last = new Date(Date.UTC(year, monthIndex + 1, 0))
+  const pad = (n: number) => String(n).padStart(2, '0')
+
+  return {
+    start: `${year}-${pad(monthIndex + 1)}-01`,
+    end: `${year}-${pad(monthIndex + 1)}-${pad(last.getUTCDate())}`,
+    name: new Date(Date.UTC(year, monthIndex, 1)).toLocaleString('en-GB', {
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC'
+    })
+  }
+}
+
+export interface WeekBounds {
+  /** Sunday, "YYYY-MM-DD". */
+  start: string
+  /** The Saturday after it. */
+  end: string
+  /** "Week of 30 Aug 2026" — what the timecard is called. */
+  name: string
+}
+
+const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+]
+
+function boundsOf(sunday: Date): WeekBounds {
+  const saturday = addDays(sunday, 6)
+  return {
+    start: toIsoDate(sunday),
+    end: toIsoDate(saturday),
+    name: `Week of ${sunday.getUTCDate()} ${MONTH_NAMES[sunday.getUTCMonth()]} ${sunday.getUTCFullYear()}`
+  }
+}
+
+/**
+ * The full Sunday-to-Saturday weeks a month touches.
+ *
+ * Each is a whole week, including the days it reaches into the months either
+ * side: the week IS the timecard, so it owns all seven days. A month counts
+ * only the days that are its own, which is why totals are read by date.
+ */
+export function weekBoundsForMonth(month: string): WeekBounds[] {
+  const match = /^(\d{4})-(\d{2})$/.exec(month.trim())
+  if (!match) return []
+
+  const year = Number(match[1])
+  const monthIndex = Number(match[2]) - 1
+  if (monthIndex < 0 || monthIndex > 11) return []
+
+  const first = new Date(Date.UTC(year, monthIndex, 1))
+  const last = new Date(Date.UTC(year, monthIndex + 1, 0))
+
+  const weeks: WeekBounds[] = []
+  let cursor = addDays(first, -((first.getUTCDay() - WEEK_START + 7) % 7))
+  while (cursor <= last) {
+    weeks.push(boundsOf(cursor))
+    cursor = addDays(cursor, 7)
+  }
+  return weeks
+}
+
+/** The week holding a date. */
+export function weekBoundsOf(date: string): WeekBounds {
+  const day = toUtcDay(date)
+  return boundsOf(addDays(day, -((day.getUTCDay() - WEEK_START + 7) % 7)))
+}
+
+/** True when a date falls inside "YYYY-MM". */
+export function isInMonth(date: string, month: string): boolean {
+  return date.slice(0, 7) === month
+}
+
 /** The week holding a date, or the first week when the date is outside. */
 export function weekOf(weeks: GridWeek[], date: string): GridWeek | undefined {
   return weeks.find(w => w.days.some(d => d.date === date && d.inPeriod)) ?? weeks[0]

@@ -6,8 +6,9 @@ import TimecardWeekGrid from './TimecardWeekGrid'
 import { weeksOf } from '../../utils/timecardGrid'
 import { TimecardEntry } from '../../api/timecards'
 
-// September 2026 starts on a Tuesday: the case the design was drawn for.
-const weeks = weeksOf('2026-09-01', '2026-09-30')
+/* One weekly timecard: Sun 30 Aug to Sat 5 Sep. It owns all seven days even
+   though two of them fall in August — that is what makes them editable. */
+const week = weeksOf('2026-08-30', '2026-09-05')[0]
 
 const projects = [
   { id: 1, name: 'Website Rebuild', code: 'PRJ-001', program: 'Platform', is_active: true },
@@ -31,54 +32,64 @@ const entry = (over: Partial<TimecardEntry>): TimecardEntry => ({
 
 const renderGrid = (over: {
   entries?: TimecardEntry[]
-  weekNumber?: number
+  month?: string
   disabled?: boolean
 } = {}) => {
   const onSetCell = vi.fn()
   const onOpenDay = vi.fn()
-  const onWeekChange = vi.fn()
   render(
     <TimecardWeekGrid
       entries={over.entries ?? [entry({})]}
       projects={projects}
       activities={activities}
-      weeks={weeks}
-      weekNumber={over.weekNumber ?? 1}
-      onWeekChange={onWeekChange}
+      week={week}
+      month={over.month ?? '2026-09'}
       disabled={over.disabled ?? false}
       onSetCell={onSetCell}
       onOpenDay={onOpenDay}
     />
   )
-  return { onSetCell, onOpenDay, onWeekChange }
+  return { onSetCell, onOpenDay }
 }
 
 describe('TimecardWeekGrid', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  /* The whole reason the week is padded: it should still look like a week.
-     Queried by role because a scrolling antd table renders a second, hidden
+  /* Queried by role because a scrolling antd table renders a second, hidden
      copy of its header that a text query would also match. */
-  it('shows the days borrowed from the month before, with their month', () => {
+  it('names the days that belong to the month next door', () => {
     renderGrid()
 
     expect(screen.getByRole('button', { name: 'Items on 2026-08-30' })).toHaveTextContent(
       'Sun 30 Aug'
     )
-    expect(screen.getByRole('button', { name: 'Items on 2026-08-31' })).toHaveTextContent(
-      'Mon 31 Aug'
-    )
-    // A day of this month needs no month to identify it.
+    // A day of the month being viewed needs no month to identify it.
     expect(screen.getByRole('button', { name: 'Items on 2026-09-01' })).toHaveTextContent('Tue 1')
   })
 
-  it('refuses input on a borrowed day', () => {
-    renderGrid()
+  /* The week is the timecard, so it holds those days and nothing else does —
+     refusing input on them would leave that time nowhere to go. */
+  it('takes input on a day belonging to the month next door', async () => {
+    const user = userEvent.setup()
+    const { onSetCell } = renderGrid()
 
-    expect(screen.getByRole('button', { name: 'Items on 2026-08-30' })).toBeDisabled()
-    expect(
-      screen.queryByRole('spinbutton', { name: /2026-08-30/ })
-    ).not.toBeInTheDocument()
+    const cell = screen.getByRole('spinbutton', {
+      name: 'PRJ-001, Software Development on 2026-08-30'
+    })
+    await user.clear(cell)
+    await user.type(cell, '3')
+    await user.tab()
+
+    await waitFor(() => expect(onSetCell).toHaveBeenCalledWith('2026-08-30', 1, 7, 3))
+  })
+
+  it('opens the day on an edge day like any other', async () => {
+    const user = userEvent.setup()
+    const { onOpenDay } = renderGrid()
+
+    await user.click(screen.getByRole('button', { name: 'Items on 2026-08-31' }))
+
+    expect(onOpenDay).toHaveBeenCalledWith('2026-08-31')
   })
 
   it('puts hours in the cell for their day', () => {
@@ -164,14 +175,14 @@ describe('TimecardWeekGrid', () => {
     })
 
     /* Stepping a week must not make rows appear and disappear: the point is
-       to see the shape of the whole timecard from any week. */
+       to see the shape of the month from any week in it. */
     it('keeps a row for a project whose time is in another week', () => {
       renderGrid({ entries: [entry({ date: '2026-09-15', hours: 4 })] })
 
       expect(
         screen.getByRole('spinbutton', { name: 'PRJ-001, Software Development on 2026-09-01' })
       ).toHaveValue('')
-      // The row is there; the hours are not, because they are week 3's.
+      // The row is there; the hours are not, because they are another week's.
       expect(screen.getByText('0.00 hours this week')).toBeInTheDocument()
     })
 
@@ -205,29 +216,6 @@ describe('TimecardWeekGrid', () => {
       await user.click(screen.getByRole('combobox', { name: 'Project for the new row' }))
 
       expect(screen.queryByTitle('PRJ-OLD — Retired')).not.toBeInTheDocument()
-    })
-  })
-
-  describe('moving between weeks', () => {
-    it('cannot go back from the first week', () => {
-      renderGrid({ weekNumber: 1 })
-
-      expect(screen.getByRole('button', { name: 'Previous week' })).toBeDisabled()
-    })
-
-    it('cannot go past the last week', () => {
-      renderGrid({ weekNumber: weeks.length })
-
-      expect(screen.getByRole('button', { name: 'Next week' })).toBeDisabled()
-    })
-
-    it('asks for the next week by number', async () => {
-      const user = userEvent.setup()
-      const { onWeekChange } = renderGrid({ weekNumber: 2 })
-
-      await user.click(screen.getByRole('button', { name: 'Next week' }))
-
-      expect(onWeekChange).toHaveBeenCalledWith(3)
     })
   })
 

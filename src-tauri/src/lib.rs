@@ -229,6 +229,7 @@ pub fn run() {
             commands::db::generate_timecard_entries,
             commands::db::add_timecard_entry,
             commands::db::update_timecard_entry,
+            commands::db::get_timecard_entries_in_range,
             commands::db::set_timecard_cell,
             commands::db::delete_timecard_entry,
             commands::db::submit_timecard,

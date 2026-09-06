@@ -1,16 +1,9 @@
 import React, { useMemo, useState } from 'react'
 import { Typography, Table, Button, Flex, Select, InputNumber, Badge, Tooltip, Empty } from 'antd'
-import { LeftOutlined, RightOutlined, PlusOutlined, UnorderedListOutlined } from '@ant-design/icons'
+import { PlusOutlined, UnorderedListOutlined } from '@ant-design/icons'
 import { Project, Activity } from '../../types'
 import { TimecardEntry } from '../../api/timecards'
-import {
-  GridDay,
-  GridWeek,
-  GridRow,
-  buildRows,
-  columnTotals,
-  rowKey
-} from '../../utils/timecardGrid'
+import { GridDay, GridWeek, GridRow, buildRows, columnTotals, rowKey } from '../../utils/timecardGrid'
 import { projectLabel, NONE } from './TimecardEntryTable'
 
 const { Text } = Typography
@@ -19,9 +12,15 @@ interface TimecardWeekGridProps {
   entries: TimecardEntry[]
   projects: Project[]
   activities: Activity[]
-  weeks: GridWeek[]
-  weekNumber: number
-  onWeekChange: (weekNumber: number) => void
+  /** The seven days this timecard covers. */
+  week: GridWeek
+  /**
+   * The month being viewed, "YYYY-MM". A week can reach into the months
+   * either side, and those days are marked so it is clear they count towards
+   * the neighbouring month - but they take input like any other, because this
+   * timecard is the only one that holds them.
+   */
+  month?: string
   disabled: boolean
   onSetCell: (
     date: string,
@@ -35,11 +34,17 @@ interface TimecardWeekGridProps {
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-/** "Tue 1", or "Sun 30 Aug" for a day borrowed from another month. */
-function dayLabel(day: GridDay): string {
-  const [, month, date] = day.date.split('-').map(Number)
+/** "Tue 1", or "Sun 30 Aug" for a day belonging to a neighbouring month. */
+function dayLabel(day: GridDay, month?: string): string {
+  const [, monthNumber, date] = day.date.split('-').map(Number)
   const weekday = WEEKDAYS[day.weekday]
-  return day.inPeriod ? `${weekday} ${date}` : `${weekday} ${date} ${MONTHS[month - 1]}`
+  const elsewhere = month !== undefined && day.date.slice(0, 7) !== month
+  return elsewhere ? `${weekday} ${date} ${MONTHS[monthNumber - 1]}` : `${weekday} ${date}`
+}
+
+/** True for a day this week reaches into a neighbouring month. */
+function elsewhere(day: GridDay, month?: string): boolean {
+  return month !== undefined && day.date.slice(0, 7) !== month
 }
 
 function hours(value: number): string {
@@ -57,9 +62,8 @@ const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
   entries,
   projects,
   activities,
-  weeks,
-  weekNumber,
-  onWeekChange,
+  week,
+  month,
   disabled,
   onSetCell,
   onOpenDay
@@ -70,7 +74,6 @@ const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
   const [newProject, setNewProject] = useState<number>(NONE)
   const [newActivity, setNewActivity] = useState<number>(NONE)
 
-  const week = weeks.find(w => w.number === weekNumber) ?? weeks[0]
   const dates = useMemo(() => week?.days.map(d => d.date) ?? [], [week])
 
   const projectById = useMemo(() => new Map(projects.map(p => [p.id!, p])), [projects])
@@ -147,26 +150,25 @@ const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
           <Button
             type="link"
             size="small"
-            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
-            disabled={!day.inPeriod}
+            style={{
+              padding: 0,
+              height: 'auto',
+              fontWeight: 600,
+              // Dimmed, not disabled: the day counts towards the month next
+              // door, but this timecard is the only one that holds it.
+              opacity: elsewhere(day, month) ? 0.6 : 1
+            }}
             onClick={() => onOpenDay(day.date)}
             aria-label={`Items on ${day.date}`}
           >
-            {dayLabel(day)}
+            {dayLabel(day, month)}
           </Button>
           <Text type="secondary" style={{ fontSize: 11 }}>
-            {/* A non-breaking space keeps the borrowed columns the same
-                height as the rest; the greyed date already says enough. */}
-            {day.inPeriod ? hours(totals.byDate[day.date] ?? 0) : ' '}
+            {hours(totals.byDate[day.date] ?? 0)}
           </Text>
         </Flex>
       ),
       render: (_: unknown, row: GridRow) => {
-        if (!day.inPeriod) {
-          // Shown for shape, never editable: this day is another card's.
-          return <span aria-hidden style={{ opacity: 0.35 }}>—</span>
-        }
-
         const cell = row.cells[day.date]
         // The activity belongs in the label: one project can have several
         // rows in the same week, and they need telling apart.
@@ -239,30 +241,7 @@ const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
 
   return (
     <Flex vertical gap={12}>
-      <Flex align="center" gap={8} wrap>
-        <Button
-          icon={<LeftOutlined />}
-          disabled={weekNumber <= 1}
-          onClick={() => onWeekChange(weekNumber - 1)}
-          aria-label="Previous week"
-        />
-        <Select
-          value={week.number}
-          style={{ minWidth: 260 }}
-          onChange={onWeekChange}
-          aria-label="Week"
-          options={weeks.map(w => ({
-            value: w.number,
-            label: `Week ${w.number} — ${w.firstInPeriod} to ${w.lastInPeriod}`
-          }))}
-        />
-        <Button
-          icon={<RightOutlined />}
-          disabled={weekNumber >= weeks.length}
-          onClick={() => onWeekChange(weekNumber + 1)}
-          aria-label="Next week"
-        />
-        <div style={{ flexGrow: 1 }} />
+      <Flex align="center" gap={8} wrap justify="end">
         <Text strong>{totals.total.toFixed(2)} hours this week</Text>
       </Flex>
 

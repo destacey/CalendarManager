@@ -173,6 +173,17 @@ pub async fn update_timecard_entry(
     db.call(move |conn| timecards::update_entry(conn, id, &entry)).await
 }
 
+/// Every entry between two dates, across whatever timecards hold them. A
+/// month is a view over its weeks, so its totals are read this way.
+#[tauri::command]
+pub async fn get_timecard_entries_in_range(
+    db: State<'_, Db>,
+    start_date: String,
+    end_date: String,
+) -> DbResult<Vec<TimecardEntry>> {
+    db.call(move |conn| timecards::list_entries_in_range(conn, &start_date, &end_date)).await
+}
+
 /// One grid cell, set to what the user typed. Returns the entry that now
 /// stands behind it, or `None` when the cell was cleared.
 #[tauri::command]

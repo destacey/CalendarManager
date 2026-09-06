@@ -193,3 +193,17 @@ export async function setTimecardCell(
     throw toReadableError(error)
   }
 }
+
+/**
+ * Every entry between two dates, whatever timecard holds it.
+ *
+ * A month is a view over the weeks it touches rather than a thing of its own,
+ * so its totals are read by date: a week spanning two months contributes its
+ * own days to each.
+ */
+export function getTimecardEntriesInRange(
+  startDate: string,
+  endDate: string
+): Promise<TimecardEntry[]> {
+  return invoke<TimecardEntry[]>('get_timecard_entries_in_range', { startDate, endDate })
+}
