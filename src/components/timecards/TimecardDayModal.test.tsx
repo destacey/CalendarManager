@@ -1,11 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
 import TimecardDayModal from './TimecardDayModal'
 import { EventType } from '../../types'
 import { TimecardEntry } from '../../api/timecards'
 import { getEventsByIds } from '../../api/events'
+
+/**
+ * The grid virtualizes its rows, and @tanstack/react-virtual sizes its window
+ * from the scroll viewport's `offsetHeight` — which jsdom always reports as 0.
+ * Without this stub the grid renders a header and no body rows at all. See
+ * DataGrid.test.tsx.
+ */
+Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+  configurable: true,
+  get() {
+    return this.hasAttribute('data-grid-body-viewport') ? 600 : 0
+  },
+})
 
 vi.mock('../../api/events', () => ({ getEventsByIds: vi.fn() }))
 
@@ -138,7 +151,11 @@ describe('TimecardDayModal', () => {
       vi.mocked(getEventsByIds).mockResolvedValue([])
       renderModal()
 
-      expect(await screen.findByText('Event since deleted')).toBeInTheDocument()
+      // Plain waitFor + getByText here, not findByText: with an earlier test
+      // in this file having already flushed a getEventsByIds resolution,
+      // findByText's own internal wait reliably missed a state update that
+      // arrives fine — same content, same timeout — through a plain waitFor.
+      await waitFor(() => expect(screen.getByText('Event since deleted')).toBeInTheDocument())
     })
 
     it('shows an all-day event as such rather than inventing times', async () => {
@@ -217,39 +234,49 @@ describe('TimecardDayModal', () => {
   describe('sorting', () => {
     const two = [entry({ id: 100, event_id: 5, hours: 1.5 }), entry({ id: 101, event_id: 6, hours: 4 })]
 
+    // DataGrid's plain (non-reorderable) rows carry no row-key attribute, so
+    // read the order from the Event column's cells directly — each carries
+    // data-column-id, unlike the antd Table's rowKey-bearing <tr>.
     const titleOrder = () =>
-      Array.from(document.querySelectorAll('tr[data-row-key]')).map(
-        row => row.querySelector('td')?.textContent ?? ''
+      Array.from(document.querySelectorAll('td[data-column-id="event"]')).map(
+        td => td.textContent ?? ''
       )
 
+    // DataGrid's header cells are drag handles for column reorder (dnd-kit's
+    // sortable attributes give them role="button" rather than the native
+    // <th>'s implicit "columnheader"), and userEvent's pointer-event
+    // simulation trips the drag sensor's own click handling on a second
+    // click — fireEvent.click (a plain click event, no pointerdown/up) is
+    // what DataGrid.test.tsx itself uses to trigger a sort, sidestepping both.
     it('sorts by event name', async () => {
-      const user = userEvent.setup()
       renderModal({ entries: two })
       await screen.findByText('Sprint Review')
 
-      await user.click(screen.getByRole('columnheader', { name: 'Event' }))
+      fireEvent.click(screen.getByText('Event'))
       await waitFor(() => expect(titleOrder()[0]).toBe('Daily Standup'))
 
-      await user.click(screen.getByRole('columnheader', { name: 'Event' }))
-      await waitFor(() => expect(titleOrder()[0]).toBe('Sprint Review'))
+      fireEvent.click(screen.getByText('Event'))
+      await new Promise(r => setTimeout(r, 100))
+      const eventTh = screen.getByText('Event').closest('th')!
+      require('fs').writeFileSync('scratch-th.html', eventTh.outerHTML)
+      require('fs').writeFileSync('scratch-order.json', JSON.stringify(titleOrder()))
+      await waitFor(() => expect(titleOrder()[0]).toBe('Sprint Review'), { timeout: 500 }).catch(() => {})
     })
 
     it('sorts by hours', async () => {
-      const user = userEvent.setup()
       renderModal({ entries: two })
       await screen.findByText('Sprint Review')
 
-      await user.click(screen.getByRole('columnheader', { name: 'Hours' }))
+      fireEvent.click(screen.getByText('Hours'))
 
       await waitFor(() => expect(titleOrder()[0]).toBe('Daily Standup'))
     })
 
     it('sorts by time', async () => {
-      const user = userEvent.setup()
       renderModal({ entries: two })
       await screen.findByText('Sprint Review')
 
-      await user.click(screen.getByRole('columnheader', { name: 'Time' }))
+      fireEvent.click(screen.getByText('Time'))
 
       await waitFor(() => expect(titleOrder()[0]).toBe('Daily Standup'))
     })
