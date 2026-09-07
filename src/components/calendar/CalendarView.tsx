@@ -220,7 +220,12 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   }
 
   return (
-    <Flex vertical className="calendar-container-responsive" style={{ width: '100%' }}>
+    <Flex
+      vertical
+      className="calendar-container-responsive"
+      // The 24 matches every other screen: the content wrapper adds none.
+      style={{ width: '100%', padding: 24 }}
+    >
       <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
         <Title level={2} style={{ margin: 0 }}>Calendar</Title>
         <Button

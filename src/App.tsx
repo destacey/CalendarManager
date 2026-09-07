@@ -239,11 +239,13 @@ function AppContent() {
                 flexDirection: 'column',
                 height: '100%'
               }}>
-                <Content 
+                <Content
                   className="app-content"
-                  style={{ 
+                  style={{
                     flex: 1,
-                    padding: '16px', 
+                    /* No padding: every screen sets its own, and this added a
+                       second helping on top of it — 40px of nothing above
+                       every title, 56 on Home. */
                     display: 'flex',
                     flexDirection: 'column',
                     minHeight: 0,

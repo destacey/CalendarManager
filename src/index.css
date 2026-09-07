@@ -37,6 +37,15 @@ body {
   text-align: left;
 }
 
+/* Headings keep the browser's default margin-block-start (0.83em on an h2,
+   about 25px at antd's heading size) because antd's Typography sets only
+   margin-bottom and this app does not import antd's reset. That put a band of
+   empty space above every screen's title. antd's own rule for a heading that
+   FOLLOWS content still applies, so spacing between sections is unaffected. */
+h1, h2, h3, h4, h5, h6 {
+  margin-block-start: 0;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
