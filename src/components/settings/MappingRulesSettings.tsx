@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import {
-  Typography, Space, Button, Table, Modal, Form, Input, Select, Switch, Popconfirm, Flex,
+  Typography, Space, Button, App, Modal, Form, Input, Select, Switch, Flex,
   Alert, Checkbox
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons'
+import type { ItemType } from 'antd/es/menu/interface'
 import { MappingRule, Project, Activity, EventType } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
 import {
@@ -19,6 +20,8 @@ import { getProjects } from '../../api/projects'
 import { getActivities } from '../../api/activities'
 import { getEventTypes } from '../../api/eventTypes'
 import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
+import { DataGrid, createActionsColumn, confirmDelete } from '../grid'
+import type { ColumnDef } from '../grid'
 
 const { Text } = Typography
 
@@ -31,6 +34,7 @@ const NO_ACTIVITY = -1
 
 const MappingRulesSettings: React.FC<MappingRulesSettingsProps> = ({ searchTerm = '' }) => {
   const messageApi = useMessage()
+  const { modal } = App.useApp()
   const [rules, setRules] = useState<MappingRule[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [activities, setActivities] = useState<Activity[]>([])
@@ -125,6 +129,13 @@ const MappingRulesSettings: React.FC<MappingRulesSettingsProps> = ({ searchTerm 
       console.error('Error deleting rule:', error)
       messageApi.error('Failed to delete rule')
     }
+  }
+
+  const handleDeleteClick = (rule: MappingRule) => {
+    confirmDelete(modal, {
+      content: 'Events it mapped go back to the queue.',
+      onConfirm: () => handleDelete(rule),
+    })
   }
 
   const handleSave = async () => {
@@ -247,24 +258,43 @@ const MappingRulesSettings: React.FC<MappingRulesSettingsProps> = ({ searchTerm 
     )
   }
 
-  const columns = [
+  // The Order column's arrows and the "#" column both need a rule's position
+  // among ALL rules, not its position among the grid's currently displayed
+  // (sorted/filtered/searched) rows — so they read `priority` (the backend's
+  // own 1-based order, matching `rules`' index) rather than the table row's
+  // display index.
+  const columns: ColumnDef<MappingRule, unknown>[] = [
     {
-      title: '#',
-      key: 'priority',
-      width: 50,
-      render: (_: unknown, __: MappingRule, index: number) => (
-        <Text type="secondary">{index + 1}</Text>
-      )
+      accessorKey: 'priority',
+      header: '#',
+      size: 50,
+      cell: ({ row }) => <Text type="secondary">{row.original.priority}</Text>,
     },
     {
-      title: 'When an event matches',
-      key: 'conditions',
-      render: (_: unknown, record: MappingRule) => describe(record)
+      id: 'conditions',
+      header: 'When an event matches',
+      // No single field backs this column — it reads whichever conditions
+      // are set — so the accessor composes a flat string purely so the
+      // grid's global search and column filter have something to match
+      // against; `cell` still renders the rich prose.
+      accessorFn: (rule: MappingRule) =>
+        [
+          rule.name_value,
+          rule.category_value,
+          rule.type_id != null ? typeById.get(rule.type_id)?.name : null
+        ].filter(Boolean).join(' '),
+      cell: ({ row }) => describe(row.original),
     },
     {
-      title: 'Map to',
-      key: 'target',
-      render: (_: unknown, record: MappingRule) => {
+      id: 'target',
+      header: 'Map to',
+      accessorFn: (rule: MappingRule) => {
+        const project = projectById.get(rule.project_id)
+        const activity = rule.activity_id != null ? activityById.get(rule.activity_id) : null
+        return [project?.code, project?.name, activity?.name ?? 'Project only'].filter(Boolean).join(' ')
+      },
+      cell: ({ row }) => {
+        const record = row.original
         const project = projectById.get(record.project_id)
         const activity = record.activity_id != null ? activityById.get(record.activity_id) : null
         return (
@@ -288,74 +318,77 @@ const MappingRulesSettings: React.FC<MappingRulesSettingsProps> = ({ searchTerm 
             )}
           </Space>
         )
-      }
+      },
     },
     {
-      title: 'Active',
-      dataIndex: 'is_active',
-      key: 'is_active',
-      width: 80,
-      render: (is_active: boolean) => (
-        <Text type={is_active ? 'success' : 'secondary'}>{is_active ? 'Yes' : 'No'}</Text>
-      )
+      accessorKey: 'is_active',
+      header: 'Active',
+      size: 80,
+      meta: { columnType: 'yesNo' },
+      // Explicit cell wins over the yesNo preset's plain-text one (see
+      // column-types.ts's applyColumnType), while the preset still supplies
+      // the sort/filter behaviour via its accessorFn.
+      cell: ({ row }) => (
+        <Text type={row.original.is_active ? 'success' : 'secondary'}>
+          {row.original.is_active ? 'Yes' : 'No'}
+        </Text>
+      ),
     },
     {
-      title: 'Order',
-      key: 'order',
-      width: 90,
-      render: (_: unknown, record: MappingRule, index: number) => (
-        <Space size={4}>
-          <Button
-            icon={<ArrowUpOutlined />}
-            size="small"
-            disabled={index === 0}
-            aria-label={`Move ${describeForLabel(record)} up`}
-            onClick={() => move(index, -1)}
-          />
-          <Button
-            icon={<ArrowDownOutlined />}
-            size="small"
-            disabled={index === rules.length - 1}
-            aria-label={`Move ${describeForLabel(record)} down`}
-            onClick={() => move(index, 1)}
-          />
-        </Space>
-      )
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 110,
-      render: (_: unknown, record: MappingRule) => (
-        <Space>
-          <Button
-            icon={<EditOutlined />}
-            size="small"
-            aria-label={`Edit ${describeForLabel(record)}`}
-            onClick={() => handleEdit(record)}
-          />
-          <Popconfirm
-            title="Delete this rule?"
-            description="Events it mapped go back to the queue."
-            okText="Yes"
-            cancelText="No"
-            onConfirm={() => handleDelete(record)}
-          >
+      id: 'order',
+      header: 'Order',
+      size: 90,
+      enableSorting: false,
+      enableColumnFilter: false,
+      enableGlobalFilter: false,
+      cell: ({ row }) => {
+        const record = row.original
+        const index = record.priority - 1
+        return (
+          <Space size={4}>
             <Button
-              icon={<DeleteOutlined />}
+              icon={<ArrowUpOutlined />}
               size="small"
-              danger
-              aria-label={`Delete ${describeForLabel(record)}`}
+              disabled={index === 0}
+              aria-label={`Move ${describeForLabel(record)} up`}
+              onClick={() => move(index, -1)}
             />
-          </Popconfirm>
-        </Space>
-      )
-    }
+            <Button
+              icon={<ArrowDownOutlined />}
+              size="small"
+              disabled={index === rules.length - 1}
+              aria-label={`Move ${describeForLabel(record)} down`}
+              onClick={() => move(index, 1)}
+            />
+          </Space>
+        )
+      },
+    },
+    createActionsColumn<MappingRule>({
+      getItems: (record) => [
+        {
+          key: 'edit',
+          label: 'Edit',
+          icon: <EditOutlined />,
+          onClick: () => handleEdit(record),
+        },
+        {
+          key: 'delete',
+          label: 'Delete',
+          icon: <DeleteOutlined />,
+          danger: true,
+          onClick: () => handleDeleteClick(record),
+        },
+      ] as ItemType[],
+    }),
   ]
 
-  const filteredRules = rules.filter(rule => {
+  // Whether this settings section matches an in-page search term. The grid's
+  // own toolbar owns row-level filtering now; this only gates whether the
+  // whole section renders (matching the section title, or any rule by its
+  // name/category/project).
+  const matchesSearch = rules.some(rule => {
     const term = searchTerm.toLowerCase()
-    if (term === '') return true
     return (
       (rule.name_value ?? '').toLowerCase().includes(term) ||
       (rule.category_value ?? '').toLowerCase().includes(term) ||
@@ -366,7 +399,7 @@ const MappingRulesSettings: React.FC<MappingRulesSettingsProps> = ({ searchTerm 
   const shouldShow =
     searchTerm === '' ||
     'mapping rules'.includes(searchTerm.toLowerCase()) ||
-    filteredRules.length > 0
+    matchesSearch
 
   if (!shouldShow) return null
 
@@ -403,13 +436,15 @@ const MappingRulesSettings: React.FC<MappingRulesSettingsProps> = ({ searchTerm 
         />
       )}
 
-      <Table
+      <DataGrid<MappingRule>
+        data={rules}
         columns={columns}
-        dataSource={filteredRules}
-        loading={loading}
-        rowKey="id"
-        pagination={false}
-        size="small"
+        isLoading={loading}
+        getRowId={row => String(row.id)}
+        variant="advanced"
+        persistStateKey="mapping-rules"
+        csvFileName="mapping-rules"
+        emptyMessage="No mapping rules yet."
       />
 
       <Modal

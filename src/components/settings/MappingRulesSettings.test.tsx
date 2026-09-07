@@ -16,6 +16,19 @@ import { getProjects } from '../../api/projects'
 import { getActivities } from '../../api/activities'
 import { getEventTypes } from '../../api/eventTypes'
 
+/**
+ * The grid virtualizes its rows, and @tanstack/react-virtual sizes its window
+ * from the scroll viewport's `offsetHeight` — which jsdom always reports as 0.
+ * Without this stub the grid renders a header and no body rows at all, so
+ * every row-content assertion below would fail. See DataGrid.test.tsx.
+ */
+Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+  configurable: true,
+  get() {
+    return this.hasAttribute('data-grid-body-viewport') ? 600 : 0
+  },
+})
+
 // importActual keeps the real InvalidMappingRuleError: an automocked class
 // never runs its constructor, so `message` would come back empty and the
 // component's instanceof check would stop meaning what these tests expect.
@@ -171,7 +184,12 @@ describe('MappingRulesSettings', () => {
     render(<MappingRulesSettings />)
     await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Edit Daily Standup' }))
+    // Individual per-action buttons were replaced by the grid's single "..."
+    // row-actions dropdown; open the Daily Standup row's (index 0) and click
+    // Edit. antd 6 renders a menu item's icon label inline with its text, so
+    // an anchored /^edit$/i regex matches nothing — match a substring.
+    await user.click(screen.getAllByLabelText('Row actions')[0])
+    await user.click(await screen.findByText(/edit/i))
     const nameField = await screen.findByPlaceholderText('e.g. Daily Standup')
     await user.clear(nameField)
     await user.type(nameField, 'Standup')
@@ -191,8 +209,13 @@ describe('MappingRulesSettings', () => {
     render(<MappingRulesSettings />)
     await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Delete Daily Standup' }))
-    await user.click(await screen.findByRole('button', { name: /^yes$/i }))
+    // A menu item's onClick can't host an anchored Popconfirm, so delete now
+    // confirms through a modal (confirmDelete), whose OK button reads
+    // "Delete" rather than the old Popconfirm's "Yes".
+    await user.click(screen.getAllByLabelText('Row actions')[0])
+    await user.click(await screen.findByText(/delete/i))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     await waitFor(() => expect(deleteMappingRule).toHaveBeenCalledWith(1))
   })
@@ -326,11 +349,14 @@ describe('MappingRulesSettings', () => {
     expect(screen.getByRole('button', { name: /add rule/i })).toBeDisabled()
   })
 
-  it('filters the list by the settings search term', async () => {
+  it('shows the section when the search term matches a rule by name, without filtering its rows', async () => {
+    // Row-level filtering now belongs to the grid's own toolbar search, not
+    // this page-level searchTerm prop — it only gates whether the whole
+    // section renders. A matching term still shows every row.
     render(<MappingRulesSettings searchTerm="escalation" />)
 
     await waitFor(() => expect(screen.getByText('Escalation')).toBeInTheDocument())
-    expect(screen.queryByText('Daily Standup')).not.toBeInTheDocument()
+    expect(screen.getByText('Daily Standup')).toBeInTheDocument()
   })
 
   it('reports a load failure instead of rendering an empty list silently', async () => {
