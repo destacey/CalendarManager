@@ -241,6 +241,44 @@ describe('MappingRulesSettings', () => {
     expect(screen.getByRole('button', { name: 'Move Recruiting down' })).toBeDisabled()
   })
 
+  /* The Order column's "#" and its arrows read `rule.priority`, never the
+     grid's row-render position (see the comment above the `columns` array in
+     MappingRulesSettings.tsx). The test above can't prove that: its fixture's
+     priorities (1, 2, 3) match array position exactly, so it passes
+     identically whether the code reads `priority` or a row's display index.
+     This one sorts the grid by a column OTHER than priority first, so the
+     two diverge, then proves the correct record moves — not whichever record
+     happened to render in that screen position. */
+  it('moves the record whose priority matches, not whichever row renders in that position after a sort', async () => {
+    const user = userEvent.setup()
+    const rules = [
+      { id: 10, priority: 1, name_operator: 'is' as const, name_value: 'Alpha', category_value: null, type_id: null, project_id: 1, activity_id: null, is_active: false },
+      { id: 20, priority: 2, name_operator: 'is' as const, name_value: 'Bravo', category_value: null, type_id: null, project_id: 1, activity_id: null, is_active: true },
+      { id: 30, priority: 3, name_operator: 'is' as const, name_value: 'Charlie', category_value: null, type_id: null, project_id: 1, activity_id: null, is_active: false }
+    ]
+    vi.mocked(getMappingRules).mockResolvedValue(rules)
+    vi.mocked(reorderMappingRules).mockResolvedValue(undefined)
+    render(<MappingRulesSettings />)
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument())
+
+    // Sort by Active (ascending: "No" before "Yes"). The DISPLAYED order
+    // becomes Alpha, Charlie, Bravo — Bravo (real priority 2, index 1) now
+    // renders third (index 2).
+    await user.click(screen.getByText('Active'))
+    await waitFor(() => {
+      const rows = screen.getAllByText(/^(Alpha|Bravo|Charlie)$/)
+      expect(rows.map(r => r.textContent)).toEqual(['Alpha', 'Charlie', 'Bravo'])
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Move Bravo up' }))
+
+    // Correct: swap priority-index 1 (Bravo) with priority-index 0 (Alpha) —
+    // id 20 and id 10 trade places, id 30 (Charlie) is untouched.
+    // A row-index-based bug would instead swap displayed index 2 with 1
+    // (Bravo and Charlie: ids 20 and 30), leaving Alpha's id (10) untouched.
+    await waitFor(() => expect(reorderMappingRules).toHaveBeenCalledWith([20, 10, 30]))
+  })
+
   describe('re-running the rules', () => {
     const run = { evaluated: 120, mapped: 96, overwritten: 0, cleared: 0, skippedManual: 4 }
 
