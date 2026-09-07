@@ -4,11 +4,24 @@ import { describe, it, expect, vi } from 'vitest'
 // `src/test/setup.ts` installs globally.
 vi.unmock('dayjs')
 
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
 import TimecardList from './TimecardList'
 import { Timecard } from '../../api/timecards'
+
+/**
+ * The grid virtualizes its rows, and @tanstack/react-virtual sizes its window
+ * from the scroll viewport's `offsetHeight` — which jsdom always reports as 0.
+ * Without this stub the grid renders a header and no body rows at all. See
+ * DataGrid.test.tsx.
+ */
+Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+  configurable: true,
+  get() {
+    return this.hasAttribute('data-grid-body-viewport') ? 600 : 0
+  },
+})
 
 const timecards: Timecard[] = [
   {
@@ -83,8 +96,18 @@ describe('TimecardList', () => {
     const user = userEvent.setup()
     const { onDelete } = renderList()
 
-    await user.click(screen.getByRole('button', { name: 'Delete Week of 30 Aug 2026' }))
-    await user.click(await screen.findByRole('button', { name: /^yes$/i }))
+    // Individual per-row delete buttons were replaced by the grid's single
+    // "..." row-actions dropdown, and the grid defaults to sorting by start
+    // date descending (as the antd Table's defaultSortOrder did), so "Week
+    // of 30 Aug 2026" (the earlier week) is the SECOND displayed row. A menu
+    // item's onClick can't host an anchored Popconfirm, so delete now
+    // confirms through a modal (confirmDelete), whose OK button reads
+    // "Delete" rather than the old Popconfirm's "Yes".
+    const actionButtons = screen.getAllByLabelText('Row actions')
+    await user.click(actionButtons[1])
+    await user.click(await screen.findByText(/delete/i))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     await waitFor(() =>
       expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }))
