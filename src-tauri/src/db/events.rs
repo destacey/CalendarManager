@@ -54,6 +54,29 @@ const EVENT_LIST_COLUMNS: &str = "id, graph_id, title, NULL AS description, star
      COALESCE(categories, '') AS categories, location, organizer, attendees, is_meeting, \
      type_id, type_manually_set, project_id, activity_id, \n     COALESCE(mapping_manually_set, 0) AS mapping_manually_set, \n     created_at, updated_at, synced_at";
 
+/// The events with these ids, in one query.
+///
+/// The timecard's day view needs the events behind a handful of entries —
+/// their titles, times and mappings. One statement rather than a round trip
+/// per entry, and rusqlite has no array binding, so the placeholders are
+/// built to match. Ids come from `timecard_entries.event_id`, never from a
+/// caller's text, so there is nothing to inject.
+pub fn get_events_by_ids(conn: &Connection, ids: &[i64]) -> DbResult<Vec<Event>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders = std::iter::repeat("?").take(ids.len()).collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT {EVENT_LIST_COLUMNS} FROM events WHERE id IN ({placeholders}) ORDER BY start_date"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let events = stmt
+        .query_map(rusqlite::params_from_iter(ids), Event::from_row)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(events)
+}
+
 /// Every distinct category on an event, split out of the comma-separated
 /// strings they are stored in.
 ///
@@ -664,5 +687,37 @@ mod tests {
         add_event_with_categories(&conn, 2, " Scrum");
 
         assert_eq!(list_event_categories(&conn).unwrap(), vec!["Scrum", "Support"]);
+    }
+
+    #[test]
+    fn events_by_ids_returns_only_those_asked_for() {
+        let conn = setup();
+        add_event_with_categories(&conn, 1, "");
+        add_event_with_categories(&conn, 2, "");
+        add_event_with_categories(&conn, 3, "");
+
+        let found = get_events_by_ids(&conn, &[1, 3]).unwrap();
+
+        assert_eq!(found.len(), 2);
+        assert_eq!(found.iter().filter(|e| e.id == Some(2)).count(), 0);
+    }
+
+    #[test]
+    fn events_by_ids_is_empty_for_no_ids() {
+        let conn = setup();
+        add_event_with_categories(&conn, 1, "");
+
+        assert!(get_events_by_ids(&conn, &[]).unwrap().is_empty());
+    }
+
+    /// An entry outlives the event it came from, so its id can be a ghost.
+    #[test]
+    fn events_by_ids_ignores_one_that_no_longer_exists() {
+        let conn = setup();
+        add_event_with_categories(&conn, 1, "");
+
+        let found = get_events_by_ids(&conn, &[1, 999]).unwrap();
+
+        assert_eq!(found.len(), 1);
     }
 }

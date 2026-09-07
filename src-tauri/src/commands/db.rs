@@ -24,6 +24,12 @@ use crate::db::events::{self, EventUpdate, NewEvent};
 use crate::db::models::{Activity, Category, Event, EventType, EventTypeRule, Project};
 use crate::db::Db;
 
+/// The events behind a set of timecard entries, in one call.
+#[tauri::command]
+pub async fn get_events_by_ids(db: State<'_, Db>, ids: Vec<i64>) -> DbResult<Vec<Event>> {
+    db.call(move |conn| events::get_events_by_ids(conn, &ids)).await
+}
+
 /// The distinct categories across all events, for the rule editors. Counted
 /// in SQL rather than by shipping every event to the frontend.
 #[tauri::command]
