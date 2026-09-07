@@ -35,6 +35,10 @@ const ancestorAtDepth = <T extends RowData>(
  * clicked `<a download>` — no file appears and no error is raised. So this
  * writes the CSV bytes via `saveFile`, which opens a native save dialog in
  * Rust and returns `false` when the user cancels it instead of throwing.
+ * That "instead of throwing" is specifically about cancellation, though: a
+ * genuine write failure (e.g. a permission error from `writeFile`) still
+ * rejects and propagates out of this function — `saveFile` (`src/api/files.ts`)
+ * has no try/catch around it, and neither does this module.
  *
  * Exports only what's on screen: the currently *visible* leaf columns in their
  * displayed order (so hidden columns are excluded and reordered/pinned columns
