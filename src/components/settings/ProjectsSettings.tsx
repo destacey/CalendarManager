@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Typography, Space, Button, Table, Modal, Form, Input, Switch, Popconfirm, Flex, Alert } from 'antd'
+import { Typography, Space, Button, App, Modal, Form, Input, Switch, Flex, Alert } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons'
+import type { ItemType } from 'antd/es/menu/interface'
 import { Project } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
 import {
@@ -17,6 +18,8 @@ import {
   ProjectImportPreview
 } from '../../api/projectImport'
 import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
+import { DataGrid, createActionsColumn, confirmDelete } from '../grid'
+import type { ColumnDef } from '../grid'
 
 const { Text } = Typography
 
@@ -26,6 +29,7 @@ interface ProjectsSettingsProps {
 
 const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) => {
   const messageApi = useMessage()
+  const { modal } = App.useApp()
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [modalVisible, setModalVisible] = useState(false)
@@ -133,6 +137,13 @@ const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) 
     }
   }
 
+  const handleDeleteClick = (project: Project) => {
+    confirmDelete(modal, {
+      content: 'Time booked to this project is unmapped, and any rule targeting it is removed.',
+      onConfirm: () => handleDelete(project),
+    })
+  }
+
   const handleSave = async () => {
     let values
     try {
@@ -170,75 +181,94 @@ const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) 
     }
   }
 
-  const columns = [
+  const columns: ColumnDef<Project, unknown>[] = [
     {
-      title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
-      render: (text: string, record: Project) => (
-        <Text type={record.is_active ? undefined : 'secondary'}>{text}</Text>
-      )
+      accessorKey: 'name',
+      header: 'Name',
+      cell: ({ row }) => (
+        <Text type={row.original.is_active ? undefined : 'secondary'}>{row.original.name}</Text>
+      ),
     },
     {
-      title: 'Code',
-      dataIndex: 'code',
-      key: 'code',
-      width: 140,
-      render: (code: string) => <Text code>{code}</Text>
+      accessorKey: 'code',
+      header: 'Code',
+      size: 140,
+      cell: ({ row }) => <Text code>{row.original.code}</Text>,
     },
     {
-      title: 'Program',
-      dataIndex: 'program',
-      key: 'program',
-      render: (program: string | null) =>
-        program ? <Text>{program}</Text> : <Text type="secondary">—</Text>
+      accessorKey: 'program',
+      header: 'Program',
+      cell: ({ row }) =>
+        row.original.program ? <Text>{row.original.program}</Text> : <Text type="secondary">—</Text>,
     },
     {
-      title: 'Active',
-      dataIndex: 'is_active',
-      key: 'is_active',
-      width: 80,
-      render: (is_active: boolean) => (
-        <Text type={is_active ? 'success' : 'secondary'}>{is_active ? 'Yes' : 'No'}</Text>
-      )
+      accessorKey: 'is_active',
+      header: 'Active',
+      size: 80,
+      meta: { columnType: 'yesNo' },
+      // Explicit cell wins over the yesNo preset's plain-text one (see
+      // column-types.ts's applyColumnType), while the preset still supplies
+      // the sort/filter behaviour via its accessorFn.
+      cell: ({ row }) => (
+        <Text type={row.original.is_active ? 'success' : 'secondary'}>
+          {row.original.is_active ? 'Yes' : 'No'}
+        </Text>
+      ),
     },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 120,
-      render: (_: unknown, record: Project) => (
-        <Space>
-          <Button
-            icon={<EditOutlined />}
-            size="small"
-            title="Edit"
-            aria-label={`Edit ${record.name}`}
-            onClick={() => handleEdit(record)}
-          />
-          <Popconfirm
-            title="Delete this project?"
-            description="This cannot be undone."
-            okText="Yes"
-            cancelText="No"
-            onConfirm={() => handleDelete(record)}
-          >
-            <Button
-              icon={<DeleteOutlined />}
-              size="small"
-              danger
-              title="Delete"
-              aria-label={`Delete ${record.name}`}
-            />
-          </Popconfirm>
-        </Space>
-      )
-    }
+    createActionsColumn<Project>({
+      getItems: (record) => [
+        {
+          key: 'edit',
+          label: 'Edit',
+          icon: <EditOutlined />,
+          onClick: () => handleEdit(record),
+        },
+        {
+          key: 'delete',
+          label: 'Delete',
+          icon: <DeleteOutlined />,
+          danger: true,
+          onClick: () => handleDeleteClick(record),
+        },
+      ] as ItemType[],
+    }),
   ]
 
-  // Name, code and program are all searchable — a code is often what someone
-  // actually remembers about a project.
+  // The read-only import-preview table inside the modal below — a small,
+  // bounded set the user can't sort/filter/search, so it's lifted out here
+  // rather than inlined (five columns inline in a modal was hard to read).
+  // `isActive` keeps its camelCase name: it's a client-side import-preview
+  // shape, not a domain row from Rust.
+  const previewColumns: ColumnDef<ProjectImportPreview['toCreate'][number], unknown>[] = [
+    { accessorKey: 'line', header: 'Line', size: 70 },
+    { accessorKey: 'name', header: 'Name' },
+    {
+      accessorKey: 'code',
+      header: 'Code',
+      size: 140,
+      cell: ({ row }) => <Text code>{row.original.code}</Text>,
+    },
+    {
+      accessorKey: 'program',
+      header: 'Program',
+      cell: ({ row }) =>
+        row.original.program ? <Text>{row.original.program}</Text> : <Text type="secondary">—</Text>,
+    },
+    {
+      accessorKey: 'isActive',
+      header: 'Active',
+      size: 80,
+      meta: { columnType: 'yesNo' },
+    },
+  ]
+
+  // Whether this settings section matches an in-page search term. The grid's
+  // own toolbar owns row-level filtering now; this only gates whether the
+  // whole section renders (matching the section title, or any project by
+  // name/code/program — a code is often what someone actually remembers
+  // about a project).
   const term = searchTerm.toLowerCase()
-  const filteredProjects = projects.filter(
+  const matchesSearch = projects.some(
     project =>
       project.name.toLowerCase().includes(term) ||
       project.code.toLowerCase().includes(term) ||
@@ -246,7 +276,7 @@ const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) 
   )
 
   const shouldShow =
-    searchTerm === '' || 'projects'.includes(term) || filteredProjects.length > 0
+    searchTerm === '' || 'projects'.includes(term) || matchesSearch
 
   if (!shouldShow) return null
 
@@ -269,13 +299,15 @@ const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) 
         future pickers.
       </Text>
 
-      <Table
+      <DataGrid<Project>
+        data={projects}
         columns={columns}
-        dataSource={filteredProjects}
-        loading={loading}
-        rowKey="id"
-        pagination={false}
-        size="small"
+        isLoading={loading}
+        getRowId={row => String(row.id)}
+        variant="advanced"
+        persistStateKey="projects"
+        csvFileName="projects"
+        emptyMessage="No projects yet."
       />
 
       {/* Import preview. Deliberately shows the skips as prominently as the
@@ -332,41 +364,11 @@ const ProjectsSettings: React.FC<ProjectsSettingsProps> = ({ searchTerm = '' }) 
                   {importPreview.toCreate.length === 1 ? '' : 's'} will be created. Existing
                   projects are never changed.
                 </Text>
-                <Table
-                  columns={[
-                    { title: 'Line', dataIndex: 'line', key: 'line', width: 70 },
-                    { title: 'Name', dataIndex: 'name', key: 'name' },
-                    {
-                      title: 'Code',
-                      dataIndex: 'code',
-                      key: 'code',
-                      width: 140,
-                      render: (code: string) => <Text code>{code}</Text>
-                    },
-                    {
-                      title: 'Program',
-                      dataIndex: 'program',
-                      key: 'program',
-                      render: (program: string | null) =>
-                        program ? <Text>{program}</Text> : <Text type="secondary">—</Text>
-                    },
-                    {
-                      title: 'Active',
-                      dataIndex: 'isActive',
-                      key: 'isActive',
-                      width: 80,
-                      render: (isActive: boolean) => (
-                        <Text type={isActive ? 'success' : 'secondary'}>
-                          {isActive ? 'Yes' : 'No'}
-                        </Text>
-                      )
-                    }
-                  ]}
-                  dataSource={importPreview.toCreate}
-                  rowKey="line"
-                  pagination={false}
-                  size="small"
-                  scroll={{ y: 260 }}
+                <DataGrid
+                  data={importPreview.toCreate}
+                  columns={previewColumns}
+                  getRowId={row => String(row.line)}
+                  variant="simple"
                 />
               </>
             )}
