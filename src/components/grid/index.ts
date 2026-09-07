@@ -18,6 +18,10 @@ export type {
 } from './types'
 export { createActionsColumn, createIdColumn, applyColumnType } from './core'
 export { createCsvColumn } from './core/csv-column'
+// The drag grip a reorderable grid puts in its own column's cell. Reorder is
+// opt-in per consumer (via `onRowReorder`), so the grid cannot render this
+// itself — the consumer owns the column, and therefore needs the grip.
+export { DragHandleCell } from './core'
 export { confirmDelete } from './confirm-delete'
 export type { ConfirmModal, ConfirmDeleteOptions } from './confirm-delete'
 export type { ColumnDef, Row, SortingState, Table, Column } from './core'

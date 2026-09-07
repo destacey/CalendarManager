@@ -8,13 +8,12 @@ import { getEventTypeRules, createEventTypeRule, updateEventTypeRule, deleteEven
 import { getEventTypes, reprocessEventTypes } from '../../api/eventTypes'
 import { getEventCategories } from '../../api/events'
 import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
-import { DataGrid, createActionsColumn, confirmDelete } from '../grid'
+import { DataGrid, createActionsColumn, confirmDelete, DragHandleCell } from '../grid'
 import type { ColumnDef, GridColumnContext, RowReorderEvent } from '../grid'
 // Not re-exported by the top-level grid barrel (only DataGrid, the column
 // helpers and confirmDelete are) — this page is the only row-reorder
 // consumer among the migrated settings tables, so it reaches one level
 // deeper for the drag-handle cell rather than widening that barrel.
-import { DragHandleCell } from '../grid/core'
 
 const { Text } = Typography
 const { Option } = Select
