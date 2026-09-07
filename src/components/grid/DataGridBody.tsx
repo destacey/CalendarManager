@@ -115,10 +115,6 @@ export default function DataGridBody<T extends RowData>({
     firstRowStart: virtualRows[0]?.start ?? 0,
     lastRowEnd: virtualRows[virtualRows.length - 1]?.end ?? 0,
     totalSize: rowVirtualizer.getTotalSize(),
-    // Estimated and rendered geometry share one coordinate space here: the
-    // rows flow at their natural height and nothing outside this table is
-    // positioned from the virtualizer's offsets, so the spacers are unscaled.
-    rowScale: 1,
     hasRows: virtualRows.length > 0,
   })
 

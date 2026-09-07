@@ -76,8 +76,7 @@
   min-height: 0;
 }
 
-/* The body viewport — the grid's one scrolling element (draft/editing
-   scroll-into-view helpers target this class). */
+/* The body viewport — the grid's one scrolling element. */
 .tableWrapper {
   overflow-x: auto;
   overflow-y: auto;

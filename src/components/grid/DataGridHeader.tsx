@@ -1,6 +1,6 @@
 'use client'
 
-import { type ReactNode, useCallback, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useState } from 'react'
 import { Popover } from 'antd'
 import type { RowData } from '@tanstack/react-table'
 import {
@@ -156,12 +156,9 @@ export default function DataGridHeader<T extends RowData>({
     [],
   )
 
-  const showColumnFilters = useMemo(
-    () =>
-      includeColumnFilters &&
-      table.getVisibleLeafColumns().some((c) => c.getCanFilter()),
-    [includeColumnFilters, table],
-  )
+  const showColumnFilters =
+    includeColumnFilters &&
+    table.getVisibleLeafColumns().some((c) => c.getCanFilter())
 
   const showFloatingFilters = showColumnFilters && includeFloatingFilters
 
