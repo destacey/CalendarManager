@@ -175,10 +175,20 @@ describe('isInteractiveTarget (via FlatGridRow click handling)', () => {
     expect(onActivate).toHaveBeenCalledTimes(1)
   })
 
-  it('is bounded to the row: an interactive ancestor outside the row does not block activation', () => {
-    // Arrange — wrap the whole table in an outer role="button" element. An
-    // unbounded closest() search would find that ancestor from a plain-text
-    // click inside the row and (wrongly) treat it as interactive.
+  it('still activates on plain cell text when an outer ancestor is itself interactive', () => {
+    // Arrange — wrap the whole table in an outer role="button" element (e.g.
+    // the grid embedded inside another clickable component). An activatable
+    // row always carries role="button" itself, and closest() resolves to the
+    // *nearest* match — so it finds the row long before it would ever reach
+    // this outer element. This exercises the `hit !== row` self-exclusion
+    // clause, exactly as the plain-cell-text test above does; the outer
+    // wrapper never becomes reachable and does not add coverage of a
+    // separate "bounded search" guard (see grid-row.tsx's `isInteractiveTarget`:
+    // its `row.contains(hit)` clause is unreachable from any real caller,
+    // because both call sites only exist when the row itself matches the
+    // interactive selector). This test documents the observable behavior —
+    // an interactive ancestor around the grid doesn't break activation — not
+    // the containment guard.
     const onActivate = vi.fn()
     renderFlatRow({ onActivate, wrapInOuterButton: true })
 
