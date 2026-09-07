@@ -1,16 +1,19 @@
+import { useState } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { ColumnDef } from './index'
 import type { ColumnVisibilityState as VisibilityState } from '@tanstack/react-table'
-import type { TableState } from './index'
+import type { Table, TableState } from './index'
 
 import { buildHeadlessTable } from './test-table'
 
 import {
   COLUMN_MENU_KEYS,
   ColumnChooserModal,
+  ColumnMenuTrigger,
   buildColumnMenuItems,
   getColumnChooserOptions,
   type ColumnMenuItemsInput,
+  type ColumnMenuTriggerProps,
 } from './column-menu'
 
 type Item = { name: string; team: string; secret: string; flagged: string }
@@ -352,6 +355,275 @@ describe('column-menu', () => {
 
       // Assert
       expect(onClose).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('ColumnMenuTrigger', () => {
+    const menuColumns: ColumnDef<Item, any>[] = [
+      { id: 'name', accessorKey: 'name', header: 'Name' },
+      { id: 'team', accessorKey: 'team', header: 'Team' },
+    ]
+
+    const buildMenuTable = (state: Partial<TableState> = {}) =>
+      buildHeadlessTable<Item>(data, menuColumns, {
+        columnVisibility: {},
+        columnPinning: { start: [], end: [] },
+        columnSizing: {},
+        sorting: [],
+        ...state,
+      })
+
+    /** Mirrors the grid's real usage: the grid owns the open-menu id and
+     *  toggles it via onOpenChange — a bare `open` prop would never flip. */
+    function ControlledTrigger({
+      table,
+      columnId = 'name',
+      hasHidableColumns = true,
+      onOpenColumnChooser = vi.fn(),
+      onAutosizeColumn = vi.fn(),
+      onAutosizeAllColumns = vi.fn(),
+      onResetColumns = vi.fn(),
+    }: {
+      table: Table<Item>
+      columnId?: string
+    } & Partial<
+      Pick<
+        ColumnMenuTriggerProps<Item>,
+        | 'hasHidableColumns'
+        | 'onOpenColumnChooser'
+        | 'onAutosizeColumn'
+        | 'onAutosizeAllColumns'
+        | 'onResetColumns'
+      >
+    >) {
+      const [open, setOpen] = useState(false)
+      const header = table.getFlatHeaders().find((h) => h.column.id === columnId)!
+      return (
+        <ColumnMenuTrigger
+          header={header}
+          table={table}
+          open={open}
+          onOpenChange={setOpen}
+          hasHidableColumns={hasHidableColumns}
+          onOpenColumnChooser={onOpenColumnChooser}
+          onAutosizeColumn={onAutosizeColumn}
+          onAutosizeAllColumns={onAutosizeAllColumns}
+          onResetColumns={onResetColumns}
+        />
+      )
+    }
+
+    const renderTrigger = (
+      table: Table<Item>,
+      overrides: Partial<{
+        columnId: string
+        hasHidableColumns: boolean
+        onOpenColumnChooser: () => void
+        onAutosizeColumn: (columnId: string) => void
+        onAutosizeAllColumns: () => void
+        onResetColumns: () => void
+      }> = {},
+    ) => {
+      const callbacks = {
+        onOpenColumnChooser: vi.fn(),
+        onAutosizeColumn: vi.fn(),
+        onAutosizeAllColumns: vi.fn(),
+        onResetColumns: vi.fn(),
+        ...overrides,
+      }
+      render(
+        <ControlledTrigger
+          table={table}
+          columnId={overrides.columnId}
+          hasHidableColumns={overrides.hasHidableColumns}
+          {...callbacks}
+        />,
+      )
+      return callbacks
+    }
+
+    /** Opens the dropdown by clicking the `⋮` trigger button. */
+    const openMenu = () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Column menu' }))
+
+    /** Hovers the "Pin Column" item to reveal its submenu, then returns the
+     *  named child item (substring match — the icon's own label is folded
+     *  into the item's accessible name, e.g. "pin-left Pin Left"). */
+    const openPinSubmenu = async (name: RegExp) => {
+      const pinParent = await screen.findByRole('menuitem', {
+        name: /pin column/i,
+      })
+      fireEvent.mouseEnter(pinParent)
+      return screen.findByRole('menuitem', { name })
+    }
+
+    it('sets ascending sort with the clicked column id, not flipped desc', async () => {
+      // Arrange
+      const table = buildMenuTable()
+      const setSortingSpy = vi.spyOn(table, 'setSorting')
+      renderTrigger(table)
+
+      // Act
+      openMenu()
+      const item = await screen.findByRole('menuitem', {
+        name: /sort ascending/i,
+      })
+      fireEvent.click(item)
+
+      // Assert — desc: false, or a swapped case would pass this
+      expect(setSortingSpy).toHaveBeenCalledWith([{ id: 'name', desc: false }])
+    })
+
+    it('sets descending sort with the clicked column id', async () => {
+      // Arrange
+      const table = buildMenuTable()
+      const setSortingSpy = vi.spyOn(table, 'setSorting')
+      renderTrigger(table)
+
+      // Act
+      openMenu()
+      const item = await screen.findByRole('menuitem', {
+        name: /sort descending/i,
+      })
+      fireEvent.click(item)
+
+      // Assert — desc: true, or a swapped case would pass this
+      expect(setSortingSpy).toHaveBeenCalledWith([{ id: 'name', desc: true }])
+    })
+
+    it('clears sort for just the clicked column while the column is sorted', async () => {
+      // Arrange — Clear Sort only appears while this column is sorted
+      const table = buildMenuTable({ sorting: [{ id: 'name', desc: false }] })
+      const setSortingSpy = vi.spyOn(table, 'setSorting')
+      renderTrigger(table)
+
+      // Act
+      openMenu()
+      const item = await screen.findByRole('menuitem', { name: /clear sort/i })
+      fireEvent.click(item)
+      const updater = setSortingSpy.mock.calls[0][0] as (
+        prev: { id: string; desc: boolean }[],
+      ) => { id: string; desc: boolean }[]
+
+      // Assert — filters out this column's own sort entry
+      expect(
+        updater([
+          { id: 'name', desc: false },
+          { id: 'team', desc: true },
+        ]),
+      ).toEqual([{ id: 'team', desc: true }])
+    })
+
+    it('pins the column left', async () => {
+      // Arrange
+      const table = buildMenuTable()
+      const header = table.getFlatHeaders().find((h) => h.column.id === 'name')!
+      const pinSpy = vi.spyOn(header.column, 'pin')
+      renderTrigger(table)
+
+      // Act
+      openMenu()
+      const item = await openPinSubmenu(/pin left/i)
+      fireEvent.click(item)
+
+      // Assert — 'start', or a swapped side would pass this
+      expect(pinSpy).toHaveBeenCalledWith('start')
+    })
+
+    it('pins the column right', async () => {
+      // Arrange
+      const table = buildMenuTable()
+      const header = table.getFlatHeaders().find((h) => h.column.id === 'name')!
+      const pinSpy = vi.spyOn(header.column, 'pin')
+      renderTrigger(table)
+
+      // Act
+      openMenu()
+      const item = await openPinSubmenu(/pin right/i)
+      fireEvent.click(item)
+
+      // Assert — 'end', or a swapped side would pass this
+      expect(pinSpy).toHaveBeenCalledWith('end')
+    })
+
+    it('unpins a currently pinned column via No Pin', async () => {
+      // Arrange — start pinned left, so pinnedState is truthy going in
+      const table = buildMenuTable({ columnPinning: { start: ['name'], end: [] } })
+      const header = table.getFlatHeaders().find((h) => h.column.id === 'name')!
+      const pinSpy = vi.spyOn(header.column, 'pin')
+      renderTrigger(table)
+
+      // Act
+      openMenu()
+      const item = await openPinSubmenu(/no pin/i)
+      fireEvent.click(item)
+
+      // Assert
+      expect(pinSpy).toHaveBeenCalledWith(false)
+    })
+
+    it('opens the Choose Columns modal trigger callback (the menu\'s way of hiding a column)', async () => {
+      // Arrange
+      const table = buildMenuTable()
+      const { onOpenColumnChooser } = renderTrigger(table)
+
+      // Act
+      openMenu()
+      const item = await screen.findByRole('menuitem', {
+        name: /choose columns/i,
+      })
+      fireEvent.click(item)
+
+      // Assert
+      expect(onOpenColumnChooser).toHaveBeenCalledTimes(1)
+    })
+
+    it('autosizes just the clicked column, passing its id', async () => {
+      // Arrange
+      const table = buildMenuTable()
+      const { onAutosizeColumn } = renderTrigger(table)
+
+      // Act
+      openMenu()
+      const item = await screen.findByRole('menuitem', {
+        name: /autosize this column/i,
+      })
+      fireEvent.click(item)
+
+      // Assert
+      expect(onAutosizeColumn).toHaveBeenCalledWith('name')
+    })
+
+    it('autosizes all columns', async () => {
+      // Arrange
+      const table = buildMenuTable()
+      const { onAutosizeAllColumns } = renderTrigger(table)
+
+      // Act
+      openMenu()
+      const item = await screen.findByRole('menuitem', {
+        name: /autosize all columns/i,
+      })
+      fireEvent.click(item)
+
+      // Assert
+      expect(onAutosizeAllColumns).toHaveBeenCalledTimes(1)
+    })
+
+    it('resets columns', async () => {
+      // Arrange
+      const table = buildMenuTable()
+      const { onResetColumns } = renderTrigger(table)
+
+      // Act
+      openMenu()
+      const item = await screen.findByRole('menuitem', {
+        name: /reset columns/i,
+      })
+      fireEvent.click(item)
+
+      // Assert
+      expect(onResetColumns).toHaveBeenCalledTimes(1)
     })
   })
 })
