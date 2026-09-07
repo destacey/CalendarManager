@@ -517,3 +517,45 @@
 .tr[data-dragging='true'] .td {
   background-color: var(--ant-color-fill-tertiary);
 }
+
+/* ─── Footer row (ColumnDef.footer totals) ──────────────── */
+
+/*
+ * Structural twin of .headerArea/.headerViewport: a non-scrolling viewport
+ * whose scrollLeft is mirrored from the body (see DataGrid's handleBodyScroll)
+ * so footer cells track the body's horizontal position, plus the same
+ * above-the-scrollbar spacer (.headerScrollbarSpacer, reused) that keeps
+ * footer and body columns aligned. flex: none, after the body's flex: 1, so
+ * it takes a fixed height at the bottom of the bordered shell instead of
+ * scrolling away with the rows.
+ */
+.footerArea {
+  display: flex;
+  flex: none;
+}
+
+.footerViewport {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/*
+ * Footer cell: the same tinted, opaque header background (AG Grid totals-row
+ * style) plus a divider from the body above it. Bold text distinguishes a
+ * total from an ordinary data row.
+ */
+.tdFooter {
+  background: var(--data-grid-header-bg);
+  border-top: 1px solid var(--ant-color-border);
+  font-weight: var(--ant-font-weight-strong);
+}
+
+/* Pinned footer cell: sticky like .tdPinned, but needs no separate opaque
+   background override — .tdFooter's background is already the opaque tinted
+   gradient (the same reasoning as .th/.thPinned: the base class is already
+   opaque, so the pinned modifier only adds the stick). */
+.tdFooterPinned {
+  position: sticky;
+  z-index: 2;
+}

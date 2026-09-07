@@ -3,7 +3,12 @@ import type { TableState } from './index'
 
 import { buildHeadlessTable } from './test-table'
 
-import { reconcileColumnOrder, reorderIds } from './column-order'
+import {
+  getOrderedAllLeafColumns,
+  getOrderedVisibleLeafColumns,
+  reconcileColumnOrder,
+  reorderIds,
+} from './column-order'
 
 describe('column-order', () => {
   describe('reconcileColumnOrder', () => {
@@ -166,6 +171,139 @@ describe('column-order', () => {
 
       // Act / Assert — center is [d, c, a] (columnOrder minus pinned), b sticks right
       expect(renderedOrder(table)).toEqual(['d', 'c', 'a', 'b'])
+    })
+  })
+
+  // getOrderedVisibleLeafColumns/getOrderedAllLeafColumns were ported
+  // byte-identically (Task 11) but never got a test of their own. They are
+  // correct by delegation — relaying TanStack's already-visibility-aware
+  // getStart()/getAfter() rather than summing widths themselves — but the
+  // header row, CSV export, and the footer row all depend on them now, and
+  // they are exactly what keeps a total (or a sticky pinned column) aligned
+  // under its column.
+  describe('getOrderedVisibleLeafColumns', () => {
+    type Item = { a: string; b: string; c: string; d: string }
+    const data: Item[] = [{ a: '1', b: '2', c: '3', d: '4' }]
+    const columns: ColumnDef<Item, any>[] = [
+      { id: 'a', accessorKey: 'a', header: 'A' },
+      { id: 'b', accessorKey: 'b', header: 'B' },
+      { id: 'c', accessorKey: 'c', header: 'C' },
+      { id: 'd', accessorKey: 'd', header: 'D' },
+    ]
+
+    const buildTable = (state: Partial<TableState>) =>
+      buildHeadlessTable<Item>(data, columns, {
+        columnPinning: { start: [], end: [] },
+        columnOrder: [],
+        columnVisibility: {},
+        ...state,
+      })
+
+    const ids = (table: ReturnType<typeof buildTable>) =>
+      getOrderedVisibleLeafColumns(table).map((column) => column.id)
+
+    it('excludes a hidden column', () => {
+      // Arrange / Act
+      const table = buildTable({ columnVisibility: { b: false } })
+
+      // Assert
+      expect(ids(table)).toEqual(['a', 'c', 'd'])
+    })
+
+    it('does not shift the offsets of pinned columns after a hidden column sitting among them', () => {
+      // Arrange — pin a, b, c left; b is hidden, so it must not consume width
+      // in c's sticky offset (the misaligned-frozen-column bug this exists to
+      // prevent: a hidden pinned column's width silently leaking into the
+      // offset of the pinned column after it).
+      const table = buildTable({
+        columnPinning: { start: ['a', 'b', 'c'], end: [] },
+        columnVisibility: { b: false },
+      })
+
+      // Act
+      const ordered = getOrderedVisibleLeafColumns(table)
+
+      // Assert — b is excluded, and c's start offset is exactly a's own size
+      // (not a's size plus the hidden b's)
+      expect(ordered.map((column) => column.id)).toEqual(['a', 'c', 'd'])
+      const [colA, colC] = ordered
+      expect(colC.getStart('start')).toBe(colA.getSize())
+    })
+
+    it('reflects a centre-column reorder', () => {
+      // Arrange / Act — nothing pinned, so the whole order is the center
+      // section and follows columnOrder directly
+      const table = buildTable({ columnOrder: ['d', 'b', 'a', 'c'] })
+
+      // Assert
+      expect(ids(table)).toEqual(['d', 'b', 'a', 'c'])
+    })
+
+    it('cannot move a pinned column into the center via columnOrder', () => {
+      // Arrange — 'a' is pinned left; columnOrder tries to place it after 'b'
+      const table = buildTable({
+        columnPinning: { start: ['a'], end: [] },
+        columnOrder: ['b', 'a', 'c', 'd'],
+      })
+
+      // Act / Assert — 'a' still renders first (pinned-left), regardless of
+      // where columnOrder puts it; the center section (b, c, d) follows
+      // columnOrder for the rest
+      expect(ids(table)).toEqual(['a', 'b', 'c', 'd'])
+    })
+  })
+
+  describe('getOrderedAllLeafColumns', () => {
+    type Item = { a: string; b: string; c: string; d: string }
+    const data: Item[] = [{ a: '1', b: '2', c: '3', d: '4' }]
+    const columns: ColumnDef<Item, any>[] = [
+      { id: 'a', accessorKey: 'a', header: 'A' },
+      { id: 'b', accessorKey: 'b', header: 'B' },
+      { id: 'c', accessorKey: 'c', header: 'C' },
+      { id: 'd', accessorKey: 'd', header: 'D' },
+    ]
+
+    const buildTable = (state: Partial<TableState>) =>
+      buildHeadlessTable<Item>(data, columns, {
+        columnPinning: { start: [], end: [] },
+        columnOrder: [],
+        columnVisibility: {},
+        ...state,
+      })
+
+    const ids = (table: ReturnType<typeof buildTable>) =>
+      getOrderedAllLeafColumns(table).map((column) => column.id)
+
+    it('keeps a hidden column in the list, unlike getOrderedVisibleLeafColumns', () => {
+      // Arrange / Act
+      const table = buildTable({ columnVisibility: { b: false } })
+
+      // Assert — still in its def position; only visibility differs from
+      // getOrderedVisibleLeafColumns, not membership
+      expect(ids(table)).toEqual(['a', 'b', 'c', 'd'])
+    })
+
+    it('a hidden column among pinned ones does not shift the other pinned columns', () => {
+      // Arrange — pin a, b, c left; b is hidden
+      const table = buildTable({
+        columnPinning: { start: ['a', 'b', 'c'], end: [] },
+        columnVisibility: { b: false },
+      })
+
+      // Act / Assert — the pin array's order is preserved verbatim (hidden or
+      // not), and the unpinned column stays in the center
+      expect(ids(table)).toEqual(['a', 'b', 'c', 'd'])
+    })
+
+    it('orders pinned sections by the pin array, not columnOrder', () => {
+      // Arrange
+      const table = buildTable({
+        columnPinning: { start: ['d', 'a'], end: [] },
+        columnOrder: ['a', 'b', 'c', 'd'],
+      })
+
+      // Act / Assert
+      expect(ids(table)).toEqual(['d', 'a', 'b', 'c'])
     })
   })
 })

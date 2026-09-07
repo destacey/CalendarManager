@@ -30,17 +30,21 @@ import type { Header, Row, Table } from './core'
 import {
   ColumnChooserModal,
   ColumnMenuTrigger,
+  GridFooterRow,
   GridToolbar,
   computeAutosizeWidth,
   dataGridColumnFilter,
   exportGridToCsv,
   getColumnChooserOptions,
+  hasVisibleFooter,
   measureColumnContent,
   sortEmptyLast,
   useGridColumnStatePersistence,
   useGridDndSensors,
   useGridState,
   useGridTable,
+  type GridFooterRowClasses,
+  type PinnedCellClasses,
 } from './core'
 import { getOrderedVisibleLeafColumns } from './core/column-order'
 import { resolveNumericColumnIds, useGridColumns } from './core/use-grid-columns'
@@ -58,6 +62,20 @@ const EMPTY_DATA: never[] = []
 
 /** Column-header row height, for sizing a `variant="simple"` grid to its rows. */
 const SIMPLE_HEADER_HEIGHT = 39
+
+// Pinned footer cell needs no separate opaque-background override — see the
+// stylesheet comment on .tdFooter/.tdFooterPinned.
+const footerPinnedClasses: PinnedCellClasses = {
+  pinned: styles.tdFooterPinned,
+  pinnedLeftEdge: styles.pinnedLeftEdge,
+  pinnedRightEdge: styles.pinnedRightEdge,
+}
+
+const footerRowClasses: GridFooterRowClasses = {
+  td: `${styles.td} ${styles.tdFooter}`,
+  tdNumeric: styles.tdNumeric,
+  pinned: footerPinnedClasses,
+}
 
 function DataGridInner<T extends RowData>(
   props: DataGridProps<T>,
@@ -103,25 +121,24 @@ function DataGridInner<T extends RowData>(
   // filling the remaining viewport — otherwise a four-row table runs to the
   // bottom of the page with empty space under it.
   const isSimple = variant === 'simple'
-  // Sized from `data` rather than the table's row model, which is built later
-  // in this component. Equivalent for a simple grid: filtering is off, so no
-  // row is ever hidden.
-  const simpleHeight =
-    SIMPLE_HEADER_HEIGHT + (data?.length ?? 0) * ROW_HEIGHT_ESTIMATE + 2
-  const resolvedHeight = height ?? (isSimple ? simpleHeight : autoHeight)
 
-  // ─── Split header/body viewports ─────────────────────────
-  // The header lives in its own clipped viewport above the scrolling body, so
-  // the vertical scrollbar spans only the rows (ag-grid style). The body's
-  // horizontal scroll is mirrored into the header, and a spacer as wide as the
-  // body's vertical scrollbar keeps the two tables' columns aligned.
+  // ─── Split header/body/footer viewports ──────────────────
+  // The header (and, when present, the footer) lives in its own clipped
+  // viewport outside the scrolling body, so the vertical scrollbar spans only
+  // the rows (ag-grid style). The body's horizontal scroll is mirrored into
+  // both, and a spacer as wide as the body's vertical scrollbar keeps every
+  // viewport's columns aligned.
   const headerViewportRef = useRef<HTMLDivElement>(null)
   const bodyViewportRef = useRef<HTMLDivElement>(null)
+  const footerViewportRef = useRef<HTMLDivElement>(null)
   const [scrollbarWidth, setScrollbarWidth] = useState(0)
 
   const handleBodyScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (headerViewportRef.current) {
       headerViewportRef.current.scrollLeft = e.currentTarget.scrollLeft
+    }
+    if (footerViewportRef.current) {
+      footerViewportRef.current.scrollLeft = e.currentTarget.scrollLeft
     }
   }, [])
 
@@ -402,6 +419,22 @@ function DataGridInner<T extends RowData>(
   // would apply to the wrong columns.
   const orderedVisibleLeafColumns = getOrderedVisibleLeafColumns(table)
 
+  // Whether any visible leaf column declares a ColumnDef.footer — gates both
+  // whether the footer's viewport mounts at all and (below) whether a
+  // variant="simple" grid's fixed height leaves room for it.
+  const showFooter = hasVisibleFooter(table)
+
+  // Sized from `data` rather than the table's row model built above: filtering
+  // is off for a simple grid, so no row is ever hidden and the two counts
+  // agree. Computed here (rather than up with the other auto-height state) so
+  // it can account for the footer row, which depends on `table`/`showFooter`.
+  const simpleHeight =
+    SIMPLE_HEADER_HEIGHT +
+    (data?.length ?? 0) * ROW_HEIGHT_ESTIMATE +
+    (showFooter ? ROW_HEIGHT_ESTIMATE + 1 : 0) +
+    2
+  const resolvedHeight = height ?? (isSimple ? simpleHeight : autoHeight)
+
   // Sortable ids for the header row's SortableContext, namespaced `col:` (the
   // same ids the header cells' useSortable use). In display order so dnd-kit's
   // index math lines up with what the user sees.
@@ -455,6 +488,27 @@ function DataGridInner<T extends RowData>(
         activatedRowId={activatedRowId}
         getRowActivateLabel={getRowActivateLabel}
       />
+      {showFooter && (
+        <div className={styles.footerArea}>
+          <div className={styles.footerViewport} ref={footerViewportRef}>
+            <table className={styles.tableElement}>
+              {colGroup}
+              <GridFooterRow
+                table={table}
+                classes={footerRowClasses}
+                numericColumnIds={numericColumnIds}
+              />
+            </table>
+          </div>
+          {/* Sits above the body's vertical scrollbar, same as the header's
+              spacer, so footer and body columns stay aligned. */}
+          <div
+            className={styles.headerScrollbarSpacer}
+            style={{ width: scrollbarWidth }}
+            aria-hidden="true"
+          />
+        </div>
+      )}
     </div>
   )
 

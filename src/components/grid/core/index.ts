@@ -217,6 +217,13 @@ export type {
   ResizeClickGuard,
 } from './grid-header-row'
 
+// Footer row (ColumnDef.footer totals)
+export { GridFooterRow, hasVisibleFooter } from './grid-footer-row'
+export type {
+  GridFooterRowClasses,
+  GridFooterRowProps,
+} from './grid-footer-row'
+
 // DnD — shared mechanics (flat row reorder; there is no tree-only
 // reparenting projection in this app — see dnd/grid-dnd.tsx)
 export {
