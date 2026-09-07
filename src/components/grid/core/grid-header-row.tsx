@@ -161,11 +161,12 @@ export function useHeaderCellSortable(
  *
  * Deliberately not memoized: v9 re-creates `header` on each state change but
  * REUSES `header.column`, so caching this component keyed on `header.column`
- * identity would freeze `getIsSorted()`/`getCanResize()` and the sizing/
- * pinning state read off the column at their first-seen values — the sort
- * arrow would never appear (while rows sort correctly, since the row model
- * reads state directly) and a resized or pinned column's header would stop
- * reflecting its own state.
+ * identity would freeze `getIsSorted()`/`getCanResize()`/`getIsResizing()` at
+ * their first-seen values — the sort arrow would never appear (while rows
+ * sort correctly, since the row model reads state directly) and the resize
+ * handle would stop reflecting whether a resize is in progress. Sizing and
+ * pinning aren't read here at all: `thStyle`/`thClassName` arrive as
+ * already-computed props from the caller.
  */
 export function GridHeaderCell<T extends RowData>({
   header,
