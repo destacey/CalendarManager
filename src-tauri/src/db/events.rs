@@ -54,6 +54,54 @@ const EVENT_LIST_COLUMNS: &str = "id, graph_id, title, NULL AS description, star
      COALESCE(categories, '') AS categories, location, organizer, attendees, is_meeting, \
      type_id, type_manually_set, project_id, activity_id, \n     COALESCE(mapping_manually_set, 0) AS mapping_manually_set, \n     created_at, updated_at, synced_at";
 
+/// The events with these ids, in one query.
+///
+/// The timecard's day view needs the events behind a handful of entries —
+/// their titles, times and mappings. One statement rather than a round trip
+/// per entry, and rusqlite has no array binding, so the placeholders are
+/// built to match. Ids come from `timecard_entries.event_id`, never from a
+/// caller's text, so there is nothing to inject.
+pub fn get_events_by_ids(conn: &Connection, ids: &[i64]) -> DbResult<Vec<Event>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders = std::iter::repeat("?").take(ids.len()).collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT {EVENT_LIST_COLUMNS} FROM events WHERE id IN ({placeholders}) ORDER BY start_date"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let events = stmt
+        .query_map(rusqlite::params_from_iter(ids), Event::from_row)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(events)
+}
+
+/// Every distinct category on an event, split out of the comma-separated
+/// strings they are stored in.
+///
+/// Exists because the alternative was shipping every event to the frontend
+/// and reducing it there: 3,694 events and roughly a megabyte of JSON to
+/// produce a list of sixteen strings, on every visit to Settings.
+pub fn list_event_categories(conn: &Connection) -> DbResult<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT categories FROM events
+         WHERE categories IS NOT NULL AND categories != ''",
+    )?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+
+    let mut seen = std::collections::BTreeSet::new();
+    for row in rows {
+        for part in row?.split(',') {
+            let name = part.trim();
+            if !name.is_empty() {
+                seen.insert(name.to_string());
+            }
+        }
+    }
+    Ok(seen.into_iter().collect())
+}
+
 /// The subset of `Event` a caller supplies to create one. No `id` (assigned
 /// by SQLite), and no `location`/`organizer`/`attendees`/`is_meeting`/
 /// `type_id`/`type_manually_set` — `db:createEvent` never wrote those either;
@@ -218,6 +266,15 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
         conn
+    }
+
+    fn add_event_with_categories(conn: &Connection, id: i64, categories: &str) {
+        conn.execute(
+            "INSERT INTO events (id, title, start_date, categories)
+             VALUES (?1, 'E', '2026-10-01T09:00:00', ?2)",
+            rusqlite::params![id, categories],
+        )
+        .unwrap();
     }
 
     fn insert(conn: &Connection, title: &str, start_date: &str, end_date: Option<&str>) -> Event {
@@ -400,6 +457,7 @@ mod tests {
                 color: "#ff0000".to_string(),
                 is_default: false,
                 is_billable: true,
+                all_day_hours: 8.0,
             },
         )
         .unwrap();
@@ -598,5 +656,68 @@ mod tests {
 
         let titles: Vec<_> = results.iter().map(|e| e.title.clone()).collect();
         assert_eq!(titles, vec!["OpenEnded"]);
+    }
+
+    #[test]
+    fn categories_are_split_out_of_their_comma_separated_strings() {
+        let conn = setup();
+        add_event_with_categories(&conn, 1, "Scrum, Support");
+        add_event_with_categories(&conn, 2, "Scrum");
+        add_event_with_categories(&conn, 3, "Hiring");
+
+        let categories = list_event_categories(&conn).unwrap();
+
+        assert_eq!(categories, vec!["Hiring", "Scrum", "Support"]);
+    }
+
+    #[test]
+    fn categories_ignore_events_that_have_none() {
+        let conn = setup();
+        add_event_with_categories(&conn, 1, "");
+        add_event_with_categories(&conn, 2, "Scrum");
+
+        assert_eq!(list_event_categories(&conn).unwrap(), vec!["Scrum"]);
+    }
+
+    /// Graph sends these with whatever spacing the user typed.
+    #[test]
+    fn categories_are_trimmed_and_deduplicated() {
+        let conn = setup();
+        add_event_with_categories(&conn, 1, "Scrum ,  Support");
+        add_event_with_categories(&conn, 2, " Scrum");
+
+        assert_eq!(list_event_categories(&conn).unwrap(), vec!["Scrum", "Support"]);
+    }
+
+    #[test]
+    fn events_by_ids_returns_only_those_asked_for() {
+        let conn = setup();
+        add_event_with_categories(&conn, 1, "");
+        add_event_with_categories(&conn, 2, "");
+        add_event_with_categories(&conn, 3, "");
+
+        let found = get_events_by_ids(&conn, &[1, 3]).unwrap();
+
+        assert_eq!(found.len(), 2);
+        assert_eq!(found.iter().filter(|e| e.id == Some(2)).count(), 0);
+    }
+
+    #[test]
+    fn events_by_ids_is_empty_for_no_ids() {
+        let conn = setup();
+        add_event_with_categories(&conn, 1, "");
+
+        assert!(get_events_by_ids(&conn, &[]).unwrap().is_empty());
+    }
+
+    /// An entry outlives the event it came from, so its id can be a ghost.
+    #[test]
+    fn events_by_ids_ignores_one_that_no_longer_exists() {
+        let conn = setup();
+        add_event_with_categories(&conn, 1, "");
+
+        let found = get_events_by_ids(&conn, &[1, 999]).unwrap();
+
+        assert_eq!(found.len(), 1);
     }
 }

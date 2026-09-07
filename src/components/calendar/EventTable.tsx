@@ -139,6 +139,8 @@ export const MappingCell: React.FC<{
       style={{ width: '100%' }}
       value={(field === 'project' ? record.project_id : record.activity_id) ?? NONE}
       options={options}
+      showSearch
+      optionFilterProp="label"
       onChange={commit}
       onBlur={() => setEditing(false)}
       onClick={e => e.stopPropagation()}
@@ -187,11 +189,25 @@ const EventTable: React.FC<EventTableProps> = ({
     Math.max(200, window.innerHeight - TABLE_CHROME_PX)
   )
 
+  /* Coalesced into one frame: a drag-resize fires this dozens of times a
+     second, and each unbatched setState re-renders the whole virtual table
+     while the compositor is already busy. Same reason it bails when the
+     height has not actually changed. */
   React.useEffect(() => {
-    const onResize = () =>
-      setBodyHeight(Math.max(200, window.innerHeight - TABLE_CHROME_PX))
+    let frame = 0
+    const onResize = () => {
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        const next = Math.max(200, window.innerHeight - TABLE_CHROME_PX)
+        setBodyHeight(current => (current === next ? current : next))
+      })
+    }
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      if (frame) cancelAnimationFrame(frame)
+    }
   }, [])
   const messageApi = useMessage()
 

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useMemo } from 'react'
 import { Calendar, Flex, Grid, Spin, Typography, Button, Card } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import type { Dayjs } from 'dayjs'
@@ -7,7 +7,7 @@ import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { Event, EventType, Project, Activity } from '../../types'
 import { useCalendarEvents } from '../../hooks/useCalendarEvents'
-// import { useCalendarViewEvents } from '../../hooks/useCalendarViewEvents' // Disabled temporarily
+import { viewRange, CalendarViewMode } from '../../utils/viewRange'
 import { useCalendarState } from '../../hooks/useCalendarState'
 import WeekView from './WeekView'
 import DayView from './DayView'
@@ -73,8 +73,19 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   
   const isLargeScreen = screens.xl // xl breakpoint is 1200px
 
-  // Always use the original hook for now to ensure initial loading works
-  // TODO: Re-enable optimized hook after fixing initialization issues
+  /* Only the span on screen is read. The week and day views run off
+     `currentWeek`; the month grid and the table run off `currentDate`. */
+  const range = useMemo(
+    () =>
+      viewRange(
+        (viewMode === 'week' || viewMode === 'day' ? currentWeek : currentDate).format(
+          'YYYY-MM-DD'
+        ),
+        viewMode as CalendarViewMode
+      ),
+    [viewMode, currentWeek, currentDate]
+  )
+
   const {
     loading,
     error,
@@ -83,7 +94,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
     getShowAsDisplay,
     userTimezone,
     refreshEvents
-  } = useCalendarEvents()
+  } = useCalendarEvents(range)
 
 
   useEffect(() => {
@@ -209,7 +220,12 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   }
 
   return (
-    <Flex vertical className="calendar-container-responsive" style={{ width: '100%' }}>
+    <Flex
+      vertical
+      className="calendar-container-responsive"
+      // The 24 matches every other screen: the content wrapper adds none.
+      style={{ width: '100%', padding: 24 }}
+    >
       <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
         <Title level={2} style={{ margin: 0 }}>Calendar</Title>
         <Button

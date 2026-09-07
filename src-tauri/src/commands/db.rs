@@ -10,6 +10,10 @@ use crate::db::mapping::{self, MappingRunResult, UnmappedGroup};
 use crate::db::mapping_rules::{self, MappingRule, MappingRuleInput};
 use crate::db::project_import::{self, ProjectImportOutcome, ProjectImportPreview};
 use crate::db::projects::{self, DeleteProjectOutcome, ProjectInput};
+use crate::db::timecards::{
+    self, CellInput, EntryInput, GenerationResult, GenerationSettings, NewTimecard, Timecard,
+    TimecardEntry,
+};
 use crate::db::assignment::{self, EventFieldsInput, ReprocessEventTypesResult};
 use crate::db::categories::{self, NewCategory};
 use crate::db::error::DbResult;
@@ -19,6 +23,19 @@ use crate::db::event_types::{
 use crate::db::events::{self, EventUpdate, NewEvent};
 use crate::db::models::{Activity, Category, Event, EventType, EventTypeRule, Project};
 use crate::db::Db;
+
+/// The events behind a set of timecard entries, in one call.
+#[tauri::command]
+pub async fn get_events_by_ids(db: State<'_, Db>, ids: Vec<i64>) -> DbResult<Vec<Event>> {
+    db.call(move |conn| events::get_events_by_ids(conn, &ids)).await
+}
+
+/// The distinct categories across all events, for the rule editors. Counted
+/// in SQL rather than by shipping every event to the frontend.
+#[tauri::command]
+pub async fn get_event_categories(db: State<'_, Db>) -> DbResult<Vec<String>> {
+    db.call(events::list_event_categories).await
+}
 
 #[tauri::command]
 pub async fn get_events(db: State<'_, Db>) -> DbResult<Vec<Event>> {
@@ -118,6 +135,95 @@ pub async fn delete_event_type_rule(db: State<'_, Db>, id: i64) -> DbResult<bool
 }
 
 #[tauri::command]
+pub async fn get_timecards(db: State<'_, Db>) -> DbResult<Vec<Timecard>> {
+    db.call(timecards::list_timecards).await
+}
+
+#[tauri::command]
+pub async fn get_timecard(db: State<'_, Db>, id: i64) -> DbResult<Option<Timecard>> {
+    db.call(move |conn| timecards::get_timecard(conn, id)).await
+}
+
+#[tauri::command]
+pub async fn create_timecard(db: State<'_, Db>, timecard: NewTimecard) -> DbResult<Timecard> {
+    db.call(move |conn| timecards::create_timecard(conn, &timecard)).await
+}
+
+#[tauri::command]
+pub async fn delete_timecard(db: State<'_, Db>, id: i64) -> DbResult<bool> {
+    db.call(move |conn| timecards::delete_timecard(conn, id)).await
+}
+
+#[tauri::command]
+pub async fn get_timecard_entries(db: State<'_, Db>, timecard_id: i64) -> DbResult<Vec<TimecardEntry>> {
+    db.call(move |conn| timecards::list_entries(conn, timecard_id)).await
+}
+
+#[tauri::command]
+pub async fn generate_timecard_entries(
+    db: State<'_, Db>,
+    timecard_id: i64,
+    settings: GenerationSettings,
+) -> DbResult<GenerationResult> {
+    db.call(move |conn| timecards::generate_entries(conn, timecard_id, &settings)).await
+}
+
+#[tauri::command]
+pub async fn add_timecard_entry(
+    db: State<'_, Db>,
+    timecard_id: i64,
+    entry: EntryInput,
+) -> DbResult<TimecardEntry> {
+    db.call(move |conn| timecards::add_manual_entry(conn, timecard_id, &entry)).await
+}
+
+#[tauri::command]
+pub async fn update_timecard_entry(
+    db: State<'_, Db>,
+    id: i64,
+    entry: EntryInput,
+) -> DbResult<Option<TimecardEntry>> {
+    db.call(move |conn| timecards::update_entry(conn, id, &entry)).await
+}
+
+/// Every entry between two dates, across whatever timecards hold them. A
+/// month is a view over its weeks, so its totals are read this way.
+#[tauri::command]
+pub async fn get_timecard_entries_in_range(
+    db: State<'_, Db>,
+    start_date: String,
+    end_date: String,
+) -> DbResult<Vec<TimecardEntry>> {
+    db.call(move |conn| timecards::list_entries_in_range(conn, &start_date, &end_date)).await
+}
+
+/// One grid cell, set to what the user typed. Returns the entry that now
+/// stands behind it, or `None` when the cell was cleared.
+#[tauri::command]
+pub async fn set_timecard_cell(
+    db: State<'_, Db>,
+    timecard_id: i64,
+    cell: CellInput,
+) -> DbResult<Option<TimecardEntry>> {
+    db.call(move |conn| timecards::set_cell(conn, timecard_id, &cell)).await
+}
+
+#[tauri::command]
+pub async fn delete_timecard_entry(db: State<'_, Db>, id: i64) -> DbResult<bool> {
+    db.call(move |conn| timecards::delete_entry(conn, id)).await
+}
+
+#[tauri::command]
+pub async fn submit_timecard(db: State<'_, Db>, id: i64) -> DbResult<Option<Timecard>> {
+    db.call(move |conn| timecards::submit_timecard(conn, id)).await
+}
+
+#[tauri::command]
+pub async fn reopen_timecard(db: State<'_, Db>, id: i64) -> DbResult<Option<Timecard>> {
+    db.call(move |conn| timecards::reopen_timecard(conn, id)).await
+}
+
+#[tauri::command]
 pub async fn get_mapping_rules(db: State<'_, Db>) -> DbResult<Vec<MappingRule>> {
     db.call(mapping_rules::list_mapping_rules).await
 }
@@ -147,8 +253,11 @@ pub async fn reorder_mapping_rules(db: State<'_, Db>, ids: Vec<i64>) -> DbResult
 }
 
 #[tauri::command]
-pub async fn apply_mapping_rules(db: State<'_, Db>) -> DbResult<MappingRunResult> {
-    db.call(mapping::apply_rules).await
+pub async fn apply_mapping_rules(
+    db: State<'_, Db>,
+    overwrite_existing: bool,
+) -> DbResult<MappingRunResult> {
+    db.call(move |conn| mapping::apply_rules(conn, overwrite_existing)).await
 }
 
 #[tauri::command]

@@ -3,6 +3,7 @@ import { Layout, Menu } from 'antd'
 import {
   CalendarOutlined,
   DeploymentUnitOutlined,
+  FileTextOutlined,
   HomeOutlined,
   SettingOutlined
 } from '@ant-design/icons'
@@ -34,6 +35,11 @@ const menuItems: MenuItem[] = [
     key: 'map-events',
     icon: <DeploymentUnitOutlined />,
     label: 'Map Events',
+  },
+  {
+    key: 'timecards',
+    icon: <FileTextOutlined />,
+    label: 'Timecards',
   },
   {
     key: 'settings',

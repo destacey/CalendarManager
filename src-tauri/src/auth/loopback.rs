@@ -73,6 +73,9 @@ pub fn parse_redirect_query(query: &str) -> Result<RedirectParams, AuthError> {
 }
 
 impl Loopback {
+    /// Test-only: production reads the port through `redirect_uri`, which is
+    /// the only form Entra ever sees.
+    #[cfg(test)]
     pub fn port(&self) -> u16 {
         self.port
     }

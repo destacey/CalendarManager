@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
 import MappingRulesSettings from './MappingRulesSettings'
@@ -58,8 +58,8 @@ const mockActivities = [
   { id: 5, name: 'Software Development', color: '#1890ff', is_active: true }
 ]
 const mockTypes = [
-  { id: 10, name: 'Work', color: '#0a8bed', is_billable: true },
-  { id: 11, name: 'Info', color: '#0b8000', is_billable: false }
+  { id: 10, name: 'Work', color: '#0a8bed', is_billable: true, all_day_hours: 8 },
+  { id: 11, name: 'Info', color: '#0b8000', is_billable: false, all_day_hours: 8 }
 ]
 
 describe('MappingRulesSettings', () => {
@@ -218,20 +218,81 @@ describe('MappingRulesSettings', () => {
     expect(screen.getByRole('button', { name: 'Move Recruiting down' })).toBeDisabled()
   })
 
-  it('reports how many events a re-run mapped', async () => {
-    const user = userEvent.setup()
-    vi.mocked(applyMappingRules).mockResolvedValue({
-      evaluated: 120, mapped: 96, skippedManual: 4
-    })
-    render(<MappingRulesSettings />)
-    await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+  describe('re-running the rules', () => {
+    const run = { evaluated: 120, mapped: 96, overwritten: 0, cleared: 0, skippedManual: 4 }
 
-    await user.click(screen.getByRole('button', { name: /re-run on all events/i }))
+    const openDialog = async (user: ReturnType<typeof userEvent.setup>) => {
+      render(<MappingRulesSettings />)
+      await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
+      await user.click(screen.getByRole('button', { name: /re-run on all events/i }))
+      return screen.getByRole('dialog')
+    }
 
-    await waitFor(() => {
-      expect(screen.getByText(/Mapped 96 of 120 events/)).toBeInTheDocument()
+    /* A run that can rewrite existing work is not something to trigger with
+       one click, so the button asks first. */
+    it('asks before running anything', async () => {
+      const user = userEvent.setup()
+      vi.mocked(applyMappingRules).mockResolvedValue(run)
+
+      await openDialog(user)
+
+      expect(applyMappingRules).not.toHaveBeenCalled()
+      expect(screen.getByText(/only events with no mapping will be touched/i)).toBeInTheDocument()
     })
-    expect(screen.getByText(/4 mapped by hand were left alone/)).toBeInTheDocument()
+
+    it('fills blanks only unless told otherwise', async () => {
+      const user = userEvent.setup()
+      vi.mocked(applyMappingRules).mockResolvedValue(run)
+      const dialog = await openDialog(user)
+
+      await user.click(within(dialog).getByRole('button', { name: /^run$/i }))
+
+      await waitFor(() => expect(applyMappingRules).toHaveBeenCalledWith(false))
+    })
+
+    it('overwrites when the box is ticked, and says what that means first', async () => {
+      const user = userEvent.setup()
+      vi.mocked(applyMappingRules).mockResolvedValue({ ...run, overwritten: 7, cleared: 2 })
+      const dialog = await openDialog(user)
+
+      await user.click(within(dialog).getByRole('checkbox'))
+      expect(
+        screen.getByText(/mappings you made by hand can be moved/i)
+      ).toBeInTheDocument()
+      await user.click(within(dialog).getByRole('button', { name: /^run$/i }))
+
+      await waitFor(() => expect(applyMappingRules).toHaveBeenCalledWith(true))
+    })
+
+    it('reports what the run did', async () => {
+      const user = userEvent.setup()
+      vi.mocked(applyMappingRules).mockResolvedValue({ ...run, overwritten: 7, cleared: 2 })
+      const dialog = await openDialog(user)
+
+      await user.click(within(dialog).getByRole('button', { name: /^run$/i }))
+
+      await waitFor(() =>
+        expect(screen.getByText(/Mapped 96 of 120 events/)).toBeInTheDocument()
+      )
+      expect(screen.getByText(/7 replaced/)).toBeInTheDocument()
+      expect(screen.getByText(/2 cleared/)).toBeInTheDocument()
+      expect(screen.getByText(/4 mapped by hand were left alone/)).toBeInTheDocument()
+    })
+
+    /* Ticking it once must not make every later run destructive. */
+    it('forgets the tick once the run is done', async () => {
+      const user = userEvent.setup()
+      vi.mocked(applyMappingRules).mockResolvedValue(run)
+      const dialog = await openDialog(user)
+
+      await user.click(within(dialog).getByRole('checkbox'))
+      await user.click(within(dialog).getByRole('button', { name: /^run$/i }))
+      await waitFor(() => expect(applyMappingRules).toHaveBeenCalledWith(true))
+
+      await user.click(screen.getByRole('button', { name: /re-run on all events/i }))
+
+      expect(screen.getByRole('checkbox', { checked: false })).toBeInTheDocument()
+    })
   })
 
   /* A rule that tests nothing would match every event, so the backend refuses

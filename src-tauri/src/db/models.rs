@@ -106,6 +106,9 @@ pub struct EventType {
     pub color: String,
     pub is_default: Option<bool>,
     pub is_billable: bool,
+    /// Hours one day of an all-day event of this type is worth. 0 means it
+    /// does not count at all.
+    pub all_day_hours: f64,
     pub created_at: Option<String>,
 }
 
@@ -117,6 +120,7 @@ impl EventType {
             color: row.get("color")?,
             is_default: row.get("is_default")?,
             is_billable: row.get("is_billable")?,
+            all_day_hours: row.get("all_day_hours")?,
             created_at: row.get("created_at")?,
         })
     }

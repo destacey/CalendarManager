@@ -37,6 +37,22 @@ export function getEvents(): Promise<Event[]> {
   return invoke<Event[]>('get_events')
 }
 
+/**
+ * The distinct categories across all events.
+ *
+ * A dedicated query because the alternative was `getEvents()` and a reduce in
+ * the browser: every event in the database, roughly a megabyte of JSON, to
+ * produce a list of about sixteen strings.
+ */
+/** The events behind a set of timecard entries, in one call. */
+export function getEventsByIds(ids: number[]): Promise<Event[]> {
+  return invoke<Event[]>('get_events_by_ids', { ids })
+}
+
+export function getEventCategories(): Promise<string[]> {
+  return invoke<string[]>('get_event_categories')
+}
+
 export function getEventsInRange(startDate: string, endDate: string): Promise<Event[]> {
   return invoke<Event[]>('get_events_in_range', { startDate, endDate })
 }

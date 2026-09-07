@@ -8,7 +8,7 @@ use super::error::DbError;
 
 /// Bumped whenever a migration is added. Stored in SQLite's built-in
 /// PRAGMA user_version, so no bookkeeping table is needed.
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 6;
 
 /// Migration 1 is the complete schema as electron/main.js left it. It is
 /// written to be idempotent — CREATE TABLE IF NOT EXISTS, and column adds
@@ -240,6 +240,66 @@ const MIGRATION_4: &str = r#"
     CREATE INDEX IF NOT EXISTS idx_events_project_id ON events(project_id);
 "#;
 
+/// Migration 5: how many hours one day of an all-day event is worth, per
+/// event type.
+///
+/// Per type rather than one global number, because a day of Training and a day
+/// of PTO are not obviously the same amount of billable time. `0` means "does
+/// not count", which is how a Birthday or a company Holiday type opts out
+/// without needing a separate flag.
+///
+/// The default is 8 rather than 24. Until now the billable footer valued an
+/// all-day day at 1440 minutes, so a five-day PTO block counted as 120 hours.
+const MIGRATION_5_COLUMNS: &[(&str, &str, &str)] = &[
+    ("event_types", "all_day_hours", "REAL NOT NULL DEFAULT 8"),
+];
+
+/// Migration 6: timecards.
+///
+/// A timecard is created for a period and PULLS from events; events never
+/// depend on it. The calendar is the source of truth for what happened; the
+/// timecard is the record of what is billed, and it may differ.
+///
+/// `event_id` is `ON DELETE SET NULL`, deliberately not CASCADE. `cleanup_range`
+/// deletes local events Graph stops returning, so a cascade would erase the
+/// record that work was done because someone tidied a calendar months later.
+/// An entry outlives its event and keeps its date, hours and attribution.
+///
+/// `timecard_id` IS cascade: an entry has no meaning without its timecard.
+///
+/// `source` separates entries generated from events from ones a human made or
+/// edited, so regenerating can replace the former without ever touching the
+/// latter - the same promise `type_manually_set` and `mapping_manually_set`
+/// already make one layer down.
+const MIGRATION_6: &str = r#"
+    CREATE TABLE IF NOT EXISTS timecards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      generated_at DATETIME,
+      submitted_at DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS timecard_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timecard_id INTEGER NOT NULL REFERENCES timecards(id) ON DELETE CASCADE,
+      event_id INTEGER REFERENCES events(id) ON DELETE SET NULL,
+      date TEXT NOT NULL,
+      hours REAL NOT NULL,
+      project_id INTEGER REFERENCES projects(id),
+      activity_id INTEGER REFERENCES activities(id),
+      source TEXT NOT NULL DEFAULT 'event',
+      note TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_timecard_entries_timecard ON timecard_entries(timecard_id);
+    CREATE INDEX IF NOT EXISTS idx_timecard_entries_date ON timecard_entries(date);
+"#;
+
 fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, DbError> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
@@ -290,6 +350,8 @@ fn apply_migration(conn: &Connection, version: i64) -> Result<(), DbError> {
         2 => apply_migration_2(conn),
         3 => apply_migration_3(conn),
         4 => apply_migration_4(conn),
+        5 => apply_migration_5(conn),
+        6 => apply_migration_6(conn),
         other => Err(DbError::Other(format!("no migration defined for schema version {other}"))),
     }
 }
@@ -327,6 +389,21 @@ fn apply_migration_4(conn: &Connection) -> Result<(), DbError> {
 
     conn.execute_batch(MIGRATION_4)?;
 
+    Ok(())
+}
+
+fn apply_migration_5(conn: &Connection) -> Result<(), DbError> {
+    for (table, column, definition) in MIGRATION_5_COLUMNS {
+        if !has_column(conn, table, column)? {
+            conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition};"))?;
+        }
+    }
+
+    Ok(())
+}
+
+fn apply_migration_6(conn: &Connection) -> Result<(), DbError> {
+    conn.execute_batch(MIGRATION_6)?;
     Ok(())
 }
 
@@ -546,6 +623,123 @@ mod tests {
             [],
         );
         assert!(dangling_project.is_err(), "a rule may not target a missing project");
+    }
+
+    /// 8, not 24: the billable footer valued an all-day day at 1440 minutes,
+    /// so a five-day PTO block counted as 120 hours.
+    #[test]
+    fn migration_5_gives_every_event_type_eight_all_day_hours() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        conn.execute("INSERT INTO event_types (name) VALUES ('Work')", []).unwrap();
+
+        let hours: f64 = conn
+            .query_row("SELECT all_day_hours FROM event_types WHERE name = 'Work'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+
+        assert_eq!(hours, 8.0);
+    }
+
+    /// 0 is how a Birthday or Holiday type opts out of counting at all.
+    #[test]
+    fn all_day_hours_may_be_zero() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let inserted = conn.execute(
+            "INSERT INTO event_types (name, all_day_hours) VALUES ('Holiday', 0)",
+            [],
+        );
+
+        assert!(inserted.is_ok());
+    }
+
+    #[test]
+    fn migration_6_creates_the_timecard_tables() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        for table in ["timecards", "timecard_entries"] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1, "{table} was not created");
+        }
+    }
+
+    /// The crux of the whole design. `cleanup_range` deletes events Graph
+    /// stops returning, so a CASCADE here would erase the record that work was
+    /// done because someone tidied a calendar. The entry must outlive the
+    /// event, keeping its date, hours and attribution.
+    #[test]
+    fn deleting_an_event_detaches_its_timecard_entry_rather_than_deleting_it() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        conn.execute("INSERT INTO projects (id, name, code) VALUES (1, 'P', 'PRJ-001')", []).unwrap();
+        conn.execute(
+            "INSERT INTO events (id, title, start_date) VALUES (7, 'Standup', '2026-10-05T09:00:00')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO timecards (id, name, start_date, end_date)
+             VALUES (1, 'October', '2026-10-01', '2026-10-31')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO timecard_entries (timecard_id, event_id, date, hours, project_id)
+             VALUES (1, 7, '2026-10-05', 0.25, 1)",
+            [],
+        )
+        .unwrap();
+
+        conn.execute("DELETE FROM events WHERE id = 7", []).unwrap();
+
+        let (event_id, hours, project_id): (Option<i64>, f64, Option<i64>) = conn
+            .query_row(
+                "SELECT event_id, hours, project_id FROM timecard_entries",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+
+        assert_eq!(event_id, None, "the entry is detached, not deleted");
+        assert_eq!(hours, 0.25, "and it keeps what it recorded");
+        assert_eq!(project_id, Some(1));
+    }
+
+    /// An entry has no meaning without its timecard, so that direction IS a
+    /// cascade.
+    #[test]
+    fn deleting_a_timecard_takes_its_entries_with_it() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO timecards (id, name, start_date, end_date)
+             VALUES (1, 'October', '2026-10-01', '2026-10-31')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO timecard_entries (timecard_id, date, hours, source)
+             VALUES (1, '2026-10-05', 8, 'manual')",
+            [],
+        )
+        .unwrap();
+
+        conn.execute("DELETE FROM timecards WHERE id = 1", []).unwrap();
+
+        let left: i64 = conn
+            .query_row("SELECT COUNT(*) FROM timecard_entries", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(left, 0);
     }
 
     #[test]

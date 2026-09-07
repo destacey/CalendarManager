@@ -16,9 +16,13 @@ use super::mapping_rules::{first_match, list_mapping_rules, EventFields};
 pub struct MappingRunResult {
     /// Events the rules were offered.
     pub evaluated: usize,
-    /// Events whose project or activity changed as a result.
+    /// Events a rule mapped, whether or not they were mapped before.
     pub mapped: usize,
-    /// Events skipped because they were mapped by hand.
+    /// Of those, the ones that already had a mapping and lost it.
+    pub overwritten: usize,
+    /// Mappings removed because the rule that made them no longer matches.
+    pub cleared: usize,
+    /// Events mapped by hand that no rule matched, so nothing was done.
     pub skipped_manual: usize,
 }
 
@@ -42,22 +46,42 @@ pub struct UnmappedGroup {
     pub event_ids: Vec<i64>,
 }
 
-/// Loads the fields the rules test, for events that rules may still change.
-fn events_open_to_rules(conn: &Connection) -> DbResult<Vec<(i64, EventFields)>> {
+/// One event as a run sees it: what the rules test, and what it already says.
+struct Candidate {
+    id: i64,
+    fields: EventFields,
+    mapped: bool,
+    by_hand: bool,
+}
+
+/// The events a run may change.
+///
+/// By default only the ones carrying no mapping at all, so a run fills the
+/// blanks and touches nothing a person or an earlier rule already decided.
+/// `overwrite_existing` widens it to every event, which is the only way a
+/// mapping made by hand is ever moved by a rule.
+fn events_open_to_rules(
+    conn: &Connection,
+    overwrite_existing: bool,
+) -> DbResult<Vec<Candidate>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, categories, type_id
+        "SELECT id, title, categories, type_id, project_id,
+                COALESCE(mapping_manually_set, 0)
          FROM events
-         WHERE COALESCE(mapping_manually_set, 0) = 0",
+         WHERE ?1 = 1
+            OR (project_id IS NULL AND COALESCE(mapping_manually_set, 0) = 0)",
     )?;
-    let rows = stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, i64>(0)?,
-            EventFields {
+    let rows = stmt.query_map(params![overwrite_existing as i64], |row| {
+        Ok(Candidate {
+            id: row.get(0)?,
+            fields: EventFields {
                 title: row.get(1)?,
                 categories: row.get(2)?,
                 type_id: row.get(3)?,
             },
-        ))
+            mapped: row.get::<_, Option<i64>>(4)?.is_some(),
+            by_hand: row.get(5)?,
+        })
     })?;
 
     let mut out = Vec::new();
@@ -67,38 +91,61 @@ fn events_open_to_rules(conn: &Connection) -> DbResult<Vec<(i64, EventFields)>> 
     Ok(out)
 }
 
-/// Re-runs every rule over every event that was not mapped by hand.
+/// Runs every rule over the events it is allowed to change.
 ///
-/// An event whose rule no longer matches has its mapping cleared rather than
-/// left stale - otherwise editing a rule would silently strand events on a
-/// project they no longer belong to.
-pub fn apply_rules(conn: &Connection) -> DbResult<MappingRunResult> {
+/// Two modes, and the difference is what counts as "allowed":
+///
+/// - By default, only events with no mapping. A run fills blanks. Nothing a
+///   person or an earlier rule already decided is touched, so running the
+///   rules can never take work away.
+/// - With `overwrite_existing`, every event. A matching rule replaces what is
+///   there, including a mapping made by hand, and takes ownership of it so
+///   later runs keep it in step.
+///
+/// An event that matches no rule keeps its mapping unless a RULE put it there
+/// and no longer matches - that one is cleared, because otherwise editing a
+/// rule would strand events on a project they no longer belong to. A mapping
+/// made by hand is never cleared by a run: only a matching rule moves it.
+pub fn apply_rules(conn: &Connection, overwrite_existing: bool) -> DbResult<MappingRunResult> {
     let rules = list_mapping_rules(conn)?;
-    let candidates = events_open_to_rules(conn)?;
-
-    let skipped_manual: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM events WHERE COALESCE(mapping_manually_set, 0) = 1",
-        [],
-        |row| row.get(0),
-    )?;
+    let candidates = events_open_to_rules(conn, overwrite_existing)?;
 
     let tx = conn.unchecked_transaction()?;
     let mut mapped = 0usize;
+    let mut overwritten = 0usize;
+    let mut cleared = 0usize;
+    let mut skipped_manual = 0usize;
 
-    for (id, fields) in &candidates {
-        let (project_id, activity_id) = match first_match(&rules, fields) {
-            Some(rule) => (Some(rule.project_id), rule.activity_id),
-            None => (None, None),
-        };
-
-        let changed = tx.execute(
-            "UPDATE events SET project_id = ?1, activity_id = ?2
-             WHERE id = ?3
-               AND (project_id IS NOT ?1 OR activity_id IS NOT ?2)",
-            params![project_id, activity_id, id],
-        )?;
-        if changed > 0 && project_id.is_some() {
-            mapped += 1;
+    for candidate in &candidates {
+        match first_match(&rules, &candidate.fields) {
+            Some(rule) => {
+                let changed = tx.execute(
+                    "UPDATE events
+                     SET project_id = ?1, activity_id = ?2, mapping_manually_set = 0
+                     WHERE id = ?3
+                       AND (project_id IS NOT ?1 OR activity_id IS NOT ?2
+                            OR COALESCE(mapping_manually_set, 0) = 1)",
+                    params![rule.project_id, rule.activity_id, candidate.id],
+                )?;
+                if changed > 0 {
+                    mapped += 1;
+                    if candidate.mapped {
+                        overwritten += 1;
+                    }
+                }
+            }
+            None => {
+                if candidate.by_hand {
+                    skipped_manual += 1;
+                } else if candidate.mapped {
+                    // A rule put this here and no longer matches.
+                    cleared += tx.execute(
+                        "UPDATE events SET project_id = NULL, activity_id = NULL
+                         WHERE id = ?1",
+                        params![candidate.id],
+                    )?;
+                }
+            }
         }
     }
 
@@ -107,7 +154,9 @@ pub fn apply_rules(conn: &Connection) -> DbResult<MappingRunResult> {
     Ok(MappingRunResult {
         evaluated: candidates.len(),
         mapped,
-        skipped_manual: skipped_manual as usize,
+        overwritten,
+        cleared,
+        skipped_manual,
     })
 }
 
@@ -232,17 +281,7 @@ fn normalise_categories(categories: &str) -> String {
     parts.join(",")
 }
 
-/// Naive difference in minutes. Both ends are stored as ISO strings in the
-/// same zone, so this needs no timezone handling - and a malformed or absent
-/// end simply contributes nothing rather than failing the whole query.
-fn minutes_between(start: &str, end: Option<&str>) -> i64 {
-    let Some(end) = end else { return 0 };
-    let parse = |s: &str| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").ok();
-    match (parse(start), parse(end)) {
-        (Some(a), Some(b)) => (b - a).num_minutes().max(0),
-        _ => 0,
-    }
-}
+use crate::db::datetime::minutes_between;
 
 #[cfg(test)]
 mod tests {
@@ -308,7 +347,7 @@ mod tests {
         add_event(&conn, 2, "Something else", "", 10, "2026-10-01T10:00:00", "2026-10-01T11:00:00");
         create_mapping_rule(&conn, &name_rule("Standup", Some(500))).unwrap();
 
-        let result = apply_rules(&conn).unwrap();
+        let result = apply_rules(&conn, false).unwrap();
 
         assert_eq!(result.evaluated, 2);
         assert_eq!(result.mapped, 1);
@@ -316,7 +355,8 @@ mod tests {
         assert_eq!(mapping_of(&conn, 2), (None, None));
     }
 
-    /// The promise the UI makes: a hand-mapped event is never moved by a rule.
+    /// The promise the default run makes: it fills blanks and takes nothing
+    /// away, so a hand-mapped event is not even a candidate.
     #[test]
     fn apply_rules_never_touches_a_hand_mapped_event() {
         let conn = setup();
@@ -324,27 +364,94 @@ mod tests {
         map_events(&conn, &[1], 1, None).unwrap();
         create_mapping_rule(&conn, &name_rule("Standup", Some(500))).unwrap();
 
-        let result = apply_rules(&conn).unwrap();
+        let result = apply_rules(&conn, false).unwrap();
 
-        assert_eq!(result.evaluated, 0, "a manual event is not even a candidate");
-        assert_eq!(result.skipped_manual, 1);
+        assert_eq!(result.evaluated, 0, "a mapped event is not a candidate");
         assert_eq!(mapping_of(&conn, 1), (Some(1), None), "the hand-picked 'no activity' survives");
     }
 
-    /// Editing a rule so it no longer matches must not strand the event on a
-    /// project it no longer belongs to.
+    /// The same event, with the box ticked: overriding IS the point of it.
     #[test]
-    fn apply_rules_clears_a_mapping_whose_rule_stopped_matching() {
+    fn overwriting_moves_a_hand_mapped_event_and_takes_ownership() {
+        let conn = setup();
+        add_event(&conn, 1, "Standup", "", 10, "2026-10-01T09:00:00", "2026-10-01T09:15:00");
+        map_events(&conn, &[1], 1, None).unwrap();
+        create_mapping_rule(&conn, &name_rule("Standup", Some(500))).unwrap();
+
+        let result = apply_rules(&conn, true).unwrap();
+
+        assert_eq!(result.mapped, 1);
+        assert_eq!(result.overwritten, 1);
+        assert_eq!(mapping_of(&conn, 1), (Some(1), Some(500)));
+        let still_manual: bool = conn
+            .query_row("SELECT mapping_manually_set FROM events WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert!(!still_manual, "the rule owns it now, so later runs keep it in step");
+    }
+
+    /// Overriding lets rules replace mappings; it does not erase the ones no
+    /// rule has an opinion about.
+    #[test]
+    fn overwriting_leaves_a_hand_mapped_event_no_rule_matches() {
+        let conn = setup();
+        add_event(&conn, 1, "Standup", "", 10, "2026-10-01T09:00:00", "2026-10-01T09:15:00");
+        map_events(&conn, &[1], 1, Some(500)).unwrap();
+
+        let result = apply_rules(&conn, true).unwrap();
+
+        assert_eq!(result.skipped_manual, 1);
+        assert_eq!(mapping_of(&conn, 1), (Some(1), Some(500)));
+    }
+
+    /// A default run may not change a mapping an earlier rule made, even when
+    /// the rules now say something else — that is what the box is for.
+    #[test]
+    fn apply_rules_leaves_an_existing_rule_mapping_alone_by_default() {
         let conn = setup();
         add_event(&conn, 1, "Standup", "", 10, "2026-10-01T09:00:00", "2026-10-01T09:15:00");
         let rule = create_mapping_rule(&conn, &name_rule("Standup", Some(500))).unwrap();
-        apply_rules(&conn).unwrap();
+        apply_rules(&conn, false).unwrap();
+
+        crate::db::mapping_rules::delete_mapping_rule(&conn, rule.id.unwrap()).unwrap();
+        let result = apply_rules(&conn, false).unwrap();
+
+        assert_eq!(result.evaluated, 0);
+        assert_eq!(mapping_of(&conn, 1), (Some(1), Some(500)), "still there");
+    }
+
+    /// Editing a rule so it no longer matches must not strand the event on a
+    /// project it no longer belongs to — but only a run that was told it may
+    /// change existing mappings gets to tidy that up.
+    #[test]
+    fn overwriting_clears_a_mapping_whose_rule_stopped_matching() {
+        let conn = setup();
+        add_event(&conn, 1, "Standup", "", 10, "2026-10-01T09:00:00", "2026-10-01T09:15:00");
+        let rule = create_mapping_rule(&conn, &name_rule("Standup", Some(500))).unwrap();
+        apply_rules(&conn, false).unwrap();
         assert_eq!(mapping_of(&conn, 1), (Some(1), Some(500)));
 
         crate::db::mapping_rules::delete_mapping_rule(&conn, rule.id.unwrap()).unwrap();
-        apply_rules(&conn).unwrap();
+        let result = apply_rules(&conn, true).unwrap();
 
+        assert_eq!(result.cleared, 1);
         assert_eq!(mapping_of(&conn, 1), (None, None));
+    }
+
+    /// The blanks are the whole job of a default run.
+    #[test]
+    fn apply_rules_fills_only_the_unmapped_by_default() {
+        let conn = setup();
+        add_event(&conn, 1, "Standup", "", 10, "2026-10-01T09:00:00", "2026-10-01T09:15:00");
+        add_event(&conn, 2, "Standup", "", 10, "2026-10-02T09:00:00", "2026-10-02T09:15:00");
+        map_events(&conn, &[2], 1, None).unwrap();
+        create_mapping_rule(&conn, &name_rule("Standup", Some(500))).unwrap();
+
+        let result = apply_rules(&conn, false).unwrap();
+
+        assert_eq!(result.evaluated, 1);
+        assert_eq!(result.overwritten, 0);
+        assert_eq!(mapping_of(&conn, 1), (Some(1), Some(500)));
+        assert_eq!(mapping_of(&conn, 2), (Some(1), None), "untouched");
     }
 
     #[test]
@@ -370,7 +477,7 @@ mod tests {
         create_mapping_rule(&conn, &name_rule("Standup", Some(500))).unwrap();
 
         unmap_events(&conn, &[1]).unwrap();
-        apply_rules(&conn).unwrap();
+        apply_rules(&conn, false).unwrap();
 
         assert_eq!(mapping_of(&conn, 1), (Some(1), Some(500)), "the rule takes over again");
     }

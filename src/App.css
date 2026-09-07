@@ -38,7 +38,8 @@ html, body, #root {
   padding: 24px;
   background: var(--bg-secondary);
   border-radius: 8px;
-  margin: 16px 0;
+  /* No top margin: the card sits where every other screen's title does. */
+  margin: 0 0 16px;
 }
 
 /* Ensure side navigation is positioned under title bar */

@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { Typography, Space, Button, Table, Modal, Form, Input, Select, Switch, Popconfirm, Flex, Alert } from 'antd'
+import {
+  Typography, Space, Button, Table, Modal, Form, Input, Select, Switch, Popconfirm, Flex,
+  Alert, Checkbox
+} from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons'
 import { MappingRule, Project, Activity, EventType } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
@@ -15,6 +18,7 @@ import {
 import { getProjects } from '../../api/projects'
 import { getActivities } from '../../api/activities'
 import { getEventTypes } from '../../api/eventTypes'
+import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
 
 const { Text } = Typography
 
@@ -33,12 +37,19 @@ const MappingRulesSettings: React.FC<MappingRulesSettingsProps> = ({ searchTerm 
   const [eventTypes, setEventTypes] = useState<EventType[]>([])
   const [loading, setLoading] = useState(true)
   const [modalVisible, setModalVisible] = useState(false)
+  const [runVisible, setRunVisible] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [overwriteExisting, setOverwriteExisting] = useState(false)
   const [editingRule, setEditingRule] = useState<MappingRule | null>(null)
   const [form] = Form.useForm()
 
   useEffect(() => {
     loadAll()
   }, [])
+
+  // Screens stay mounted, so the effect above runs once. This is what
+  // picks up work done elsewhere while this one was hidden.
+  useReloadOnShow(() => loadAll())
 
   const loadAll = async () => {
     try {
@@ -177,15 +188,23 @@ const MappingRulesSettings: React.FC<MappingRulesSettingsProps> = ({ searchTerm 
   }
 
   const handleReapply = async () => {
+    setRunning(true)
     try {
-      const result = await applyMappingRules()
-      messageApi.success(
-        `Mapped ${result.mapped} of ${result.evaluated} events` +
-          (result.skippedManual > 0 ? ` — ${result.skippedManual} mapped by hand were left alone` : '')
-      )
+      const result = await applyMappingRules(overwriteExisting)
+      const said = [
+        `Mapped ${result.mapped} of ${result.evaluated} event${result.evaluated === 1 ? '' : 's'}`,
+        result.overwritten > 0 && `${result.overwritten} replaced`,
+        result.cleared > 0 && `${result.cleared} cleared`,
+        result.skippedManual > 0 && `${result.skippedManual} mapped by hand were left alone`
+      ].filter(Boolean)
+      messageApi.success(said.join(' — '))
+      setRunVisible(false)
+      setOverwriteExisting(false)
     } catch (error) {
       console.error('Error applying rules:', error)
       messageApi.error('Failed to apply rules')
+    } finally {
+      setRunning(false)
     }
   }
 
@@ -356,7 +375,7 @@ const MappingRulesSettings: React.FC<MappingRulesSettingsProps> = ({ searchTerm 
       <Flex justify="space-between" align="center">
         <Text strong>Mapping Rules</Text>
         <Space>
-          <Button icon={<SyncOutlined />} onClick={handleReapply}>
+          <Button icon={<SyncOutlined />} onClick={() => setRunVisible(true)}>
             Re-run on all events
           </Button>
           <Button
@@ -438,12 +457,16 @@ const MappingRulesSettings: React.FC<MappingRulesSettingsProps> = ({ searchTerm 
             rules={[{ required: true, message: 'Please choose a project' }]}
           >
             <Select
+              showSearch
+              optionFilterProp="label"
               options={projects.map(p => ({ value: p.id!, label: `${p.code} — ${p.name}` }))}
             />
           </Form.Item>
 
           <Form.Item label="Activity" name="activity_id">
             <Select
+              showSearch
+              optionFilterProp="label"
               options={[
                 { value: NO_ACTIVITY, label: 'Project only, no activity' },
                 ...activities.map(a => ({ value: a.id!, label: a.name }))
@@ -456,6 +479,48 @@ const MappingRulesSettings: React.FC<MappingRulesSettingsProps> = ({ searchTerm 
           </Form.Item>
         </Form>
       </Modal>
+
+      <Modal
+        title="Re-run rules on all events"
+        open={runVisible}
+        onOk={handleReapply}
+        onCancel={() => setRunVisible(false)}
+        okText="Run"
+        okButtonProps={{ loading: running }}
+      >
+        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+          <Text>
+            Every rule is tested against your events, in order, and the first one that matches
+            decides the mapping.
+          </Text>
+
+          <Checkbox
+            checked={overwriteExisting}
+            onChange={e => setOverwriteExisting(e.target.checked)}
+          >
+            Replace mappings that already exist
+          </Checkbox>
+
+          {/* What the box actually changes, rather than a warning nobody
+              reads: unticked can only add, ticked can take away. */}
+          {overwriteExisting ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="Mappings you made by hand can be moved"
+              description="Where a rule matches, it replaces what is there and takes ownership of it. Mappings left behind by a rule that no longer matches are cleared. Anything no rule matches is left as it is."
+            />
+          ) : (
+            <Alert
+              type="info"
+              showIcon
+              message="Only events with no mapping will be touched"
+              description="Nothing you have already mapped — by hand or by an earlier run — will change."
+            />
+          )}
+        </Space>
+      </Modal>
+
     </Space>
   )
 }

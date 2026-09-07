@@ -287,6 +287,8 @@ const EventModal: React.FC<EventModalProps> = ({
                     style={{ minWidth: 200 }}
                     value={draftProjectId ?? -1}
                     aria-label="Project"
+                    showSearch
+                    optionFilterProp="label"
                     onChange={value => {
                       const next = value === -1 ? null : value
                       setDraftProjectId(next)
@@ -306,6 +308,8 @@ const EventModal: React.FC<EventModalProps> = ({
                     style={{ minWidth: 180 }}
                     value={draftActivityId ?? -1}
                     aria-label="Activity"
+                    showSearch
+                    optionFilterProp="label"
                     disabled={draftProjectId == null}
                     onChange={value => setDraftActivityId(value === -1 ? null : value)}
                     options={[

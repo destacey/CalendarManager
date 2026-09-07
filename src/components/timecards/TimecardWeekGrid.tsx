@@ -1,0 +1,339 @@
+import React, { useMemo, useState } from 'react'
+import { Typography, Table, Button, Flex, Select, InputNumber, Badge, Tooltip, Empty } from 'antd'
+import { PlusOutlined, UnorderedListOutlined } from '@ant-design/icons'
+import { Project, Activity } from '../../types'
+import { TimecardEntry } from '../../api/timecards'
+import { GridDay, GridWeek, GridRow, buildRows, columnTotals, rowKey } from '../../utils/timecardGrid'
+import { projectLabel, NONE } from './TimecardEntryTable'
+
+const { Text } = Typography
+
+interface TimecardWeekGridProps {
+  entries: TimecardEntry[]
+  projects: Project[]
+  activities: Activity[]
+  /** The seven days this timecard covers. */
+  week: GridWeek
+  /**
+   * The month being viewed, "YYYY-MM". A week can reach into the months
+   * either side, and those days are marked so it is clear they count towards
+   * the neighbouring month - but they take input like any other, because this
+   * timecard is the only one that holds them.
+   */
+  month?: string
+  disabled: boolean
+  onSetCell: (
+    date: string,
+    projectId: number | null,
+    activityId: number | null,
+    hours: number
+  ) => void
+  /**
+   * Opens the day. With a row, only what that row holds on that day — which
+   * is what the affordance beside a cell means; the column header means the
+   * whole day.
+   */
+  onOpenDay: (date: string, row?: GridRow) => void
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** "Tue 1", or "Sun 30 Aug" for a day belonging to a neighbouring month. */
+function dayLabel(day: GridDay, month?: string): string {
+  const [, monthNumber, date] = day.date.split('-').map(Number)
+  const weekday = WEEKDAYS[day.weekday]
+  const elsewhere = month !== undefined && day.date.slice(0, 7) !== month
+  return elsewhere ? `${weekday} ${date} ${MONTHS[monthNumber - 1]}` : `${weekday} ${date}`
+}
+
+/**
+ * Sorts by a label, with "nothing" after every real one.
+ *
+ * The absence is compared as a flag rather than as a stand-in character:
+ * `'~'.localeCompare('S')` puts the tilde FIRST, because collation orders
+ * punctuation before letters — the opposite of what a sentinel is for.
+ */
+function byLabel(a: [boolean, string], b: [boolean, string]): number {
+  if (a[0] !== b[0]) return a[0] ? 1 : -1
+  return a[1].localeCompare(b[1])
+}
+
+function codeOf(row: GridRow, projects: Map<number, Project>): [boolean, string] {
+  if (row.project_id === null) return [true, '']
+  return [false, projects.get(row.project_id)?.code ?? '']
+}
+
+function nameOf(row: GridRow, activities: Map<number, Activity>): [boolean, string] {
+  if (row.activity_id === null) return [true, '']
+  return [false, activities.get(row.activity_id)?.name ?? '']
+}
+
+/** True for a day this week reaches into a neighbouring month. */
+function elsewhere(day: GridDay, month?: string): boolean {
+  return month !== undefined && day.date.slice(0, 7) !== month
+}
+
+function hours(value: number): string {
+  return value === 0 ? '—' : value.toFixed(2)
+}
+
+/**
+ * A week of the timecard: projects down the side, days across the top.
+ *
+ * Days the week borrows from the neighbouring month are shown but dead —
+ * a week that began on a Tuesday should still look like a week, and the
+ * greyed columns say plainly which days belong to another timecard.
+ */
+const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
+  entries,
+  projects,
+  activities,
+  week,
+  month,
+  disabled,
+  onSetCell,
+  onOpenDay
+}) => {
+  // Rows for projects with no time this week yet, kept until the view moves.
+  const [extraRows, setExtraRows] = useState<GridRow[]>([])
+  const [adding, setAdding] = useState(false)
+  const [newProject, setNewProject] = useState<number>(NONE)
+  const [newActivity, setNewActivity] = useState<number>(NONE)
+
+  const dates = useMemo(() => week?.days.map(d => d.date) ?? [], [week])
+
+  const projectById = useMemo(() => new Map(projects.map(p => [p.id!, p])), [projects])
+  const activityById = useMemo(() => new Map(activities.map(a => [a.id!, a])), [activities])
+
+  const rows = useMemo(() => {
+    const built = buildRows(entries, dates)
+    const seen = new Set(built.map(r => r.key))
+    const merged = [...built, ...extraRows.filter(r => !seen.has(r.key))]
+
+    return merged.sort((a, b) => {
+      // Unassigned last: it is a prompt to fix something, not a project.
+      if (a.project_id === null) return b.project_id === null ? 0 : 1
+      if (b.project_id === null) return -1
+      const byProject = (projectById.get(a.project_id)?.code ?? '').localeCompare(
+        projectById.get(b.project_id)?.code ?? ''
+      )
+      if (byProject !== 0) return byProject
+      return (activityById.get(a.activity_id ?? -1)?.name ?? '').localeCompare(
+        activityById.get(b.activity_id ?? -1)?.name ?? ''
+      )
+    })
+  }, [entries, dates, extraRows, projectById, activityById])
+
+  const totals = useMemo(() => columnTotals(rows, dates), [rows, dates])
+
+  if (!week) return <Empty description="This timecard covers no days" />
+
+  const addRow = () => {
+    const projectId = newProject === NONE ? null : newProject
+    const activityId = newActivity === NONE ? null : newActivity
+    const key = rowKey(projectId, activityId)
+    setExtraRows(current =>
+      current.some(r => r.key === key)
+        ? current
+        : [...current, { key, project_id: projectId, activity_id: activityId, cells: {}, total: 0 }]
+    )
+    setAdding(false)
+    setNewProject(NONE)
+    setNewActivity(NONE)
+  }
+
+  const columns = [
+    {
+      title: 'Project',
+      key: 'project',
+      width: 220,
+      sorter: (a: GridRow, b: GridRow) =>
+        byLabel(codeOf(a, projectById), codeOf(b, projectById)),
+      render: (_: unknown, row: GridRow) => (
+        <Text style={{ fontSize: 13 }}>
+          {row.project_id === null ? (
+            <Text type="warning">Unassigned</Text>
+          ) : (
+            projectLabel(projectById.get(row.project_id))
+          )}
+        </Text>
+      )
+    },
+    {
+      title: 'Activity',
+      key: 'activity',
+      width: 160,
+      sorter: (a: GridRow, b: GridRow) =>
+        byLabel(nameOf(a, activityById), nameOf(b, activityById)),
+      render: (_: unknown, row: GridRow) => (
+        <Text type="secondary" style={{ fontSize: 13 }}>
+          {row.activity_id === null ? 'No activity' : activityById.get(row.activity_id)?.name}
+        </Text>
+      )
+    },
+    ...week.days.map(day => ({
+      key: day.date,
+      width: 108,
+      align: 'center' as const,
+      /* Deliberately not sortable: this header is already a button that opens
+         the day, and a sorter on the same cell would make one click do two
+         things. */
+      title: (
+        <Flex vertical align="center" gap={0}>
+          <Button
+            type="link"
+            size="small"
+            style={{
+              padding: 0,
+              height: 'auto',
+              fontWeight: 600,
+              // Dimmed, not disabled: the day counts towards the month next
+              // door, but this timecard is the only one that holds it.
+              opacity: elsewhere(day, month) ? 0.6 : 1
+            }}
+            onClick={() => onOpenDay(day.date)}
+            aria-label={`Items on ${day.date}`}
+          >
+            {dayLabel(day, month)}
+          </Button>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            {hours(totals.byDate[day.date] ?? 0)}
+          </Text>
+        </Flex>
+      ),
+      render: (_: unknown, row: GridRow) => {
+        const cell = row.cells[day.date]
+        // The activity belongs in the label: one project can have several
+        // rows in the same week, and they need telling apart.
+        const project =
+          row.project_id === null ? 'Unassigned' : projectById.get(row.project_id)?.code
+        const activity =
+          row.activity_id === null
+            ? 'no activity'
+            : activityById.get(row.activity_id)?.name ?? 'no activity'
+        const label = `${project}, ${activity} on ${day.date}`
+
+        return (
+          <Flex align="center" justify="center" gap={4}>
+            <InputNumber
+              size="small"
+              min={0}
+              max={24}
+              step={0.25}
+              value={cell?.hours ?? null}
+              disabled={disabled}
+              placeholder="—"
+              style={{ width: 62 }}
+              aria-label={label}
+              onBlur={e => {
+                const raw = (e.target as HTMLInputElement).value
+                const next = raw === '' ? 0 : Number(raw)
+                if (!Number.isFinite(next)) return
+                if (next === (cell?.hours ?? 0)) return
+                onSetCell(day.date, row.project_id, row.activity_id, next)
+              }}
+            />
+            {cell ? (
+              <Tooltip
+                title={
+                  cell.entries === 1
+                    ? 'One item — open the day'
+                    : `${cell.entries} items — open the day`
+                }
+              >
+                <Badge
+                  count={cell.entries > 1 ? cell.entries : 0}
+                  size="small"
+                  offset={[-2, 2]}
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<UnorderedListOutlined />}
+                    style={{ opacity: cell.entries > 1 ? 1 : 0.45 }}
+                    onClick={() => onOpenDay(day.date, row)}
+                    aria-label={`Items behind ${label}`}
+                  />
+                </Badge>
+              </Tooltip>
+            ) : (
+              <span style={{ display: 'inline-block', width: 24 }} />
+            )}
+          </Flex>
+        )
+      }
+    })),
+    {
+      title: 'Total',
+      key: 'total',
+      width: 90,
+      align: 'right' as const,
+      sorter: (a: GridRow, b: GridRow) => a.total - b.total,
+      render: (_: unknown, row: GridRow) => <Text strong>{hours(row.total)}</Text>
+    }
+  ]
+
+  return (
+    <Flex vertical gap={12}>
+
+      <Table
+        columns={columns}
+        dataSource={rows}
+        rowKey="key"
+        pagination={false}
+        size="small"
+        scroll={{ x: 'max-content' }}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="Nothing this week. Pull from events, or add a row."
+            />
+          )
+        }}
+      />
+
+      {adding ? (
+        <Flex gap={8} wrap align="center">
+          <Select
+            value={newProject}
+            style={{ minWidth: 220 }}
+            onChange={setNewProject}
+            aria-label="Project for the new row"
+            showSearch
+            optionFilterProp="label"
+            options={[
+              { value: NONE, label: 'Unassigned' },
+              ...projects.filter(p => p.is_active).map(p => ({ value: p.id!, label: projectLabel(p) }))
+            ]}
+          />
+          <Select
+            value={newActivity}
+            style={{ minWidth: 180 }}
+            onChange={setNewActivity}
+            aria-label="Activity for the new row"
+            showSearch
+            optionFilterProp="label"
+            options={[
+              { value: NONE, label: 'No activity' },
+              ...activities.filter(a => a.is_active).map(a => ({ value: a.id!, label: a.name }))
+            ]}
+          />
+          <Button type="primary" onClick={addRow}>
+            Add
+          </Button>
+          <Button onClick={() => setAdding(false)}>Cancel</Button>
+        </Flex>
+      ) : (
+        <div>
+          <Button icon={<PlusOutlined />} disabled={disabled} onClick={() => setAdding(true)}>
+            Add row
+          </Button>
+        </div>
+      )}
+    </Flex>
+  )
+}
+
+export default TimecardWeekGrid

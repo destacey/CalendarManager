@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import { Typography, Space, Button, Table, Modal, Form, Input, ColorPicker, Switch, Popconfirm, theme, Flex } from 'antd'
+import { Typography, Space, Button, Table, Modal, Form, Input, InputNumber, ColorPicker, Switch, Popconfirm, theme, Flex } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, StarOutlined, StarFilled } from '@ant-design/icons'
 import { EventType } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
 import { getEventTypes, createEventType, updateEventType, deleteEventType, setDefaultEventType } from '../../api/eventTypes'
+import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
 
 const { Text } = Typography
 
@@ -24,6 +25,10 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
     loadEventTypes()
   }, [])
 
+  // Screens stay mounted, so the effect above runs once. This is what
+  // picks up work done elsewhere while this one was hidden.
+  useReloadOnShow(() => loadEventTypes())
+
   const loadEventTypes = async () => {
     try {
       setLoading(true)
@@ -43,7 +48,8 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
     form.setFieldsValue({
       name: '',
       color: token.colorPrimary,
-      is_billable: false
+      is_billable: false,
+      all_day_hours: 8
     })
     setModalVisible(true)
   }
@@ -188,6 +194,18 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
       ),
     },
     {
+      title: 'All-day hours',
+      dataIndex: 'all_day_hours',
+      key: 'all_day_hours',
+      width: 110,
+      render: (hours: number) =>
+        hours > 0 ? (
+          <Text>{hours}</Text>
+        ) : (
+          <Text type="secondary">Doesn't count</Text>
+        ),
+    },
+    {
       title: 'Actions',
       key: 'actions',
       width: 160,
@@ -319,6 +337,13 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
             >
               <Switch />
             </Form.Item>
+            <Form.Item label="All-day hours" name="all_day_hours">
+              <InputNumber min={0} max={24} step={0.5} style={{ width: 120 }} />
+            </Form.Item>
+            <Text type="secondary" style={{ fontSize: '12px' }}>
+              How much one day of an all-day event of this type is worth. Set 0 for types
+              that shouldn't count toward hours at all, like a birthday or a public holiday.
+            </Text>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               Events of this type will count toward hours worked calculations.
             </Text>
