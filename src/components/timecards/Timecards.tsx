@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Typography, Space } from 'antd'
+import { Typography, Space, Segmented, Flex } from 'antd'
 import { useMessage } from '../../contexts/MessageContext'
 import {
   Timecard,
@@ -10,33 +10,30 @@ import {
   generateTimecardEntries
 } from '../../api/timecards'
 import { storageService } from '../../services/storage'
-import { monthBounds, weekBoundsForMonth } from '../../utils/timecardGrid'
-import TimecardList, { PeriodSummary } from './TimecardList'
-import TimecardPeriod from './TimecardPeriod'
+import { weekBoundsOf } from '../../utils/timecardGrid'
 import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
+import TimecardList from './TimecardList'
+import TimecardWeek from './TimecardWeek'
+import TimecardReport from './TimecardReport'
 
 const { Title } = Typography
 
-/** Every month a timecard touches. A week spanning two gives both. */
-function monthsTouched(timecard: Timecard): string[] {
-  const first = timecard.start_date.slice(0, 7)
-  const last = timecard.end_date.slice(0, 7)
-  return first === last ? [first] : [first, last]
-}
+type Tab = 'Timecards' | 'Report'
 
 /**
- * The Timecards screen: the months, or one month's weeks.
+ * The Timecards screen: the weeks, one open week, or the report.
  *
- * The timecard itself is a WEEK — that is what gets pulled, edited and
- * submitted. A month is a view over the weeks it touches, which is why the
- * hours here are read by date rather than summed per timecard: a week
- * spanning two months belongs to both, and gives each of them its own days.
+ * A timecard is a WEEK and only a week. Anything longer is a question about
+ * totals rather than a bigger timecard, which is what the report answers —
+ * keeping the thing that gets submitted the same size as the thing that gets
+ * filled in.
  */
 const Timecards: React.FC = () => {
   const messageApi = useMessage()
   const [timecards, setTimecards] = useState<Timecard[]>([])
-  const [hoursByMonth, setHoursByMonth] = useState<Record<string, number>>({})
-  const [openMonth, setOpenMonth] = useState<string | null>(null)
+  const [hoursById, setHoursById] = useState<Record<number, number>>({})
+  const [openId, setOpenId] = useState<number | null>(null)
+  const [tab, setTab] = useState<Tab>('Timecards')
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -46,12 +43,11 @@ const Timecards: React.FC = () => {
       setTimecards(cards)
 
       if (cards.length === 0) {
-        setHoursByMonth({})
+        setHoursById({})
         return
       }
 
-      // One read across everything the timecards cover, bucketed by the date
-      // on each entry — so a week spanning two months lands in both correctly.
+      // One read across everything the timecards cover, totalled per card.
       const start = cards.reduce(
         (min, c) => (c.start_date < min ? c.start_date : min),
         cards[0].start_date
@@ -59,12 +55,11 @@ const Timecards: React.FC = () => {
       const end = cards.reduce((max, c) => (c.end_date > max ? c.end_date : max), cards[0].end_date)
       const entries = await getTimecardEntriesInRange(start, end)
 
-      const totals: Record<string, number> = {}
+      const totals: Record<number, number> = {}
       for (const entry of entries) {
-        const month = entry.date.slice(0, 7)
-        totals[month] = (totals[month] ?? 0) + entry.hours
+        totals[entry.timecard_id] = (totals[entry.timecard_id] ?? 0) + entry.hours
       }
-      setHoursByMonth(totals)
+      setHoursById(totals)
     } catch (error) {
       console.error('Error loading timecards:', error)
       messageApi.error('Failed to load timecards')
@@ -81,117 +76,103 @@ const Timecards: React.FC = () => {
   // picks up work done elsewhere while this one was hidden.
   useReloadOnShow(() => load())
 
-  const periods = useMemo<PeriodSummary[]>(() => {
-    const byMonth = new Map<string, Timecard[]>()
-    for (const card of timecards) {
-      for (const month of monthsTouched(card)) {
-        byMonth.set(month, [...(byMonth.get(month) ?? []), card])
-      }
-    }
+  // Held by id rather than by value, so an edit inside the week is reflected
+  // here without the two copies drifting apart.
+  const open = useMemo(
+    () => timecards.find(t => t.id === openId) ?? null,
+    [timecards, openId]
+  )
 
-    return Array.from(byMonth.entries())
-      .map(([month, weeks]) => ({
-        month,
-        name: monthBounds(month)?.name ?? month,
-        weeks: weeks.length,
-        submitted: weeks.filter(w => w.status === 'submitted').length,
-        hours: hoursByMonth[month] ?? 0
-      }))
-      .sort((a, b) => b.month.localeCompare(a.month))
-  }, [timecards, hoursByMonth])
-
-  /** The weeks of the open month, in date order. */
-  const openWeeks = useMemo(() => {
-    if (openMonth === null) return []
-    return timecards
-      .filter(c => monthsTouched(c).includes(openMonth))
-      .sort((a, b) => a.start_date.localeCompare(b.start_date))
-  }, [timecards, openMonth])
-
-  const handleCreate = async (month: string) => {
-    const weeks = weekBoundsForMonth(month)
-    const existing = new Set(timecards.map(c => c.start_date))
-    const wanted = weeks.filter(w => !existing.has(w.start))
-
-    if (wanted.length === 0) {
-      messageApi.info('Every week of that month already has a timecard')
-      setOpenMonth(month)
+  const handleCreate = async (date: string) => {
+    const week = weekBoundsOf(date)
+    const existing = timecards.find(c => c.start_date === week.start)
+    if (existing) {
+      messageApi.info('That week already has a timecard')
+      setOpenId(existing.id ?? null)
       return
     }
 
-    const created: Timecard[] = []
-    for (const week of wanted) {
-      try {
-        created.push(
-          await createTimecard({ name: week.name, start_date: week.start, end_date: week.end })
-        )
-      } catch (error) {
-        // An overlapping timecard is the failure worth reading out: the
-        // backend's message names what is in the way.
-        console.error('Error creating a week:', error)
-        messageApi.error(error instanceof Error ? error.message : String(error))
-        await load()
-        return
-      }
+    let created: Timecard
+    try {
+      created = await createTimecard({
+        name: week.name,
+        start_date: week.start,
+        end_date: week.end
+      })
+    } catch (error) {
+      // An overlapping timecard is the failure worth reading out: the
+      // backend's message names what is in the way.
+      console.error('Error creating a week:', error)
+      messageApi.error(error instanceof Error ? error.message : String(error))
+      return
     }
 
-    // Pulling is what anyone would do next, so a new month arrives filled.
+    // Pulling is what anyone would do next, so a new week arrives filled.
     try {
       const workingDays = await storageService.getWorkingDays()
-      for (const week of created) {
-        await generateTimecardEntries(week.id!, workingDays)
-      }
+      const result = await generateTimecardEntries(created.id!, workingDays)
       messageApi.success(
-        `Created ${created.length} week${created.length === 1 ? '' : 's'} and pulled from events`
+        `Week created from ${result.eventsRead} event${result.eventsRead === 1 ? '' : 's'}`
       )
     } catch (error) {
-      console.error('Error pulling events into the new weeks:', error)
-      messageApi.warning('Weeks created, but pulling from events failed')
+      console.error('Error pulling events into the new week:', error)
+      messageApi.warning('Week created, but pulling from events failed')
     }
 
     await load()
-    setOpenMonth(month)
+    setOpenId(created.id ?? null)
   }
 
-  const handleDelete = async (month: string) => {
-    const weeks = timecards.filter(c => monthsTouched(c).includes(month))
+  const handleDelete = async (timecard: Timecard) => {
     try {
-      for (const week of weeks) {
-        await deleteTimecard(week.id!)
-      }
-      messageApi.success(`Deleted ${weeks.length} week${weeks.length === 1 ? '' : 's'}`)
-      if (openMonth === month) setOpenMonth(null)
+      await deleteTimecard(timecard.id!)
+      messageApi.success('Week deleted')
+      if (openId === timecard.id) setOpenId(null)
       await load()
     } catch (error) {
-      console.error('Error deleting timecards:', error)
-      messageApi.error('Failed to delete the timecards')
+      console.error('Error deleting timecard:', error)
+      messageApi.error('Failed to delete the timecard')
     }
   }
 
   return (
     <div style={{ padding: 24, height: '100%', overflow: 'auto' }}>
       <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-        {openMonth !== null && openWeeks.length > 0 ? (
-          <TimecardPeriod
-            month={openMonth}
-            weeks={openWeeks}
-            onBack={() => setOpenMonth(null)}
+        {open ? (
+          <TimecardWeek
+            timecard={open}
+            onBack={() => setOpenId(null)}
             onChanged={updated =>
               setTimecards(cards => cards.map(c => (c.id === updated.id ? updated : c)))
             }
           />
         ) : (
           <>
-            <Title level={2} style={{ marginBottom: 0 }}>
-              Timecards
-            </Title>
-            <TimecardList
-              periods={periods}
-              loading={loading}
-              onOpen={setOpenMonth}
-              onCreate={handleCreate}
-              onDelete={handleDelete}
-            />
+            {/* The screen keeps its name whichever tab is on, so the title
+                does not appear to change what page you are on. */}
+            <Flex align="center" justify="space-between" gap={16} wrap>
+              <Title level={2} style={{ marginBottom: 0 }}>
+                Timecards
+              </Title>
+              <Segmented
+                value={tab}
+                onChange={value => setTab(value as Tab)}
+                options={['Timecards', 'Report']}
+              />
+            </Flex>
+
+            {tab === 'Timecards' ? (
+              <TimecardList
+                timecards={timecards}
+                hoursById={hoursById}
+                loading={loading}
+                onOpen={timecard => setOpenId(timecard.id ?? null)}
+                onCreate={handleCreate}
+                onDelete={handleDelete}
+              />
+            ) : (
+              <TimecardReport />
+            )}
           </>
         )}
       </Space>
@@ -199,5 +180,4 @@ const Timecards: React.FC = () => {
   )
 }
 
-export { monthsTouched }
 export default Timecards

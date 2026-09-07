@@ -1,22 +1,30 @@
 import { describe, it, expect, vi } from 'vitest'
 
-// The month picker needs a real dayjs rather than the fixed-value mock
+// The week picker needs a real dayjs rather than the fixed-value mock
 // `src/test/setup.ts` installs globally.
 vi.unmock('dayjs')
 
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
-import TimecardList, { PeriodSummary } from './TimecardList'
+import TimecardList from './TimecardList'
+import { Timecard } from '../../api/timecards'
 
-const periods: PeriodSummary[] = [
-  { month: '2026-09', name: 'September 2026', weeks: 5, submitted: 2, hours: 128.5 },
-  { month: '2026-08', name: 'August 2026', weeks: 5, submitted: 5, hours: 140 }
+const timecards: Timecard[] = [
+  {
+    id: 1, name: 'Week of 30 Aug 2026', start_date: '2026-08-30', end_date: '2026-09-05',
+    status: 'draft', generated_at: '2026-09-05T18:00:00'
+  },
+  {
+    id: 2, name: 'Week of 6 Sep 2026', start_date: '2026-09-06', end_date: '2026-09-12',
+    status: 'submitted', generated_at: null
+  }
 ]
 
 const renderList = (overrides = {}) => {
   const props = {
-    periods,
+    timecards,
+    hoursById: { 1: 37.5, 2: 40 },
     loading: false,
     onOpen: vi.fn(),
     onCreate: vi.fn().mockResolvedValue(undefined),
@@ -28,78 +36,69 @@ const renderList = (overrides = {}) => {
 }
 
 describe('TimecardList', () => {
-  it('lists the months', () => {
+  it('lists the weeks with their dates and hours', () => {
     renderList()
 
-    expect(screen.getByRole('button', { name: 'September 2026' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'August 2026' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Week of 30 Aug 2026' })).toBeInTheDocument()
+    expect(screen.getByText('2026-08-30 to 2026-09-05')).toBeInTheDocument()
+    expect(screen.getByText('37.50')).toBeInTheDocument()
   })
 
-  /* Weeks are submitted one at a time, so the month's state is a count. */
-  it("says how many of the month's weeks are submitted", () => {
+  it('marks which weeks are submitted', () => {
     renderList()
 
-    expect(screen.getByText('2 of 5 submitted')).toBeInTheDocument()
-    expect(screen.getByText('All 5 submitted')).toBeInTheDocument()
+    expect(screen.getByText('Submitted')).toBeInTheDocument()
+    expect(screen.getByText('Draft')).toBeInTheDocument()
   })
 
-  it('shows the hours dated in each month', () => {
+  /* An empty week looks the same as a full one until you open it, so a week
+     that has never pulled says so. */
+  it('says when a week has never pulled from events', () => {
     renderList()
 
-    expect(screen.getByText('128.50')).toBeInTheDocument()
-    expect(screen.getByText('140.00')).toBeInTheDocument()
+    expect(screen.getByText('Not yet pulled')).toBeInTheDocument()
   })
 
-  it('opens a month', async () => {
+  it('opens a week', async () => {
     const user = userEvent.setup()
     const { onOpen } = renderList()
 
-    await user.click(screen.getByRole('button', { name: 'September 2026' }))
+    await user.click(screen.getByRole('button', { name: 'Week of 30 Aug 2026' }))
 
-    expect(onOpen).toHaveBeenCalledWith('2026-09')
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }))
   })
 
-  it('creates the month that was picked', async () => {
+  it('creates a week from the date picked', async () => {
     const user = userEvent.setup()
     const { onCreate } = renderList()
 
-    await user.click(screen.getByRole('button', { name: /new month/i }))
-    await user.click(await screen.findByRole('textbox', { name: 'Month' }))
-    for (let year = new Date().getFullYear(); year < 2026; year++) {
-      await user.click(screen.getByRole('button', { name: /next year/i }))
-    }
-    await user.click(await screen.findByText('Dec'))
+    await user.click(screen.getByRole('button', { name: /new week/i }))
     await user.click(screen.getByRole('button', { name: /^create$/i }))
 
-    await waitFor(() => expect(onCreate).toHaveBeenCalledWith('2026-12'))
+    // Whatever week is current: the picker opens on today.
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.any(String)))
   })
 
-  it('opens on the current month', async () => {
-    const user = userEvent.setup()
-    renderList()
-
-    await user.click(screen.getByRole('button', { name: /new month/i }))
-
-    expect(await screen.findByRole('textbox', { name: 'Month' })).toHaveValue(
-      new Date().toLocaleString('en-GB', { month: 'long', year: 'numeric' })
-    )
-  })
-
-  /* Deleting a month takes its weeks with it, including one shared with the
-     month next door — worth saying before it happens. */
-  it('warns what a month deletion takes with it', async () => {
+  it('deletes a week after confirmation', async () => {
     const user = userEvent.setup()
     const { onDelete } = renderList()
 
-    await user.click(screen.getByRole('button', { name: 'Delete September 2026' }))
-
-    expect(await screen.findByText(/shared with the month next door/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Delete Week of 30 Aug 2026' }))
     await user.click(await screen.findByRole('button', { name: /^yes$/i }))
-    await waitFor(() => expect(onDelete).toHaveBeenCalledWith('2026-09'))
+
+    await waitFor(() =>
+      expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }))
+    )
+  })
+
+  it('points at the report for anything longer than a week', () => {
+    renderList()
+
+    expect(screen.getByText(/use the report/i)).toBeInTheDocument()
   })
 
   it('says so plainly when there are none', () => {
-    renderList({ periods: [] })
+    renderList({ timecards: [] })
 
     expect(screen.getByText('No timecards yet')).toBeInTheDocument()
   })

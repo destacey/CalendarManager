@@ -100,12 +100,28 @@ describe('TimecardWeekGrid', () => {
     ).toHaveValue('3.50')
   })
 
-  it('totals each day and the week', () => {
+  it('totals each day under its heading', () => {
     renderGrid({
       entries: [entry({ id: 1, hours: 2 }), entry({ id: 2, hours: 1, project_id: 2, activity_id: null })]
     })
 
-    expect(screen.getByText('3.00 hours this week')).toBeInTheDocument()
+    // Both land on the 1st; the week's own total is in the screen header.
+    // Reached through the button, because a column header's accessible name
+    // comes from its text rather than the aria-label inside it.
+    const header = screen.getByRole('button', { name: 'Items on 2026-09-01' }).closest('th')!
+    expect(header).toHaveTextContent('3.00')
+  })
+
+  it('totals each row across the week', () => {
+    renderGrid({
+      entries: [
+        entry({ id: 1, hours: 2 }),
+        entry({ id: 2, hours: 1.5, date: '2026-09-02' })
+      ]
+    })
+
+    const row = document.querySelector('tr[data-row-key]')!
+    expect(row.querySelector('td:last-child')).toHaveTextContent('3.50')
   })
 
   it('reports a typed value as a cell edit', async () => {
@@ -129,7 +145,9 @@ describe('TimecardWeekGrid', () => {
       expect(screen.getByText('3')).toBeInTheDocument()
     })
 
-    it('opens the day from the cell', async () => {
+    /* Beside a cell it means "what is behind THIS number", so it carries the
+       row; the column header below means the whole day. */
+    it('opens the day scoped to the row, from the cell', async () => {
       const user = userEvent.setup()
       const { onOpenDay } = renderGrid()
 
@@ -139,15 +157,19 @@ describe('TimecardWeekGrid', () => {
         })
       )
 
-      expect(onOpenDay).toHaveBeenCalledWith('2026-09-01')
+      expect(onOpenDay).toHaveBeenCalledWith(
+        '2026-09-01',
+        expect.objectContaining({ project_id: 1, activity_id: 7 })
+      )
     })
 
-    it('opens the day from the column header', async () => {
+    it('opens the whole day from the column header', async () => {
       const user = userEvent.setup()
       const { onOpenDay } = renderGrid()
 
       await user.click(screen.getByRole('button', { name: 'Items on 2026-09-02' }))
 
+      // No row: everything on that date.
       expect(onOpenDay).toHaveBeenCalledWith('2026-09-02')
     })
 
@@ -183,7 +205,8 @@ describe('TimecardWeekGrid', () => {
         screen.getByRole('spinbutton', { name: 'PRJ-001, Software Development on 2026-09-01' })
       ).toHaveValue('')
       // The row is there; the hours are not, because they are another week's.
-      expect(screen.getByText('0.00 hours this week')).toBeInTheDocument()
+      const row = document.querySelector('tr[data-row-key]')!
+      expect(row.querySelector('td:last-child')).toHaveTextContent('—')
     })
 
     /* Time with no project is a prompt to go and map something. */
@@ -243,5 +266,66 @@ describe('TimecardWeekGrid', () => {
       screen.getByRole('spinbutton', { name: 'PRJ-001, Software Development on 2026-09-01' })
     ).toBeDisabled()
     expect(screen.getByRole('button', { name: /add row/i })).toBeDisabled()
+  })
+
+  describe('sorting', () => {
+    const twoRows = [
+      entry({ id: 1, project_id: 2, activity_id: null, hours: 5 }),
+      entry({ id: 2, project_id: 1, activity_id: 7, hours: 1 })
+    ]
+
+    /** The project cell of each row, in the order they are rendered.
+        `data-row-key` picks the real rows: a scrolling antd table also
+        renders a hidden measure row that would otherwise come first. */
+    const projectOrder = () =>
+      Array.from(document.querySelectorAll('tr[data-row-key]')).map(
+        row => row.querySelector('td')?.textContent ?? ''
+      )
+
+    it('sorts by project, both ways', async () => {
+      const user = userEvent.setup()
+      renderGrid({ entries: twoRows })
+
+      // By role, because a scrolling antd table renders a second, hidden copy
+      // of its header that a text query also matches.
+      await user.click(screen.getByRole('columnheader', { name: 'Project' }))
+      await waitFor(() => expect(projectOrder()[0]).toContain('PRJ-001'))
+
+      await user.click(screen.getByRole('columnheader', { name: 'Project' }))
+      await waitFor(() => expect(projectOrder()[0]).toContain('PRJ-002'))
+    })
+
+    it('sorts by activity', async () => {
+      const user = userEvent.setup()
+      renderGrid({ entries: twoRows })
+
+      await user.click(screen.getByRole('columnheader', { name: 'Activity' }))
+
+      // "No activity" sorts last, so Software Development leads.
+      await waitFor(() => expect(projectOrder()[0]).toContain('PRJ-001'))
+    })
+
+    it('sorts by the total', async () => {
+      const user = userEvent.setup()
+      renderGrid({ entries: twoRows })
+
+      await user.click(screen.getByRole('columnheader', { name: 'Total' }))
+
+      // Ascending first: the one-hour row leads.
+      await waitFor(() => expect(projectOrder()[0]).toContain('PRJ-001'))
+    })
+
+    /* The day headers open the day, so they carry no sorter: one click doing
+       two things is worse than not sorting by a Wednesday. */
+    it('leaves the day columns alone', async () => {
+      const user = userEvent.setup()
+      const { onOpenDay } = renderGrid({ entries: twoRows })
+      const before = projectOrder()
+
+      await user.click(screen.getByRole('button', { name: 'Items on 2026-09-02' }))
+
+      expect(onOpenDay).toHaveBeenCalled()
+      expect(projectOrder()).toEqual(before)
+    })
   })
 })

@@ -4,31 +4,30 @@ import {
 } from 'antd'
 import dayjs, { Dayjs } from 'dayjs'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
+import { Timecard } from '../../api/timecards'
+import { weekBoundsOf } from '../../utils/timecardGrid'
 
 const { Text } = Typography
 
-/** A month, and the weekly timecards that touch it. */
-export interface PeriodSummary {
-  /** "YYYY-MM". */
-  month: string
-  /** "September 2026". */
-  name: string
-  weeks: number
-  submitted: number
-  /** Hours dated inside the month, whichever week holds them. */
-  hours: number
-}
-
 interface TimecardListProps {
-  periods: PeriodSummary[]
+  timecards: Timecard[]
+  /** Hours on each timecard, by id. */
+  hoursById: Record<number, number>
   loading: boolean
-  onOpen: (month: string) => void
-  onCreate: (month: string) => Promise<void>
-  onDelete: (month: string) => Promise<void>
+  onOpen: (timecard: Timecard) => void
+  onCreate: (date: string) => Promise<void>
+  onDelete: (timecard: Timecard) => Promise<void>
 }
 
+/**
+ * Every week that has a timecard.
+ *
+ * A week is the only thing that gets created: a longer stretch is a question
+ * to ask the report, not a bigger timecard.
+ */
 const TimecardList: React.FC<TimecardListProps> = ({
-  periods,
+  timecards,
+  hoursById,
   loading,
   onOpen,
   onCreate,
@@ -48,7 +47,7 @@ const TimecardList: React.FC<TimecardListProps> = ({
 
     setSaving(true)
     try {
-      await onCreate((values.month as Dayjs).format('YYYY-MM'))
+      await onCreate((values.week as Dayjs).format('YYYY-MM-DD'))
       setModalVisible(false)
     } finally {
       setSaving(false)
@@ -57,53 +56,83 @@ const TimecardList: React.FC<TimecardListProps> = ({
 
   const columns = [
     {
-      title: 'Period',
+      title: 'Week',
       key: 'name',
-      render: (_: unknown, record: PeriodSummary) => (
+      sorter: (a: Timecard, b: Timecard) => a.start_date.localeCompare(b.start_date),
+      defaultSortOrder: 'descend' as const,
+      render: (_: unknown, record: Timecard) => (
         <Button
           type="link"
           style={{ padding: 0, height: 'auto' }}
-          onClick={() => onOpen(record.month)}
+          onClick={() => onOpen(record)}
         >
           {record.name}
         </Button>
       )
     },
     {
-      title: 'Weeks',
-      key: 'weeks',
-      width: 200,
-      render: (_: unknown, record: PeriodSummary) =>
-        record.submitted === record.weeks ? (
-          <Tag color="success" style={{ marginInlineEnd: 0 }}>
-            All {record.weeks} submitted
-          </Tag>
-        ) : (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {record.submitted} of {record.weeks} submitted
-          </Text>
-        )
+      title: 'Dates',
+      key: 'dates',
+      width: 220,
+      render: (_: unknown, record: Timecard) => (
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {record.start_date} to {record.end_date}
+        </Text>
+      )
     },
     {
       title: 'Hours',
       key: 'hours',
-      width: 120,
+      width: 100,
       align: 'right' as const,
-      render: (_: unknown, record: PeriodSummary) => (
-        <Text strong>{record.hours.toFixed(2)}</Text>
+      sorter: (a: Timecard, b: Timecard) => (hoursById[a.id!] ?? 0) - (hoursById[b.id!] ?? 0),
+      render: (_: unknown, record: Timecard) => (
+        <Text strong>{(hoursById[record.id!] ?? 0).toFixed(2)}</Text>
       )
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      width: 120,
+      render: (status: string) =>
+        status === 'submitted' ? (
+          <Tag color="success" style={{ marginInlineEnd: 0 }}>
+            Submitted
+          </Tag>
+        ) : (
+          <Tag style={{ marginInlineEnd: 0 }}>Draft</Tag>
+        )
+    },
+    {
+      title: 'Pulled',
+      dataIndex: 'generated_at',
+      key: 'generated_at',
+      width: 170,
+      render: (generatedAt: string | null) =>
+        generatedAt ? (
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {generatedAt.slice(0, 16).replace('T', ' ')}
+          </Text>
+        ) : (
+          // A timecard that has never pulled from events is empty, and that is
+          // worth saying rather than showing a blank cell.
+          <Text type="warning" style={{ fontSize: 12 }}>
+            Not yet pulled
+          </Text>
+        )
     },
     {
       title: '',
       key: 'actions',
       width: 60,
-      render: (_: unknown, record: PeriodSummary) => (
+      render: (_: unknown, record: Timecard) => (
         <Popconfirm
-          title={`Delete every week of ${record.name}?`}
-          description="Their entries go too, and so does any week shared with the month next door. The events are untouched."
+          title="Delete this week?"
+          description="Its entries go with it. The events are untouched."
           okText="Yes"
           cancelText="No"
-          onConfirm={() => onDelete(record.month)}
+          onConfirm={() => onDelete(record)}
         >
           <Button
             icon={<DeleteOutlined />}
@@ -120,37 +149,37 @@ const TimecardList: React.FC<TimecardListProps> = ({
     <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
       <Flex justify="space-between" align="center" gap={16}>
         <Text type="secondary">
-          Time is kept a week at a time and each week is submitted on its own. A month is a
-          view over the weeks it touches.
+          Time is kept a week at a time, and each week is submitted on its own. For a total
+          over a longer stretch, use the report.
         </Text>
         <Button
           type="primary"
           icon={<PlusOutlined />}
           onClick={() => {
             form.resetFields()
-            form.setFieldsValue({ month: dayjs() })
+            form.setFieldsValue({ week: dayjs() })
             setModalVisible(true)
           }}
         >
-          New month
+          New week
         </Button>
       </Flex>
 
-      {!loading && periods.length === 0 ? (
+      {!loading && timecards.length === 0 ? (
         <Empty description="No timecards yet" />
       ) : (
         <Table
           columns={columns}
-          dataSource={periods}
+          dataSource={timecards}
           loading={loading}
-          rowKey="month"
+          rowKey="id"
           pagination={false}
           size="small"
         />
       )}
 
       <Modal
-        title="New month"
+        title="New week"
         open={modalVisible}
         onOk={handleCreate}
         onCancel={() => setModalVisible(false)}
@@ -159,23 +188,35 @@ const TimecardList: React.FC<TimecardListProps> = ({
       >
         <Form form={form} layout="vertical" requiredMark={false}>
           <Form.Item
-            label="Month"
-            name="month"
-            rules={[{ required: true, message: 'Please choose a month' }]}
-            extra="A timecard is created for each week the month touches, including the days either side that share a week with it."
+            label="Week"
+            name="week"
+            rules={[{ required: true, message: 'Please choose a week' }]}
+            extra={
+              <WeekHint form={form} />
+            }
           >
+            {/* Any day in the week: the card always covers Sunday to Saturday,
+                so picking a Wednesday is the same as picking its Sunday. */}
             <DatePicker
-              picker="month"
-              format="MMMM YYYY"
+              picker="week"
               allowClear={false}
               style={{ width: '100%' }}
-              aria-label="Month"
+              aria-label="Week"
             />
           </Form.Item>
         </Form>
       </Modal>
     </Space>
   )
+}
+
+/** Spells out the days the chosen week covers, since a week picker doesn't. */
+const WeekHint: React.FC<{ form: ReturnType<typeof Form.useForm>[0] }> = ({ form }) => {
+  const week = Form.useWatch('week', form) as Dayjs | undefined
+  if (!week) return null
+
+  const bounds = weekBoundsOf(week.format('YYYY-MM-DD'))
+  return <>Covers {bounds.start} to {bounds.end}</>
 }
 
 export default TimecardList

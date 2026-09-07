@@ -1,14 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import {
+  totalsByProjectActivity,
   weeksOf,
   weekOf,
   monthBounds,
-  weekBoundsForMonth,
   weekBoundsOf,
   isInMonth,
   buildRows,
   columnTotals,
-  summarise,
   rowKey,
   isOwned
 } from './timecardGrid'
@@ -131,52 +130,6 @@ describe('monthBounds', () => {
     expect(monthBounds('October')).toBeNull()
     expect(monthBounds('2026-13')).toBeNull()
     expect(monthBounds('')).toBeNull()
-  })
-})
-
-describe('weekBoundsForMonth', () => {
-  /* Whole weeks, including the days they reach into the months either side:
-     the week is the timecard, so it owns all seven days. */
-  it('gives every week the month touches, Sunday to Saturday', () => {
-    const weeks = weekBoundsForMonth('2026-09')
-
-    expect(weeks).toHaveLength(5)
-    expect(weeks[0]).toEqual({
-      start: '2026-08-30',
-      end: '2026-09-05',
-      name: 'Week of 30 Aug 2026'
-    })
-    expect(weeks[4]).toEqual({
-      start: '2026-09-27',
-      end: '2026-10-03',
-      name: 'Week of 27 Sep 2026'
-    })
-  })
-
-  it('starts on the first of the month when that is a Sunday', () => {
-    const weeks = weekBoundsForMonth('2026-11')
-
-    expect(weeks[0].start).toBe('2026-11-01')
-  })
-
-  /* Two months share a week whenever one straddles the boundary, and it must
-     be the same week both times or the timecards would overlap. */
-  it('gives the same week to both months that share it', () => {
-    const august = weekBoundsForMonth('2026-08')
-    const september = weekBoundsForMonth('2026-09')
-
-    expect(august[august.length - 1]).toEqual(september[0])
-  })
-
-  it('crosses a year end', () => {
-    const weeks = weekBoundsForMonth('2026-12')
-
-    expect(weeks[weeks.length - 1].end.startsWith('2027-01')).toBe(true)
-  })
-
-  it('refuses anything that is not a month', () => {
-    expect(weekBoundsForMonth('2026-13')).toEqual([])
-    expect(weekBoundsForMonth('September')).toEqual([])
   })
 })
 
@@ -310,38 +263,56 @@ describe('columnTotals', () => {
   })
 })
 
-describe('summarise', () => {
-  const weeks = weeksOf('2026-09-01', '2026-09-30')
-
-  it('totals each project and activity by week and overall', () => {
-    const rows = summarise(
-      [
-        entry({ id: 1, date: '2026-09-01', hours: 3, activity_id: 7 }),
-        entry({ id: 2, date: '2026-09-08', hours: 2, activity_id: 7 }),
-        entry({ id: 3, date: '2026-09-09', hours: 1, activity_id: 7 }),
-        entry({ id: 4, date: '2026-09-08', hours: 4, activity_id: 8 })
-      ],
-      weeks
-    )
-
-    const dev = rows.find(r => r.activity_id === 7)!
-    expect(dev.byWeek).toEqual([3, 3, 0, 0, 0])
-    expect(dev.total).toBe(6)
-    expect(rows.find(r => r.activity_id === 8)!.total).toBe(4)
-  })
-
-  /* An entry on a borrowed day belongs to the other month's timecard. */
-  it('ignores dates outside the period', () => {
-    const rows = summarise([entry({ id: 1, date: '2026-08-31', hours: 5 })], weeks)
-
-    expect(rows).toEqual([])
-  })
-})
-
 describe('isOwned', () => {
   it('is true for anything the user typed, added or edited', () => {
     expect(isOwned(entry({ source: 'cell' }))).toBe(true)
     expect(isOwned(entry({ source: 'manual' }))).toBe(true)
     expect(isOwned(entry({ source: 'event' }))).toBe(false)
+  })
+})
+
+describe('totalsByProjectActivity', () => {
+  it('adds up each project and activity pair', () => {
+    const rows = totalsByProjectActivity([
+      entry({ id: 1, project_id: 1, activity_id: 7, hours: 2 }),
+      entry({ id: 2, project_id: 1, activity_id: 7, hours: 3 }),
+      entry({ id: 3, project_id: 1, activity_id: 8, hours: 1 })
+    ])
+
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ project_id: 1, activity_id: 7, hours: 5 })
+  })
+
+  /* The biggest number is the one being checked. */
+  it('puts the largest total first', () => {
+    const rows = totalsByProjectActivity([
+      entry({ id: 1, project_id: 1, hours: 1 }),
+      entry({ id: 2, project_id: 2, hours: 9 })
+    ])
+
+    expect(rows[0].project_id).toBe(2)
+  })
+
+  /* A report over any range: dates are the timecard's business, not its. */
+  it('ignores dates entirely', () => {
+    const rows = totalsByProjectActivity([
+      entry({ id: 1, date: '2026-01-05', hours: 2 }),
+      entry({ id: 2, date: '2026-11-30', hours: 2 })
+    ])
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0].hours).toBe(4)
+  })
+
+  it('keeps unmapped time visible rather than folding it away', () => {
+    const rows = totalsByProjectActivity([
+      entry({ id: 1, project_id: null, activity_id: null, hours: 3 })
+    ])
+
+    expect(rows[0]).toMatchObject({ project_id: null, hours: 3 })
+  })
+
+  it('has nothing to say about nothing', () => {
+    expect(totalsByProjectActivity([])).toEqual([])
   })
 })

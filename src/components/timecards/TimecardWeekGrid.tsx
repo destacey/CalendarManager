@@ -28,7 +28,12 @@ interface TimecardWeekGridProps {
     activityId: number | null,
     hours: number
   ) => void
-  onOpenDay: (date: string) => void
+  /**
+   * Opens the day. With a row, only what that row holds on that day — which
+   * is what the affordance beside a cell means; the column header means the
+   * whole day.
+   */
+  onOpenDay: (date: string, row?: GridRow) => void
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -40,6 +45,28 @@ function dayLabel(day: GridDay, month?: string): string {
   const weekday = WEEKDAYS[day.weekday]
   const elsewhere = month !== undefined && day.date.slice(0, 7) !== month
   return elsewhere ? `${weekday} ${date} ${MONTHS[monthNumber - 1]}` : `${weekday} ${date}`
+}
+
+/**
+ * Sorts by a label, with "nothing" after every real one.
+ *
+ * The absence is compared as a flag rather than as a stand-in character:
+ * `'~'.localeCompare('S')` puts the tilde FIRST, because collation orders
+ * punctuation before letters — the opposite of what a sentinel is for.
+ */
+function byLabel(a: [boolean, string], b: [boolean, string]): number {
+  if (a[0] !== b[0]) return a[0] ? 1 : -1
+  return a[1].localeCompare(b[1])
+}
+
+function codeOf(row: GridRow, projects: Map<number, Project>): [boolean, string] {
+  if (row.project_id === null) return [true, '']
+  return [false, projects.get(row.project_id)?.code ?? '']
+}
+
+function nameOf(row: GridRow, activities: Map<number, Activity>): [boolean, string] {
+  if (row.activity_id === null) return [true, '']
+  return [false, activities.get(row.activity_id)?.name ?? '']
 }
 
 /** True for a day this week reaches into a neighbouring month. */
@@ -121,6 +148,8 @@ const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
       title: 'Project',
       key: 'project',
       width: 220,
+      sorter: (a: GridRow, b: GridRow) =>
+        byLabel(codeOf(a, projectById), codeOf(b, projectById)),
       render: (_: unknown, row: GridRow) => (
         <Text style={{ fontSize: 13 }}>
           {row.project_id === null ? (
@@ -135,6 +164,8 @@ const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
       title: 'Activity',
       key: 'activity',
       width: 160,
+      sorter: (a: GridRow, b: GridRow) =>
+        byLabel(nameOf(a, activityById), nameOf(b, activityById)),
       render: (_: unknown, row: GridRow) => (
         <Text type="secondary" style={{ fontSize: 13 }}>
           {row.activity_id === null ? 'No activity' : activityById.get(row.activity_id)?.name}
@@ -145,6 +176,9 @@ const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
       key: day.date,
       width: 108,
       align: 'center' as const,
+      /* Deliberately not sortable: this header is already a button that opens
+         the day, and a sorter on the same cell would make one click do two
+         things. */
       title: (
         <Flex vertical align="center" gap={0}>
           <Button
@@ -218,7 +252,7 @@ const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
                     size="small"
                     icon={<UnorderedListOutlined />}
                     style={{ opacity: cell.entries > 1 ? 1 : 0.45 }}
-                    onClick={() => onOpenDay(day.date)}
+                    onClick={() => onOpenDay(day.date, row)}
                     aria-label={`Items behind ${label}`}
                   />
                 </Badge>
@@ -235,15 +269,13 @@ const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
       key: 'total',
       width: 90,
       align: 'right' as const,
+      sorter: (a: GridRow, b: GridRow) => a.total - b.total,
       render: (_: unknown, row: GridRow) => <Text strong>{hours(row.total)}</Text>
     }
   ]
 
   return (
     <Flex vertical gap={12}>
-      <Flex align="center" gap={8} wrap justify="end">
-        <Text strong>{totals.total.toFixed(2)} hours this week</Text>
-      </Flex>
 
       <Table
         columns={columns}

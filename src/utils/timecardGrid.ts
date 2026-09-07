@@ -164,32 +164,6 @@ function boundsOf(sunday: Date): WeekBounds {
   }
 }
 
-/**
- * The full Sunday-to-Saturday weeks a month touches.
- *
- * Each is a whole week, including the days it reaches into the months either
- * side: the week IS the timecard, so it owns all seven days. A month counts
- * only the days that are its own, which is why totals are read by date.
- */
-export function weekBoundsForMonth(month: string): WeekBounds[] {
-  const match = /^(\d{4})-(\d{2})$/.exec(month.trim())
-  if (!match) return []
-
-  const year = Number(match[1])
-  const monthIndex = Number(match[2]) - 1
-  if (monthIndex < 0 || monthIndex > 11) return []
-
-  const first = new Date(Date.UTC(year, monthIndex, 1))
-  const last = new Date(Date.UTC(year, monthIndex + 1, 0))
-
-  const weeks: WeekBounds[] = []
-  let cursor = addDays(first, -((first.getUTCDay() - WEEK_START + 7) % 7))
-  while (cursor <= last) {
-    weeks.push(boundsOf(cursor))
-    cursor = addDays(cursor, 7)
-  }
-  return weeks
-}
 
 /** The week holding a date. */
 export function weekBoundsOf(date: string): WeekBounds {
@@ -269,47 +243,32 @@ export function columnTotals(rows: GridRow[], dates: string[]): {
   return { byDate, total }
 }
 
-export interface SummaryRow {
+export interface TotalRow {
   key: string
   project_id: number | null
   activity_id: number | null
-  /** One total per week, in the order `weeks` was given. */
-  byWeek: number[]
-  total: number
+  hours: number
 }
 
-/** Every (project, activity) in the period, totalled per week and overall. */
-export function summarise(entries: TimecardEntry[], weeks: GridWeek[]): SummaryRow[] {
-  const weekOfDate = new Map<string, number>()
-  weeks.forEach((week, index) => {
-    for (const day of week.days) {
-      // A borrowed day belongs to the neighbouring month, not to this total.
-      if (day.inPeriod) weekOfDate.set(day.date, index)
-    }
-  })
-
-  const rows = new Map<string, SummaryRow>()
+/**
+ * Hours per project and activity over whatever entries are given.
+ *
+ * No dates in the result: a report answers "what did this period come to",
+ * and the day-by-day view is the timecard itself. Ordered by size, because
+ * the biggest number is the one being checked.
+ */
+export function totalsByProjectActivity(entries: TimecardEntry[]): TotalRow[] {
+  const rows = new Map<string, TotalRow>()
 
   for (const entry of entries) {
-    const index = weekOfDate.get(entry.date)
-    if (index === undefined) continue
+    const project = entry.project_id ?? null
+    const activity = entry.activity_id ?? null
+    const key = rowKey(project, activity)
+    const existing = rows.get(key)
 
-    const key = rowKey(entry.project_id ?? null, entry.activity_id ?? null)
-    let row = rows.get(key)
-    if (!row) {
-      row = {
-        key,
-        project_id: entry.project_id ?? null,
-        activity_id: entry.activity_id ?? null,
-        byWeek: weeks.map(() => 0),
-        total: 0
-      }
-      rows.set(key, row)
-    }
-
-    row.byWeek[index] += entry.hours
-    row.total += entry.hours
+    if (existing) existing.hours += entry.hours
+    else rows.set(key, { key, project_id: project, activity_id: activity, hours: entry.hours })
   }
 
-  return Array.from(rows.values())
+  return Array.from(rows.values()).sort((a, b) => b.hours - a.hours)
 }
