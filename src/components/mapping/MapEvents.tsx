@@ -686,7 +686,12 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
 
           <DragOverlay>
             {dragging && (
-              <div style={{ position: 'relative', width: 216 }}>
+              /* Full width, and that is load-bearing: dnd-kit sizes the
+                 overlay box to the card that was picked up and keeps the
+                 cursor where it was WITHIN that box. A narrower card inside
+                 it is drawn at the box's left edge, so grabbing a card by its
+                 right-hand side left the cursor inches away from it. */
+              <div style={{ position: 'relative', width: '100%' }}>
                 {/* Ghost layers behind the card, one per extra group, so a
                     multi-group drag looks like a stack rather than a single
                     card that merely claims to be three. */}
@@ -718,7 +723,7 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
-                  width: 216,
+                  width: '100%',
                   boxSizing: 'border-box'
                 }}
               >
