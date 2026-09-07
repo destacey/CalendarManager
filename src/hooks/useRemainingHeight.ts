@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
 
 /**
  * Returns the remaining viewport height below the top of the referenced element,
@@ -10,7 +9,7 @@ import { flushSync } from 'react-dom'
  * automatically on window resize and when the nearest scrollable ancestor resizes
  * (which shifts the element's viewport position).
  *
- * @param bottomOffset - Optional pixel padding to subtract from the bottom (e.g., for page margins). Defaults to 30.
+ * @param bottomOffset - Optional pixel padding to subtract from the bottom (e.g., for page margins). Defaults to 50.
  * @returns A tuple of `[callbackRef, height]`.
  *
  * @example
@@ -31,14 +30,10 @@ export function useRemainingHeight(
   const elementRef = useRef<HTMLElement | null>(null)
   const roRef = useRef<ResizeObserver | null>(null)
 
-  // flushSync forces the height to land before the caller's next line runs
-  // (and before the next paint), rather than the default deferred commit —
-  // callers attach this ref and read the returned height back immediately,
-  // and a stale value for even one tick shows up as a flash of wrong layout.
   const calculate = useCallback(() => {
     if (!elementRef.current) return
     const top = elementRef.current.getBoundingClientRect().top
-    flushSync(() => setHeight(Math.max(300, window.innerHeight - top - bottomOffset)))
+    setHeight(Math.max(300, window.innerHeight - top - bottomOffset))
   }, [bottomOffset])
 
   // Recalculate on window resize
@@ -60,7 +55,7 @@ export function useRemainingHeight(
 
       // Calculate immediately now that the element is in the DOM
       const top = node.getBoundingClientRect().top
-      flushSync(() => setHeight(Math.max(300, window.innerHeight - top - bottomOffset)))
+      setHeight(Math.max(300, window.innerHeight - top - bottomOffset))
 
       // Observe the nearest scrollable ancestor. When its content changes size
       // (e.g. sibling components load data and grow), this element's viewport

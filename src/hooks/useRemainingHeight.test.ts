@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { renderHook } from '@testing-library/react'
+import { renderHook, act } from '@testing-library/react'
 import { useRemainingHeight } from './useRemainingHeight'
 
 describe('useRemainingHeight', () => {
@@ -18,7 +18,9 @@ describe('useRemainingHeight', () => {
     document.body.appendChild(node)
 
     const { result } = renderHook(() => useRemainingHeight(50))
-    result.current[0](node)
+    act(() => {
+      result.current[0](node)
+    })
 
     // 900 viewport - 200 from the top - 50 bottom offset
     expect(result.current[1]).toBe(650)
@@ -30,13 +32,15 @@ describe('useRemainingHeight', () => {
     document.body.appendChild(node)
 
     const { result } = renderHook(() => useRemainingHeight(50))
-    result.current[0](node)
+    act(() => {
+      result.current[0](node)
+    })
 
     expect(result.current[1]).toBe(300)
   })
 
   it('tolerates being detached', () => {
     const { result } = renderHook(() => useRemainingHeight())
-    expect(() => result.current[0](null)).not.toThrow()
+    expect(() => act(() => result.current[0](null))).not.toThrow()
   })
 })
