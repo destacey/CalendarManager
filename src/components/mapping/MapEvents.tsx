@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
 import {
   Typography, Space, Button, Empty, Spin, Switch, Flex, Tag, theme, Splitter, Input, Select,
-  Tooltip
+  Tooltip, DatePicker
 } from 'antd'
 import {
   HolderOutlined, LeftOutlined, RightOutlined, SearchOutlined,
@@ -29,6 +29,28 @@ import { getActivities } from '../../api/activities'
 import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
 
 const { Text, Title } = Typography
+
+/**
+ * Moves a period a month either way, keeping its shape.
+ *
+ * A whole month steps to the whole of the next one rather than to "the 1st to
+ * the 30th", which is what adding a month to each end would give for the ends
+ * of longer months.
+ */
+function shiftMonths(by: number) {
+  return ([start, end]: [Dayjs, Dayjs]): [Dayjs, Dayjs] => {
+    const wholeMonths =
+      start.isSame(start.startOf('month'), 'day') && end.isSame(end.endOf('month'), 'day')
+
+    if (wholeMonths) {
+      return [
+        start.add(by, 'month').startOf('month'),
+        end.add(by, 'month').endOf('month')
+      ]
+    }
+    return [start.add(by, 'month'), end.add(by, 'month')]
+  }
+}
 
 export type SortBy = 'count' | 'title' | 'category'
 
@@ -255,7 +277,13 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
   const [projectSearch, setProjectSearch] = useState('')
   const [includeInactiveProjects, setIncludeInactiveProjects] = useState(false)
   const [groupByProgram, setGroupByProgram] = useState(false)
-  const [month, setMonth] = useState<Dayjs>(dayjs())
+  /* A range rather than a month: a backlog does not respect month ends, and
+     clearing a quarter meant stepping through it a month at a time. Defaults
+     to this month, which is where most sessions start. */
+  const [period, setPeriod] = useState<[Dayjs, Dayjs]>(() => [
+    dayjs().startOf('month'),
+    dayjs().endOf('month')
+  ])
   const [dragging, setDragging] = useState<UnmappedGroup | null>(null)
   const [picker, setPicker] = useState<PickerState | null>(null)
 
@@ -271,10 +299,10 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
 
   const range = useMemo(
     () => ({
-      start: month.startOf('month').format('YYYY-MM-DDTHH:mm:ss'),
-      end: month.endOf('month').format('YYYY-MM-DDTHH:mm:ss')
+      start: period[0].startOf('day').format('YYYY-MM-DDTHH:mm:ss'),
+      end: period[1].endOf('day').format('YYYY-MM-DDTHH:mm:ss')
     }),
-    [month]
+    [period]
   )
 
   const load = useCallback(async () => {
@@ -443,21 +471,46 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
           {groups.length === 1 ? '' : 's'}
         </Text>
         <div style={{ flexGrow: 1 }} />
-        {/* Prev/next rather than a DatePicker: stepping months is the only
-            thing needed here, and it is one click instead of three. */}
+        {/* Stepping a month at a time is still the common move, so it keeps
+            its two buttons; the picker is for everything else. */}
         <Space size={4}>
           <Button
             icon={<LeftOutlined />}
             size="small"
             aria-label="Previous month"
-            onClick={() => setMonth(m => m.subtract(1, 'month'))}
+            onClick={() => setPeriod(shiftMonths(-1))}
           />
-          <Text style={{ minWidth: 110, textAlign: 'center' }}>{month.format('MMMM YYYY')}</Text>
+          <DatePicker.RangePicker
+            value={period}
+            allowClear={false}
+            size="small"
+            format="D MMM YYYY"
+            aria-label="Period"
+            style={{ width: 260 }}
+            presets={[
+              { label: 'This month', value: [dayjs().startOf('month'), dayjs().endOf('month')] },
+              {
+                label: 'Last month',
+                value: [
+                  dayjs().subtract(1, 'month').startOf('month'),
+                  dayjs().subtract(1, 'month').endOf('month')
+                ]
+              },
+              {
+                label: 'Last 3 months',
+                value: [dayjs().subtract(2, 'month').startOf('month'), dayjs().endOf('month')]
+              },
+              { label: 'This year', value: [dayjs().startOf('year'), dayjs().endOf('year')] }
+            ]}
+            onChange={value => {
+              if (value?.[0] && value[1]) setPeriod([value[0], value[1]])
+            }}
+          />
           <Button
             icon={<RightOutlined />}
             size="small"
             aria-label="Next month"
-            onClick={() => setMonth(m => m.add(1, 'month'))}
+            onClick={() => setPeriod(shiftMonths(1))}
           />
         </Space>
       </Flex>
@@ -475,7 +528,11 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
               <div
                 style={{
                   height: '100%',
-                  overflowY: 'auto',
+                  // The panel itself does not scroll: its header, search and
+                  // sort stay put, and the cards below them move. Scrolling
+                  // the lot took the search box off screen exactly when a long
+                  // list made it worth having.
+                  overflow: 'hidden',
                   // Right padding keeps the toggle clear of the splitter bar;
                   // a little left padding stops the cards touching the frame.
                   padding: '2px 16px 2px 2px',
@@ -555,23 +612,28 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
                   </Text>
                 )}
 
-                {groups.length === 0 ? (
-                  <Empty description="Nothing left to map for this month" />
-                ) : visibleGroups.length === 0 ? (
-                  <Empty description={`No events match "${search.trim()}"`} />
-                ) : (
-                  <Space orientation="vertical" size={7} style={{ width: '100%' }}>
-                    {visibleGroups.map(group => (
-                      <GroupCard
-                        key={group.key}
-                        group={group}
-                        selected={selectedKeys.includes(group.key)}
-                        dragActive={dragging !== null}
-                        onSelect={handleSelect}
-                      />
-                    ))}
-                  </Space>
-                )}
+                {/* minHeight 0 so this can actually shrink: a flex child
+                    defaults to its content's height and would push the whole
+                    panel taller instead of scrolling. */}
+                <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                  {groups.length === 0 ? (
+                    <Empty description="Nothing left to map in this period" />
+                  ) : visibleGroups.length === 0 ? (
+                    <Empty description={`No events match "${search.trim()}"`} />
+                  ) : (
+                    <Space orientation="vertical" size={7} style={{ width: '100%' }}>
+                      {visibleGroups.map(group => (
+                        <GroupCard
+                          key={group.key}
+                          group={group}
+                          selected={selectedKeys.includes(group.key)}
+                          dragActive={dragging !== null}
+                          onSelect={handleSelect}
+                        />
+                      ))}
+                    </Space>
+                  )}
+                </div>
               </div>
             </Splitter.Panel>
 
@@ -579,7 +641,9 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
               <div
                 style={{
                   height: '100%',
-                  overflowY: 'auto',
+                  // As on the events side: the header and search stay put and
+                  // only the projects below them scroll.
+                  overflow: 'hidden',
                   // Right padding matters here too: without it the toggle and
                   // the rows run under the panel's own scrollbar.
                   padding: '2px 16px 2px 16px',
@@ -635,51 +699,55 @@ const MapEvents: React.FC<MapEventsProps> = ({ onEventsChanged }) => {
                   Drop the selection on a project
                 </Text>
 
-                {visibleProjects.length === 0 ? (
-                  <Empty
-                    description={
-                      projectSearch.trim()
-                        ? `No projects match "${projectSearch.trim()}"`
-                        : projects.length === 0
-                          ? 'No projects — add one in Settings'
-                          : 'No active projects — switch on "Include inactive" or add one in Settings'
-                    }
-                  />
-                ) : (
-                  <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-                    {groupByProgram
-                      ? projectGroups.map(group => (
-                          <div key={group.program || '__none__'} style={{ width: '100%' }}>
-                            <Text
-                              type="secondary"
-                              style={{
-                                fontSize: 11,
-                                textTransform: 'uppercase',
-                                letterSpacing: '.04em'
-                              }}
-                            >
-                              {group.program || 'No program'}
-                            </Text>
-                            <Space
-                              orientation="vertical"
-                              size={8}
-                              style={{ width: '100%', marginTop: 6 }}
-                            >
-                              {group.projects.map(project => (
-                                <ProjectRow
-                                  key={project.id}
-                                  project={project}
-                                  showProgram={false}
-                                />
-                              ))}
-                            </Space>
-                          </div>
-                        ))
-                      : visibleProjects.map(project => (
-                          <ProjectRow key={project.id} project={project} />
-                        ))}
-                  </Space>
-                )}
+                {/* minHeight 0 for the same reason as the events side: without it a
+                    flex child sizes to its content instead of scrolling. */}
+                <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                  {visibleProjects.length === 0 ? (
+                    <Empty
+                      description={
+                        projectSearch.trim()
+                          ? `No projects match "${projectSearch.trim()}"`
+                          : projects.length === 0
+                            ? 'No projects — add one in Settings'
+                            : 'No active projects — switch on "Include inactive" or add one in Settings'
+                      }
+                    />
+                  ) : (
+                    <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+                      {groupByProgram
+                        ? projectGroups.map(group => (
+                            <div key={group.program || '__none__'} style={{ width: '100%' }}>
+                              <Text
+                                type="secondary"
+                                style={{
+                                  fontSize: 11,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '.04em'
+                                }}
+                              >
+                                {group.program || 'No program'}
+                              </Text>
+                              <Space
+                                orientation="vertical"
+                                size={8}
+                                style={{ width: '100%', marginTop: 6 }}
+                              >
+                                {group.projects.map(project => (
+                                  <ProjectRow
+                                    key={project.id}
+                                    project={project}
+                                    showProgram={false}
+                                  />
+                                ))}
+                              </Space>
+                            </div>
+                          ))
+                        : visibleProjects.map(project => (
+                            <ProjectRow key={project.id} project={project} />
+                          ))}
+                    </Space>
+                  )}
+                </div>
               </div>
             </Splitter.Panel>
           </Splitter>

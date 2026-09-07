@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+// The period picker needs a real dayjs rather than the fixed-value mock
+// `src/test/setup.ts` installs globally, which no antd picker can work with.
+vi.unmock('dayjs')
+
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
@@ -278,7 +283,7 @@ describe('MapEvents', () => {
       await user.type(screen.getByPlaceholderText('Search events and categories'), 'nothing here')
 
       expect(screen.getByText('No events match "nothing here"')).toBeInTheDocument()
-      expect(screen.queryByText('Nothing left to map for this month')).not.toBeInTheDocument()
+      expect(screen.queryByText('Nothing left to map in this period')).not.toBeInTheDocument()
     })
 
     /* Search filters the view; it does not silently discard a selection made
@@ -361,7 +366,7 @@ describe('MapEvents', () => {
     render(<MapEvents />)
 
     await waitFor(() => {
-      expect(screen.getByText('Nothing left to map for this month')).toBeInTheDocument()
+      expect(screen.getByText('Nothing left to map in this period')).toBeInTheDocument()
     })
   })
 
@@ -663,6 +668,64 @@ describe('MapEvents', () => {
       await waitFor(() =>
         expect(screen.getByRole('button', { name: /sort descending instead/i })).toBeInTheDocument()
       )
+    })
+  })
+
+  describe('the period', () => {
+    /** The range the board asked the backend for, most recent call. */
+    const askedFor = () => {
+      const calls = vi.mocked(getUnmappedGroups).mock.calls
+      return calls[calls.length - 1].slice(0, 2) as [string, string]
+    }
+
+    it('starts on the current month', async () => {
+      render(<MapEvents />)
+      await waitFor(() => expect(getUnmappedGroups).toHaveBeenCalled())
+
+      const now = new Date()
+      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const [start, end] = askedFor()
+      expect(start.startsWith(`${month}-01T00:00:00`)).toBe(true)
+      expect(end.startsWith(month)).toBe(true)
+      expect(end.endsWith('T23:59:59')).toBe(true)
+    })
+
+    /* Stepping a month is still the common move, so it keeps its buttons —
+       and a whole month steps to the whole of the next one. */
+    it('steps a whole month at a time', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(getUnmappedGroups).toHaveBeenCalled())
+
+      await user.click(screen.getByRole('button', { name: 'Previous month' }))
+
+      await waitFor(() => {
+        const [start, end] = askedFor()
+        const now = new Date()
+        const previous = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1))
+        const month = previous.toISOString().slice(0, 7)
+        expect(start.startsWith(`${month}-01`)).toBe(true)
+        // The end of that month, not the same day number in it.
+        const last = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 0)).getUTCDate()
+        expect(end.startsWith(`${month}-${String(last).padStart(2, '0')}`)).toBe(true)
+      })
+    })
+
+    it('asks for a period chosen in the picker', async () => {
+      const user = userEvent.setup()
+      render(<MapEvents />)
+      await waitFor(() => expect(getUnmappedGroups).toHaveBeenCalled())
+
+      // The presets are the quick way to a period that is not a month.
+      await user.click(screen.getAllByPlaceholderText('Start date')[0])
+      await user.click(await screen.findByText('Last 3 months'))
+
+      await waitFor(() => {
+        const [start] = askedFor()
+        const now = new Date()
+        const from = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 2, 1))
+        expect(start.startsWith(from.toISOString().slice(0, 10))).toBe(true)
+      })
     })
   })
 })
