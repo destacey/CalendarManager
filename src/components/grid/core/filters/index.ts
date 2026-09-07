@@ -59,9 +59,21 @@ export type {
 export { default as FilterPopup } from './filter-popup'
 export type { FilterPopupProps } from './filter-popup'
 
-// Floating (single-condition, inline) filter UI
+// Floating (single-condition, inline) filter UI, plus the builders for the
+// grid's floating-filter row cells and the values their panels are faceted from
 export { default as FloatingFilter } from './floating-filter'
-export type { FloatingFilterProps } from './floating-filter'
+export {
+  getDayKeys,
+  getSetValues,
+  renderFilterTrigger,
+  renderFloatingFilterCell,
+  renderSetFilterCell,
+} from './floating-filter'
+export type {
+  FloatingFilterCellClasses,
+  FloatingFilterCellOptions,
+  FloatingFilterProps,
+} from './floating-filter'
 
 // Excel/AG Grid-style set filter panel (search + Select All + checkboxes)
 export { default as SetFilterPanel } from './set-filter-panel'

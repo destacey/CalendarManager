@@ -1,14 +1,22 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { DatePicker, InputNumber, Input } from 'antd'
+import { FilterFilled, FilterOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import type { RowData } from '@tanstack/react-table'
 
+import type { Column } from '../index'
+import { caseInsensitiveCompare } from '../grid-sorting'
 import styles from './floating-filter.module.css'
+import { canFloatingEditDate, describeDateFilter } from './filter-summary'
+import { toDayKey } from './filter-engine'
 import {
   createEmptyFilterModel,
   defaultOperatorFor,
   operatorNeedsValue,
+  SET_FILTER_BLANK,
+  SET_FILTER_BLANK_LABEL,
   type ColumnFilterModel,
   type ConditionModel,
   type DateCondition,
@@ -220,3 +228,213 @@ const DebouncedTextInput = ({
 }
 
 export default FloatingFilter
+
+// ─── Floating-filter row cells ───────────────────────────────────────────────
+// The cell *contents* of the grid's floating-filter row. The grid owns the
+// `<th>`s (keys, pinning) and the filter popovers' open state; these builders
+// own what goes inside a cell, so the set/date summary chips and the inline
+// editor cannot drift apart in structure.
+//
+// They are plain element builders rather than components on purpose: the set
+// cell is handed straight to an antd `Popover` as its trigger, and antd clones
+// the trigger to inject its own `onClick`/ref. A component would have to
+// forward those itself; a plain `<div>` element receives them directly.
+
+/** CSS-module classes the grid supplies for a floating-filter cell. */
+export interface FloatingFilterCellClasses {
+  /** The cell's flex row: editor or summary chip on the left, filter trigger
+   *  on the right. */
+  cell: string
+  /** Read-only summary chip (a set selection, or a date filter the inline
+   *  editor cannot faithfully represent). */
+  summary: string
+  /** The filter-icon trigger. */
+  trigger: string
+  /** Added to the trigger when the column is filtered. */
+  triggerActive: string
+}
+
+const triggerClassName = (
+  isFiltered: boolean,
+  classes: FloatingFilterCellClasses,
+): string =>
+  `${classes.trigger}${isFiltered ? ` ${classes.triggerActive}` : ''}`
+
+const filterIcon = (isFiltered: boolean): ReactElement =>
+  isFiltered ? <FilterFilled /> : <FilterOutlined />
+
+/**
+ * All known set values for a column: prefer declared options (stable
+ * order/labels), else the distinct values present in the data (faceted).
+ * For a multi-value column (`meta.multiValueSplit`), each faceted value is a
+ * joined string that's split into its individual tokens first, so the list
+ * shows tokens rather than whole combinations. When the data contains blank
+ * cells (null/undefined/''), a "(Blanks)" sentinel entry is appended so
+ * blanks can be filtered like any value.
+ */
+export const getSetValues = <T extends RowData,>(
+  column: Column<T, unknown>,
+): string[] => {
+  const meta = column.columnDef.meta
+  const facetedKeys = Array.from(column.getFacetedUniqueValues().keys())
+  const split = meta?.multiValueSplit
+  const hasBlanks = facetedKeys.some(
+    (v) =>
+      v == null || v === '' || (split ? split(String(v)).length === 0 : false),
+  )
+  const optionValues = meta?.filterOptions?.map((o) => o.value)
+  const nonBlank = facetedKeys.filter((v): v is string => v != null && v !== '')
+  const distinct = split
+    ? Array.from(new Set(nonBlank.flatMap((v) => split(String(v)))))
+    : nonBlank.map(String)
+  const values = optionValues ?? distinct.sort(caseInsensitiveCompare)
+  return hasBlanks ? [...values, SET_FILTER_BLANK] : values
+}
+
+/**
+ * Distinct `YYYY-MM-DD` day keys present in a date column, for the date tree.
+ * Each faceted value is normalized to its day (dropping time-of-day and raw
+ * shape differences) and de-duplicated.
+ */
+export const getDayKeys = <T extends RowData,>(
+  column: Column<T, unknown>,
+): string[] => {
+  const keys = new Set<string>()
+  for (const v of column.getFacetedUniqueValues().keys()) {
+    const key = toDayKey(v)
+    if (key) keys.add(key)
+  }
+  return Array.from(keys).sort()
+}
+
+/**
+ * The set filter's compact summary text: blank when nothing is filtered or
+ * everything is selected, the single selection's label when one value is
+ * chosen (resolving `meta.filterOptions` labels and the "(Blanks)" sentinel),
+ * otherwise a count.
+ */
+const setFilterSummary = <T extends RowData,>(
+  column: Column<T, unknown>,
+  allValues: string[],
+): string => {
+  const meta = column.columnDef.meta
+  const filterValue = column.getFilterValue() as ColumnFilterModel | undefined
+  const selected =
+    filterValue?.type === 'set' ? filterValue.values : allValues
+
+  if (filterValue === undefined || selected.length === allValues.length) {
+    return ''
+  }
+  if (selected.length !== 1) return `${selected.length} selected`
+  if (selected[0] === SET_FILTER_BLANK) return SET_FILTER_BLANK_LABEL
+  return (
+    meta?.filterOptions?.find((o) => o.value === selected[0])?.label ??
+    selected[0]
+  )
+}
+
+/**
+ * The filter-icon element the grid wraps in its filter popover, for the leaf
+ * header row and the right edge of a floating-filter cell. Clicks and
+ * pointer-downs stop propagating: the `<th>` is both a sort target and a
+ * column-reorder drag handle, so neither must fire from the icon.
+ */
+export const renderFilterTrigger = (
+  isFiltered: boolean,
+  classes: FloatingFilterCellClasses,
+): ReactElement => (
+  <span
+    role="button"
+    aria-label={isFiltered ? 'Edit column filter (active)' : 'Filter column'}
+    className={triggerClassName(isFiltered, classes)}
+    onClick={(e) => e.stopPropagation()}
+    onPointerDown={(e) => e.stopPropagation()}
+  >
+    {filterIcon(isFiltered)}
+  </span>
+)
+
+/**
+ * A set column's floating cell: the selection summary plus a filter icon. The
+ * WHOLE cell is the popover trigger (the grid wraps this element in the
+ * popover that hosts the set panel), so the icon here carries no handlers of
+ * its own.
+ */
+export const renderSetFilterCell = <T extends RowData,>(
+  column: Column<T, unknown>,
+  allValues: string[],
+  classes: FloatingFilterCellClasses,
+): ReactElement => {
+  const isFiltered = column.getFilterValue() !== undefined
+  return (
+    <div
+      role="button"
+      aria-label={isFiltered ? 'Filter column (active)' : 'Filter column'}
+      className={classes.cell}
+    >
+      <span className={classes.summary}>
+        {setFilterSummary(column, allValues)}
+      </span>
+      <span className={triggerClassName(isFiltered, classes)}>
+        {filterIcon(isFiltered)}
+      </span>
+    </div>
+  )
+}
+
+export interface FloatingFilterCellOptions<T extends RowData> {
+  column: Column<T, unknown>
+  /** The column's resolved filter type (set columns use
+   *  {@link renderSetFilterCell} instead). */
+  filterType: Exclude<FilterType, 'set'>
+  classes: FloatingFilterCellClasses
+  placeholder?: string
+  /** The grid's filter-popover trigger, always the cell's right-hand child. */
+  triggerSlot: ReactNode
+}
+
+/**
+ * A condition column's floating cell.
+ *
+ * The floating `DatePicker` can faithfully edit only a simple equals; any
+ * richer date filter shows a read-only summary chip instead. The cell
+ * structure stays identical in both states — left child input ⇄ chip, right
+ * child ALWAYS the same popover trigger — so the open popover's anchor is
+ * never replaced (antd reads a replaced anchor as a click-outside, which made
+ * the popover flicker shut the moment the filter activated).
+ */
+export const renderFloatingFilterCell = <T extends RowData,>({
+  column,
+  filterType,
+  classes,
+  placeholder,
+  triggerSlot,
+}: FloatingFilterCellOptions<T>): ReactElement => {
+  const filterValue = column.getFilterValue() as ColumnFilterModel | undefined
+  const showDateSummary =
+    filterType === 'date' && !canFloatingEditDate(filterValue)
+
+  return (
+    <div className={classes.cell}>
+      {showDateSummary ? (
+        <span
+          className={classes.summary}
+          title={describeDateFilter(filterValue)}
+        >
+          {describeDateFilter(filterValue)}
+        </span>
+      ) : (
+        <FloatingFilter
+          filterType={filterType}
+          // Only reflect a matching condition descriptor. On a combined
+          // column, a `set` descriptor leaves the floating input empty (AG
+          // Grid behavior).
+          value={filterValue?.type === filterType ? filterValue : undefined}
+          placeholder={placeholder}
+          onChange={(next) => column.setFilterValue(next)}
+        />
+      )}
+      {triggerSlot}
+    </div>
+  )
+}
