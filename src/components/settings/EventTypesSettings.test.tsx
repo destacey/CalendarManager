@@ -1,9 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor, act } from '@testing-library/react'
-import { render } from '../../test/utils'
+import { screen, waitFor, act, render, fireEvent } from '../../test/utils'
 import EventTypesSettings from './EventTypesSettings'
 import type { EventType } from '../../types'
 import * as eventTypesApi from '../../api/eventTypes'
+
+/**
+ * The grid virtualizes its rows, and @tanstack/react-virtual sizes its window
+ * from the scroll viewport's `offsetHeight` — which jsdom always reports as 0.
+ * Without this stub the grid renders a header and no body rows at all, so
+ * every row-content assertion below would fail. See DataGrid.test.tsx.
+ */
+Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+  configurable: true,
+  get() {
+    return this.hasAttribute('data-grid-body-viewport') ? 600 : 0
+  },
+})
 
 // Mock the eventTypes API module
 vi.mock('../../api/eventTypes', () => ({
@@ -83,14 +95,17 @@ describe('EventTypesSettings', () => {
     })
   })
 
-  it('filters types based on search term', async () => {
+  it('shows the section when the search term matches a type by name, without filtering its rows', async () => {
+    // Row-level filtering now belongs to the grid's own toolbar search, not
+    // this page-level searchTerm prop — it only gates whether the whole
+    // section renders. A matching term still shows every row.
     await act(async () => {
       render(<EventTypesSettings searchTerm="work" />)
     })
-    
+
     await waitFor(() => {
       expect(screen.getByText('Work')).toBeInTheDocument()
-      expect(screen.queryByText('Personal')).not.toBeInTheDocument()
+      expect(screen.getByText('Personal')).toBeInTheDocument()
     })
   })
 
@@ -128,17 +143,25 @@ describe('EventTypesSettings', () => {
     })
   })
 
-  it('shows edit and delete buttons for each type', async () => {
+  it('shows a row actions menu with edit and delete for each type', async () => {
+    // Individual per-action buttons were replaced by the grid's single
+    // "..." row-actions dropdown; open one and check its menu contents.
     await act(async () => {
       render(<EventTypesSettings />)
     })
-    
+
+    let actionButtons: HTMLElement[] = []
     await waitFor(() => {
-      const editButtons = screen.getAllByLabelText(/edit/i)
-      const deleteButtons = screen.getAllByLabelText(/delete/i)
-      
-      expect(editButtons.length).toBe(2) // Two event types
-      expect(deleteButtons.length).toBe(2)
+      actionButtons = screen.getAllByLabelText('Row actions')
+      expect(actionButtons.length).toBe(2) // Two event types
     })
+
+    fireEvent.click(actionButtons[0])
+
+    // antd 6 renders a menu item's icon label inline with its text, so an
+    // anchored /^edit$/i or /^delete$/i regex matches nothing — match on a
+    // substring instead.
+    expect(await screen.findByText(/edit/i)).toBeInTheDocument()
+    expect(await screen.findByText(/delete/i)).toBeInTheDocument()
   })
 })

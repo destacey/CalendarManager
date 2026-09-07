@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import { Typography, Space, Button, Table, Modal, Form, Input, InputNumber, ColorPicker, Switch, Popconfirm, theme, Flex } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, StarOutlined, StarFilled } from '@ant-design/icons'
+import { Typography, Space, Button, App, Modal, Form, Input, InputNumber, ColorPicker, Switch, theme, Flex } from 'antd'
+import { PlusOutlined, EditOutlined, DeleteOutlined, StarOutlined } from '@ant-design/icons'
+import type { ItemType } from 'antd/es/menu/interface'
 import { EventType } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
 import { getEventTypes, createEventType, updateEventType, deleteEventType, setDefaultEventType } from '../../api/eventTypes'
 import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
+import { DataGrid, createActionsColumn } from '../grid'
+import type { ColumnDef } from '../grid'
 
 const { Text } = Typography
 
@@ -14,6 +17,7 @@ interface EventTypesSettingsProps {
 
 const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = '' }) => {
   const messageApi = useMessage()
+  const { modal } = App.useApp()
   const { token } = theme.useToken()
   const [eventTypes, setEventTypes] = useState<EventType[]>([])
   const [loading, setLoading] = useState(true)
@@ -89,6 +93,18 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
     }
   }
 
+  const handleDeleteClick = (type: EventType) => {
+    modal.confirm({
+      title: 'Are you sure?',
+      content: reassignmentTargetName(type)
+        ? `Events using this type will be moved to "${reassignmentTargetName(type)}".`
+        : 'Events using this type will be moved to the default type.',
+      okText: 'Delete',
+      okButtonProps: { danger: true },
+      onOk: () => handleDelete(type),
+    })
+  }
+
   const handleSetDefault = async (type: EventType) => {
     try {
       const success = await setDefaultEventType(type.id!)
@@ -144,104 +160,88 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
     }
   }
 
-  const columns = [
+  const columns: ColumnDef<EventType, unknown>[] = [
     {
-      title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
-      render: (text: string, record: EventType) => (
-        <Space>
-          <div 
-            style={{ 
-              width: 16, 
-              height: 16, 
-              borderRadius: 4, 
-              backgroundColor: record.color,
-              border: `1px solid ${token.colorBorder}`
-            }} 
-          />
-          {text}
-          {record.is_default && <Text type="secondary">(Default)</Text>}
-        </Space>
-      ),
+      accessorKey: 'name',
+      header: 'Name',
+      cell: ({ row }) => {
+        const record = row.original
+        return (
+          <Space>
+            <div
+              style={{
+                width: 16,
+                height: 16,
+                borderRadius: 4,
+                backgroundColor: record.color,
+                border: `1px solid ${token.colorBorder}`
+              }}
+            />
+            {record.name}
+            {record.is_default && <Text type="secondary">(Default)</Text>}
+          </Space>
+        )
+      },
     },
     {
-      title: 'Color',
-      dataIndex: 'color',
-      key: 'color',
-      width: 80,
-      render: (color: string) => (
-        <div 
-          style={{ 
-            width: 24, 
-            height: 24, 
-            borderRadius: 4, 
-            backgroundColor: color,
+      accessorKey: 'color',
+      header: 'Color',
+      size: 80,
+      cell: ({ row }) => (
+        <div
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: 4,
+            backgroundColor: row.original.color,
             border: `1px solid ${token.colorBorder}`
-          }} 
+          }}
         />
       ),
     },
     {
-      title: 'Billable',
-      dataIndex: 'is_billable',
-      key: 'is_billable',
-      width: 80,
-      render: (is_billable: boolean) => (
-        <Text type={is_billable ? 'success' : 'secondary'}>
-          {is_billable ? 'Yes' : 'No'}
-        </Text>
-      ),
+      accessorKey: 'is_billable',
+      header: 'Billable',
+      size: 80,
+      meta: { columnType: 'yesNo' },
     },
     {
-      title: 'All-day hours',
-      dataIndex: 'all_day_hours',
-      key: 'all_day_hours',
-      width: 110,
-      render: (hours: number) =>
-        hours > 0 ? (
+      accessorKey: 'all_day_hours',
+      header: 'All-day hours',
+      size: 110,
+      cell: ({ row }) => {
+        const hours = row.original.all_day_hours
+        return hours > 0 ? (
           <Text>{hours}</Text>
         ) : (
           <Text type="secondary">Doesn't count</Text>
-        ),
+        )
+      },
     },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 160,
-      render: (_: any, record: EventType) => (
-        <Space>
-          {!record.is_default && (
-            <Button
-              icon={<StarOutlined />}
-              size="small"
-              title="Set as Default"
-              onClick={() => handleSetDefault(record)}
-            />
-          )}
-          <Button
-            icon={<EditOutlined />}
-            size="small"
-            onClick={() => handleEdit(record)}
-          />
-          <Popconfirm
-            title="Are you sure?"
-            description={
-              reassignmentTargetName(record)
-                ? `Events using this type will be moved to "${reassignmentTargetName(record)}".`
-                : 'Events using this type will be moved to the default type.'
-            }
-            onConfirm={() => handleDelete(record)}
-          >
-            <Button
-              icon={<DeleteOutlined />}
-              size="small"
-              danger
-            />
-          </Popconfirm>
-        </Space>
-      ),
-    },
+    createActionsColumn<EventType>({
+      getItems: (record) =>
+        [
+          !record.is_default && {
+            key: 'default',
+            label: 'Set as Default',
+            icon: <StarOutlined />,
+            onClick: () => handleSetDefault(record),
+          },
+          {
+            key: 'edit',
+            label: 'Edit',
+            icon: <EditOutlined />,
+            onClick: () => handleEdit(record),
+          },
+          {
+            key: 'delete',
+            label: 'Delete',
+            icon: <DeleteOutlined />,
+            danger: true,
+            onClick: () => handleDeleteClick(record),
+          },
+        ].filter(Boolean) as ItemType[],
+    }),
   ]
 
   /**
@@ -264,15 +264,17 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
     return target?.name
   }
 
-  // Filter types based on search term
-  const filteredTypes = eventTypes.filter(type =>
+  // Whether this settings section matches an in-page search term. The grid's
+  // own toolbar owns row-level filtering now; this only gates whether the
+  // whole section renders (matching the section title, or any type by name).
+  const matchesSearch = eventTypes.some(type =>
     type.name.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const shouldShow = searchTerm === '' || 
+  const shouldShow = searchTerm === '' ||
     'event types'.includes(searchTerm.toLowerCase()) ||
     'types'.includes(searchTerm.toLowerCase()) ||
-    filteredTypes.length > 0
+    matchesSearch
 
   if (!shouldShow) return null
 
@@ -293,13 +295,15 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
         Define event types that can be automatically assigned based on rules or set manually.
       </Text>
         
-        <Table
+        <DataGrid<EventType>
+          data={eventTypes}
           columns={columns}
-          dataSource={filteredTypes}
-          loading={loading}
-          rowKey="id"
-          pagination={false}
-          size="small"
+          isLoading={loading}
+          getRowId={row => String(row.id)}
+          variant="advanced"
+          persistStateKey="event-types"
+          csvFileName="event-types"
+          emptyMessage="No event types yet."
         />
         
         <Modal
