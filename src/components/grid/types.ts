@@ -1,4 +1,4 @@
-import type { ColumnDef, SortingState } from './core'
+import type { ColumnDef, SortingState, Table } from './core'
 import type { RowData } from '@tanstack/react-table'
 
 // Column meta + filter option types moved to the shared grid core (including
@@ -11,7 +11,7 @@ export type {
 } from './core/types'
 
 /**
- * Context passed to the `columns` and `leftSlot` function props.
+ * Context passed to the `columns` function prop.
  * Provides drag-and-drop state so domain code can build columns reactively.
  */
 export interface GridColumnContext {
@@ -47,13 +47,8 @@ export interface DataGridProps<T extends RowData> {
 
   // -- Toolbar --
   onRefresh?: () => Promise<any> | void
-  /**
-   * Slot for domain-specific actions rendered on the left of the toolbar.
-   * Can be a ReactNode or a function receiving {@link GridColumnContext}.
-   */
-  leftSlot?:
-    | React.ReactNode
-    | ((context: GridColumnContext) => React.ReactNode)
+  /** Slot for domain-specific actions rendered on the left of the toolbar. */
+  leftSlot?: React.ReactNode
   /** Content rendered inside the help popover. */
   helpContent?: React.ReactNode
   /** Slot for actions rendered just before the export/help group (a divider
@@ -173,11 +168,9 @@ export interface RowReorderEvent<T extends RowData> {
 /**
  * Handle exposed by DataGrid via ref.
  */
-export interface DataGridHandle {
+export interface DataGridHandle<T extends RowData> {
   /** The underlying TanStack table instance. */
-  table: any
-  /** The currently selected row ID, or null. */
-  selectedRowId: string | null
+  table: Table<T>
   /** The displayed (post filter + sort) rows' data, in display order. */
-  getDisplayedRows: () => unknown[]
+  getDisplayedRows: () => T[]
 }
