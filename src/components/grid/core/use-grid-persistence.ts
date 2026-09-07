@@ -15,10 +15,14 @@ import type { GridState } from './use-grid-table'
  *
  * Design notes:
  * - State is applied in a mount effect (one post-mount re-render), NOT via a
- *   lazy useState initializer: a synchronous localStorage read during the
- *   first render would tie that render to a storage read, so the grid
- *   instead renders once with its defaults and applies the persisted layout
- *   right after mount.
+ *   lazy useState initializer: the useState calls themselves live in
+ *   {@link useGridState} (use-grid-table.ts), already seeded with hardcoded
+ *   defaults, and this hook receives only the resulting setters (and current
+ *   values) as a plain argument. By the time it runs, those useState calls
+ *   have already happened, so there is no initializer left to seed lazily —
+ *   only a mount effect can override the defaults after the fact. The
+ *   accepted cost is one post-mount re-render (default state paints, then the
+ *   persisted layout patches it in).
  * - A grid whose layout matches the defaults has NO stored entry (the entry
  *   is removed rather than written), so Reset Columns doubles as "delete the
  *   stored layout".
