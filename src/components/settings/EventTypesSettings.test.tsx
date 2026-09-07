@@ -3,6 +3,7 @@ import { screen, waitFor, act, render, fireEvent } from '../../test/utils'
 import EventTypesSettings from './EventTypesSettings'
 import type { EventType } from '../../types'
 import * as eventTypesApi from '../../api/eventTypes'
+import { saveFile } from '../../api/files'
 
 /**
  * The grid virtualizes its rows, and @tanstack/react-virtual sizes its window
@@ -25,6 +26,11 @@ vi.mock('../../api/eventTypes', () => ({
   deleteEventType: vi.fn(),
   setDefaultEventType: vi.fn()
 }))
+
+// The grid's CSV export writes through this — mocked so the export test below
+// can inspect the bytes without a real save dialog (same pattern as
+// DataGrid.test.tsx).
+vi.mock('../../api/files', () => ({ saveFile: vi.fn() }))
 
 const mockEventTypesApi = vi.mocked(eventTypesApi)
 
@@ -58,6 +64,9 @@ describe('EventTypesSettings', () => {
     mockEventTypesApi.updateEventType.mockResolvedValue(mockEventTypes[0])
     mockEventTypesApi.deleteEventType.mockResolvedValue({ deleted: true, eventsReassigned: 0, rulesRemoved: 0, reassignedTo: null })
     mockEventTypesApi.setDefaultEventType.mockResolvedValue(true)
+
+    vi.mocked(saveFile).mockReset()
+    vi.mocked(saveFile).mockResolvedValue(true)
   })
 
   it('renders the component with basic elements', async () => {
@@ -163,5 +172,54 @@ describe('EventTypesSettings', () => {
     // substring instead.
     expect(await screen.findByText(/edit/i)).toBeInTheDocument()
     expect(await screen.findByText(/delete/i)).toBeInTheDocument()
+  })
+
+  it('colors the Billable cell instead of the yesNo preset\'s plain text', async () => {
+    // The migration keeps meta: { columnType: 'yesNo' } (for its sort/filter
+    // behaviour) but restores an explicit `cell`, which column-types.ts's
+    // applyColumnType lets win over the preset's own plain-text cell. Both
+    // mock rows are is_billable: false, so this pins the "No" / secondary
+    // rendering specifically.
+    await act(async () => {
+      render(<EventTypesSettings />)
+    })
+
+    await waitFor(() => {
+      expect(screen.getAllByText('No').length).toBeGreaterThan(0)
+    })
+
+    const billableCell = screen.getAllByText('No')[0]
+    expect(billableCell.className).toMatch(/ant-typography-secondary/)
+  })
+
+  it('still exports Billable as Yes/No via the yesNo columnType preset, not a raw boolean', async () => {
+    // Pins the preset surviving: the explicit `cell` above only changes
+    // display, but CSV export reads TanStack's own accessor (row.getValue),
+    // which is the yesNo preset's boolean -> "Yes"/"No" accessorFn. If a
+    // future edit dropped `columnType: 'yesNo'`, is_billable's raw boolean
+    // would flow straight to the CSV as the literal string "false".
+    await act(async () => {
+      render(<EventTypesSettings />)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Work')).toBeInTheDocument()
+    })
+
+    const exportButton = document
+      .querySelector('[aria-label="download"]')
+      ?.closest('button') as HTMLButtonElement
+    expect(exportButton).toBeTruthy()
+
+    fireEvent.click(exportButton)
+    await waitFor(() => expect(saveFile).toHaveBeenCalled())
+
+    const csv = new TextDecoder()
+      .decode(vi.mocked(saveFile).mock.calls.at(-1)![1])
+      .replace(/^﻿/, '')
+
+    expect(csv).toContain('No')
+    expect(csv).not.toMatch(/\bfalse\b/)
+    expect(csv).not.toMatch(/\btrue\b/)
   })
 })

@@ -18,4 +18,6 @@ export type {
 } from './types'
 export { createActionsColumn, createIdColumn, applyColumnType } from './core'
 export { createCsvColumn } from './core/csv-column'
+export { confirmDelete } from './confirm-delete'
+export type { ConfirmModal, ConfirmDeleteOptions } from './confirm-delete'
 export type { ColumnDef, Row, SortingState, Table, Column } from './core'

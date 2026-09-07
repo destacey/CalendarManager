@@ -6,7 +6,7 @@ import { EventType } from '../../types'
 import { useMessage } from '../../contexts/MessageContext'
 import { getEventTypes, createEventType, updateEventType, deleteEventType, setDefaultEventType } from '../../api/eventTypes'
 import { useReloadOnShow } from '../../contexts/ScreenVisibilityContext'
-import { DataGrid, createActionsColumn } from '../grid'
+import { DataGrid, createActionsColumn, confirmDelete } from '../grid'
 import type { ColumnDef } from '../grid'
 
 const { Text } = Typography
@@ -94,14 +94,11 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
   }
 
   const handleDeleteClick = (type: EventType) => {
-    modal.confirm({
-      title: 'Are you sure?',
+    confirmDelete(modal, {
       content: reassignmentTargetName(type)
         ? `Events using this type will be moved to "${reassignmentTargetName(type)}".`
         : 'Events using this type will be moved to the default type.',
-      okText: 'Delete',
-      okButtonProps: { danger: true },
-      onOk: () => handleDelete(type),
+      onConfirm: () => handleDelete(type),
     })
   }
 
@@ -204,6 +201,16 @@ const EventTypesSettings: React.FC<EventTypesSettingsProps> = ({ searchTerm = ''
       header: 'Billable',
       size: 80,
       meta: { columnType: 'yesNo' },
+      // Explicit cell wins over the yesNo preset's plain-text one (see
+      // column-types.ts's applyColumnType: `if (type.cell && col.cell ===
+      // undefined)`), while the preset still supplies the sort/filter
+      // behaviour via its accessorFn — so this keeps the old colour coding
+      // without giving up "Yes"/"No" set-filtering or non-lexical sort.
+      cell: ({ row }) => (
+        <Text type={row.original.is_billable ? 'success' : 'secondary'}>
+          {row.original.is_billable ? 'Yes' : 'No'}
+        </Text>
+      ),
     },
     {
       accessorKey: 'all_day_hours',
