@@ -109,8 +109,7 @@
   padding: 5px var(--ant-padding-xs);
   background: var(--data-grid-header-bg);
   border-bottom: 1px solid var(--ant-color-border);
-  /* Secondary (muted) text keeps headers from overpowering the data rows —
-     matches the retired ag-grid Balham theme's muted headerTextColor. */
+  /* Secondary (muted) text keeps headers from overpowering the data rows. */
   color: var(--ant-color-text-secondary);
   text-align: left;
   font-size: 12px;

@@ -818,7 +818,7 @@ const ROW_ESTIMATE = 28
       // …but the summary, fed by the grid's displayed rows rather than the
       // rendered ones, still sees every event.
       expect(screen.getByText(new RegExp(`${MONTH_SIZE} events`))).toBeInTheDocument()
-    })
+    }, HEAVY_VIRTUALIZATION_TIMEOUT)
 
     it('moves the window when the body scrolls', async () => {
       await renderRealTable({ getEventsForDate: vi.fn(() => bigMonth) })

@@ -274,3 +274,26 @@ performance tweak.
 The cost of leaving it is real: CPU starvation under that load pushed the
 heaviest grid tests past vitest's 10s `testTimeout` (~1.4s alone, >10s in the
 full suite), which is why `EventTable.test.tsx` carries explicit 30s budgets.
+
+## Two follow-ups from the DataGrid port's final review
+
+Both recorded rather than fixed, so they are decisions and not oversights.
+
+**`TimecardEntryTable` has no test file.** It is the only one of the eleven
+table migrations without direct assertions. Its 259-line rewrite (columns,
+`accessorFn`s, `initialSorting`, `variant="simple"`) is reached only through
+`Timecards.test.tsx`, which mocks `getTimecardEntries` to `[]` — so no row ever
+renders and none of the column work is exercised. The file never had a test, so
+this is a pre-existing gap rather than a regression, but every other migration
+got one and this is the outlier.
+
+**Four ported exports have no consumer.** Against this work's own "no exports
+without a consumer" standard: `setContainsFilter` and `numberRangeFilter`
+(`grid/core/grid-filters.ts`), `dateSortBy` (`grid/core/grid-sorting.ts`), and
+`clearAllGridColumnState` (`grid/core/use-grid-persistence.ts`) — roughly 130
+lines plus 8 tests. Note `grid-filters.ts` is effectively a second, older
+filter system superseded by the descriptor engine in `grid/core/filters/`; its
+only live member is `stringContainsFilter`, surviving as the grid's
+`globalFilterFn`. Deleting the dead four is straightforward; it was left alone
+only because removing 8 passing tests at the tail of a large branch is a
+judgement call worth making deliberately.

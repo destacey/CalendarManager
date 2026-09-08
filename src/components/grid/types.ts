@@ -24,8 +24,8 @@ export interface GridColumnContext {
 export interface DataGridProps<T extends RowData> {
   /**
    * Row data. May be undefined while loading (e.g. straight from a query
-   * hook) — treated as an empty grid, matching the old ag-grid `rowData`
-   * tolerance.
+   * hook) — treated as an empty grid rather than throwing, which the
+   * TanStack row model would do on undefined.
    */
   data: T[] | undefined
   /** Loading state. */
@@ -106,11 +106,11 @@ export interface DataGridProps<T extends RowData> {
   // -- Grid state --
   /**
    * Opt-in localStorage persistence of the user's column layout (sizing,
-   * show/hide choices, pinning) under `calendar-grid:{key}:v2`. Keys are per page
-   * context — stable, human-readable, route-independent kebab-case (e.g.
-   * 'ppm-projects', 'team-backlog'); shared grid components should expose
-   * this as a pass-through prop so each page site supplies its own. Omit for
-   * no persistence. Sorting/filters/search are deliberately not persisted.
+   * show/hide choices, pinning, order) under `calendar-grid:{key}:v2`. Keys
+   * are per page context — stable, human-readable, route-independent
+   * kebab-case, as in `'events'`, `'projects'`, `'timecards'`. Omit for no
+   * persistence. Sorting, filters and search are deliberately NOT persisted:
+   * a user's sort is not meant to outlive the window.
    */
   persistStateKey?: string
   /**

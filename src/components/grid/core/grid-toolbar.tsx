@@ -36,8 +36,8 @@ export interface GridToolbarProps {
   leftSlot?: React.ReactNode
   /** Content rendered inside the help popover. */
   helpContent?: React.ReactNode
-  /** Slot for actions rendered just BEFORE the export/help group, set apart by a
-   *  divider on each side. For grid-specific toggles (e.g. a Gantt chart). */
+  /** Slot for actions rendered just BEFORE the export/help group, set apart by
+   *  a divider on each side. For a grid-specific toggle. No consumer yet. */
   actionsSlot?: React.ReactNode
   /** Slot for actions rendered on the far right of the toolbar. */
   rightSlot?: React.ReactNode
@@ -46,9 +46,8 @@ export interface GridToolbarProps {
 /**
  * The one grid toolbar: search, row count, refresh, clear filters, export CSV,
  * and help popover. Domain-specific actions go in `leftSlot` / `rightSlot`;
- * `rightSlot` renders at the far right (after export/help), matching the
- * legacy ag-grid `toolbarActions` and TreeGridToolbar placement — view
- * selectors and control menus belong there.
+ * `rightSlot` renders at the far right, after export/help — view selectors
+ * and control menus belong there.
  */
 const GridToolbar = ({
   displayedRowCount,
