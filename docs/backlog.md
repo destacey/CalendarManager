@@ -190,3 +190,43 @@ Not bugs, but each cost real diagnosis time.
   SQLite with `-DSQLITE_DEFAULT_FOREIGN_KEYS=1`) where `better-sqlite3` left them
   off. This already changed one behaviour: deleting an in-use event type now
   reassigns its events to the default type rather than silently orphaning them.
+
+## Test environment: what jsdom cannot check
+
+The DataGrid work (2026-09-07) ran into a hard ceiling repeatedly: jsdom has
+no layout engine, so a whole class of this app's behaviour is untestable in
+the current suite. Each of these needed a workaround or a deferral:
+
+- **dnd-kit cannot be driven at all.** Collision detection needs real element
+  geometry and jsdom reports everything zero-sized. Row reorder and the Map
+  Events drag have no end-to-end test; both are tested via their callbacks.
+- **`getComputedStyle` is stubbed** in `src/test/setup.ts`, so `toHaveStyle`
+  passes or fails for the wrong reason and theming is effectively untested.
+- **Virtualization needs a faked viewport.** `@tanstack/react-virtual` sizes
+  its window from `offsetHeight`, which jsdom reports as 0, and the
+  virtualizer then returns an empty range — so the grid renders zero rows
+  until a test stubs `offsetHeight` on `[data-grid-body-viewport]`.
+- **Column autosize measures text**, which jsdom cannot do; its tests stub
+  `getBoundingClientRect` to `textContent.length * 10`.
+- **Scroll performance is unmeasurable.** EventTable's virtualization exists
+  to fix a 1-3.5s main-thread block on a real 504-row month; nothing in the
+  suite can detect a regression there.
+
+### Two tiers worth adding, in order
+
+1. **Vitest Browser Mode** (`@vitest/browser` + a Playwright provider; Vitest
+   5 already supports it, neither package installed). Runs tests in real
+   Chromium, which fixes every row above except the last. The grid is the
+   best argument for it in this codebase. Note several stubs in
+   `src/test/setup.ts` exist *because* of jsdom and would become unnecessary
+   or actively misleading in a real browser, so this is a per-file opt-in,
+   not a wholesale environment swap.
+2. **`tauri-driver` + WebdriverIO** against the built app, for what neither
+   jsdom nor a browser can reach: the WebView2 + Rust IPC path. The CSV
+   export's native save dialog is the concrete case — `src/api/files.ts`
+   exists because WebView2 silently ignores a Blob `<a download>`, and no
+   browser test can prove the replacement actually writes a file.
+
+Deliberately not done during the grid port: swapping the test environment
+under a 1200-test suite mid-migration would have destabilised the thing being
+used to prove the migration safe.

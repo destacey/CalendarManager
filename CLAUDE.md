@@ -39,6 +39,9 @@ This is a desktop Tauri v2 application with a React 19 frontend and a Rust backe
 
 **Frontend (`src/`):**
 - React 19 application with Ant Design UI
+- `@ant-design/icons` is a **direct** dependency, not a transitive one. Around
+  ten files import it, and it had been resolving only through antd — which
+  would have broken silently on any antd change that stopped re-exporting it
 - No direct Node.js access; all backend operations go through `src/api/`, typed wrappers over Tauri's `invoke()`
 - `electron/` no longer exists — it was deleted when the app was migrated from Electron to Tauri v2
 
@@ -107,6 +110,94 @@ The app follows a 4-stage state machine in `App.tsx`:
 - `TimezoneSettings`: User timezone selection
 - `DataManagement`: Database operations and data export
 
+### Grids
+
+`DataGrid` (`src/components/grid/`) is the only table implementation. There is
+no antd `Table` left in `src/`, and adding one back would fork the behaviour
+this replaced.
+
+**Import from `src/components/grid` only** — never from `grid/core/` or
+`grid/DataGrid` directly. The barrel is what keeps the internals free to move,
+and it exports the column helpers too: `createActionsColumn`,
+`createIdColumn`, `createCsvColumn`, `applyColumnType`, `DragHandleCell`, and
+`confirmDelete`.
+
+**Two variants.** `variant="advanced"` is the data-exploration surface —
+toolbar, global search, per-column filters, floating filter row, CSV export,
+column menu, and a body that fills the remaining viewport height.
+`variant="simple"` is for a grid inside a record section or a modal, where the
+heading above already says what it is: no toolbar, no filters, and a height
+that fits its rows.
+
+**Columns are TanStack v9 `ColumnDef`s.** `meta.columnType` presets
+(`'yesNo' | 'dateOnly' | 'dateTime'`) supply display, sort *and* filter config
+together. A preset does **not** force you to give up a custom cell:
+`core/column-types.ts` applies its own `cell` only
+`if (type.cell && col.cell === undefined)`, so an explicit `cell` wins while
+the column still inherits the preset's accessor, sort and filter.
+
+**Layout persists, sorting does not.** Column sizing, visibility, pinning and
+order are saved to localStorage under `calendar-grid:{persistStateKey}:v2`.
+Sorting, filters and global search are deliberately session-only — a user's
+sort is not meant to outlive the window.
+
+**`meta.unavailable` is a permission, not a preference.** Such a column is
+hidden, absent from Choose Columns entirely, and overrides any saved user
+choice. Contrast `meta.hiddenByDefault`, which only seeds an initial state the
+user can override.
+
+#### TanStack Table v9: features are opt-in
+
+`core/grid-features.ts` declares the feature set via `tableFeatures()`. **An
+option belonging to an unregistered feature silently does nothing** rather
+than erroring, so adding a capability means registering its feature first.
+`rowExpandingFeature` and `rowSelectionFeature` are deliberately *not*
+registered — there is no tree mode and no selection column.
+
+Two v9 behaviours that have already cost time:
+
+- **`getCanSort()` requires `column.accessorFn`.** An `id`-only column with a
+  custom `sortFn` is *silently unsortable*. Give any sortable column without
+  an `accessorKey` an explicit `accessorFn`.
+- **A numeric column's first sort click defaults to descending.** Set
+  `sortDescFirst: false` where ascending-first is wanted.
+
+#### Never derive a value from a row's render position
+
+A column or handler that reads a row's index in the rendered array is correct
+only while nothing reorders rows. `DataGrid` sorts, so such a value silently
+points at the wrong record. This was a real bug in the mapping-rules table,
+whose "#" column and order arrows read the antd `Table`'s row index and were
+only correct because its search removed rows without reordering them. Read the
+authoritative field (e.g. `priority`) instead.
+
+#### CSV export goes through the backend
+
+`exportGridToCsv` is **async** and writes via `saveFile` (`src/api/files.ts`),
+which opens a native dialog. **WebView2 silently ignores a Blob plus a clicked
+`<a download>`** — no file, no error. The contract: `false` means the user
+cancelled and is not an error; a genuine write failure *rejects*, so a caller
+must `try/catch`. This is the second independent place in the codebase to hit
+that constraint.
+
+#### Testing a grid
+
+Two things are required or every row assertion fails:
+
+- **Stub `offsetHeight` on `[data-grid-body-viewport]`.**
+  `@tanstack/react-virtual` sizes its window from that element; jsdom always
+  reports 0, and the virtualizer then returns an *empty* range rather than an
+  overscan-sized one, so the grid renders a header and no rows. Worse, an
+  "empty state" assertion passes for entirely the wrong reason.
+- **Render with the custom `render` from `src/test/utils`**, not bare React
+  Testing Library — `DataGrid` needs a `MessageProvider` for its export
+  messages.
+
+Also: a draggable header `<th>` carries `role="button"`, not `columnheader`,
+so a sort-triggering click needs `fireEvent.click(getByText(...))`. And nine
+grid modules import dayjs, so a test touching grid dates needs
+`vi.unmock('dayjs')` — see the dayjs note above.
+
 ### Theme and Styling
 
 **Theme System:**
@@ -135,10 +226,13 @@ once `configLoader: 'native'` becomes the default. They are therefore
 `"type": "module"` would also fix it, but changes module resolution for
 everything else, which is why the extensions carry it instead.
 
-**The drive-letter trap:** running `npm run test:run` from a lowercase drive letter (`d:\Dev\CalendarManager`) makes Vitest collect zero tests — every file reports "No test suite found in file", and the suite looks completely broken. The identical command from `D:\Dev\CalendarManager` passes all 389. This has cost real diagnosis time twice; always confirm `pwd` prints an uppercase drive letter before trusting a failing (or suspiciously empty) frontend test run.
+**The drive-letter trap:** running `npm run test:run` from a lowercase drive letter (`d:\Dev\CalendarManager`) makes Vitest collect zero tests — every file reports "No test suite found in file", and the suite looks completely broken. The identical command from `D:\Dev\CalendarManager` passes the whole suite. This has cost real diagnosis time twice; always confirm `pwd` prints an uppercase drive letter before trusting a failing (or suspiciously empty) frontend test run.
 
 ### Testing Patterns
 - **Component Tests**: Test user-visible behavior, not implementation details
+- **Grid tests need two things or every row assertion fails** — an
+  `offsetHeight` stub on `[data-grid-body-viewport]` and the custom `render`
+  from `src/test/utils`. See the Grids section above.
 - **Mock `src/api/` modules**: There is no `window.electronAPI` to fake any more — tests `vi.mock('../../api/events')` and friends, and assert on the calls a component makes rather than on serialized IPC payloads
 - **Provider Wrapping**: Use custom `render()` from test utils to wrap components with necessary providers
 - **Mock Data**: Use provided mock objects for consistent test data
