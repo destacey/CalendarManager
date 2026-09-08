@@ -31,7 +31,7 @@ vi.mock('@dnd-kit/core', async (importOriginal) => {
   }
 })
 
-import { createRef } from 'react'
+import React, { createRef, useState } from 'react'
 import type { DragEndEvent } from '@dnd-kit/core'
 import {
   act,
@@ -1138,6 +1138,48 @@ describe('DataGrid', () => {
 
       // Assert
       expect(displayed.map((f) => f.name)).toEqual(['insights'])
+    })
+
+    it('settles rather than looping when a consumer passes a fresh, unmemoized columns array', () => {
+      // Ten of the eleven DataGrid migrations construct their `columns` array
+      // inline in the component body (no useMemo) — the natural thing to
+      // write. If `onDisplayedRowsChange` fired every time that new array
+      // gives TanStack a new row-model identity, and a consumer (also
+      // naturally) calls setState from the callback, the result is: new
+      // columns -> new rows identity -> effect fires -> setState -> render ->
+      // new columns -> ... forever. This harness reproduces exactly that
+      // shape and asserts it settles instead of growing without bound.
+      let renderCount = 0
+      const displayedCalls: Flag['name'][][] = []
+
+      const UnmemoizedColumnsHarness: React.FC = () => {
+        renderCount++
+        const [, setDisplayed] = useState<Flag[]>([])
+        // Deliberately NOT memoized — a fresh array identity every render.
+        const unmemoizedColumns: ColumnDef<Flag, unknown>[] = [
+          { id: 'name', accessorKey: 'name', header: 'Name' },
+        ]
+        return (
+          <DataGrid<Flag>
+            data={DATA}
+            columns={unmemoizedColumns}
+            onDisplayedRowsChange={(rows) => {
+              displayedCalls.push(rows.map((r) => r.name))
+              setDisplayed(rows)
+            }}
+          />
+        )
+      }
+
+      // Act
+      render(<UnmemoizedColumnsHarness />)
+
+      // Assert — settles quickly. A real loop trips React's own "Maximum
+      // update depth exceeded" guard well past this bound, so this stays
+      // comfortably under it either way — the interesting assertion is that
+      // it stays small at all.
+      expect(renderCount).toBeLessThan(10)
+      expect(displayedCalls.length).toBeLessThan(10)
     })
   })
 

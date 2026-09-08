@@ -305,10 +305,27 @@ function DataGridInner<T extends RowData>(
 
   const rows = table.getRowModel().rows
 
-  // Displayed-rows callback: TanStack memoizes the row model, so `rows` only
-  // changes identity when the data / filters / sorting actually change — the
-  // effect fires exactly on displayed-set changes (plus once on mount).
+  // Displayed-rows callback. `rows` is NOT a reliable "the displayed set
+  // changed" signal: TanStack rebuilds the row model (a new `rows` array)
+  // whenever the table's options change identity, and that includes the
+  // `columns` array — so a consumer who (reasonably) constructs its columns
+  // inline gets a new `rows` identity, and thus a fresh call here, on every
+  // render, even though the actual set of displayed rows is unchanged. If
+  // that call drives a `setState`, the result is a render loop. The row
+  // *objects* inside `rows` are still stable references to the underlying
+  // data even when the array wrapping them is new, so comparing the previous
+  // emission against the current one element-by-element (not just by array
+  // identity) tells us whether anything actually changed, and lets the grid
+  // guarantee this prop only fires when the displayed set genuinely does.
+  const lastEmittedRef = useRef<Row<T>[] | null>(null)
   useEffect(() => {
+    const last = lastEmittedRef.current
+    const unchanged =
+      last !== null &&
+      last.length === rows.length &&
+      last.every((row, index) => row === rows[index])
+    if (unchanged) return
+    lastEmittedRef.current = rows
     onDisplayedRowsChange?.(rows.map((row) => row.original))
   }, [rows, onDisplayedRowsChange])
   const displayedRowCount = rows.length
