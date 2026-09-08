@@ -1,10 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
 import TimecardWeekGrid from './TimecardWeekGrid'
 import { weeksOf } from '../../utils/timecardGrid'
 import { TimecardEntry } from '../../api/timecards'
+
+/**
+ * The grid virtualizes its rows, and @tanstack/react-virtual sizes its window
+ * from the scroll viewport's `offsetHeight` — which jsdom always reports as 0.
+ * Without this stub the grid renders a header and no body rows at all. See
+ * DataGrid.test.tsx.
+ */
+Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+  configurable: true,
+  get() {
+    return this.hasAttribute('data-grid-body-viewport') ? 600 : 0
+  },
+})
 
 /* One weekly timecard: Sun 30 Aug to Sat 5 Sep. It owns all seven days even
    though two of them fall in August — that is what makes them editable. */
@@ -120,8 +133,9 @@ describe('TimecardWeekGrid', () => {
       ]
     })
 
-    const row = document.querySelector('tr[data-row-key]')!
-    expect(row.querySelector('td:last-child')).toHaveTextContent('3.50')
+    // DataGrid's plain (non-reorderable) rows carry no row-key attribute, so
+    // the Total column's cell is read directly by its data-column-id.
+    expect(document.querySelector('td[data-column-id="total"]')).toHaveTextContent('3.50')
   })
 
   it('reports a typed value as a cell edit', async () => {
@@ -205,8 +219,7 @@ describe('TimecardWeekGrid', () => {
         screen.getByRole('spinbutton', { name: 'PRJ-001, Software Development on 2026-09-01' })
       ).toHaveValue('')
       // The row is there; the hours are not, because they are another week's.
-      const row = document.querySelector('tr[data-row-key]')!
-      expect(row.querySelector('td:last-child')).toHaveTextContent('—')
+      expect(document.querySelector('td[data-column-id="total"]')).toHaveTextContent('—')
     })
 
     /* Time with no project is a prompt to go and map something. */
@@ -275,41 +288,43 @@ describe('TimecardWeekGrid', () => {
     ]
 
     /** The project cell of each row, in the order they are rendered.
-        `data-row-key` picks the real rows: a scrolling antd table also
-        renders a hidden measure row that would otherwise come first. */
+        DataGrid's plain (non-reorderable) rows carry no row-key attribute,
+        so the Project column's own cells are read directly by
+        data-column-id, same as TimecardDayModal.test.tsx's titleOrder(). */
     const projectOrder = () =>
-      Array.from(document.querySelectorAll('tr[data-row-key]')).map(
-        row => row.querySelector('td')?.textContent ?? ''
+      Array.from(document.querySelectorAll('td[data-column-id="project"]')).map(
+        td => td.textContent ?? ''
       )
 
+    // DataGrid's header cells are drag handles for column reorder (dnd-kit's
+    // sortable attributes give them role="button" rather than the native
+    // <th>'s implicit "columnheader"), and userEvent's pointer-event
+    // simulation trips the drag sensor's own click handling on a second
+    // click — fireEvent.click (a plain click event, no pointerdown/up) is
+    // what DataGrid.test.tsx itself uses to trigger a sort, sidestepping both.
     it('sorts by project, both ways', async () => {
-      const user = userEvent.setup()
       renderGrid({ entries: twoRows })
 
-      // By role, because a scrolling antd table renders a second, hidden copy
-      // of its header that a text query also matches.
-      await user.click(screen.getByRole('columnheader', { name: 'Project' }))
+      fireEvent.click(screen.getByText('Project'))
       await waitFor(() => expect(projectOrder()[0]).toContain('PRJ-001'))
 
-      await user.click(screen.getByRole('columnheader', { name: 'Project' }))
+      fireEvent.click(screen.getByText('Project'))
       await waitFor(() => expect(projectOrder()[0]).toContain('PRJ-002'))
     })
 
     it('sorts by activity', async () => {
-      const user = userEvent.setup()
       renderGrid({ entries: twoRows })
 
-      await user.click(screen.getByRole('columnheader', { name: 'Activity' }))
+      fireEvent.click(screen.getByText('Activity'))
 
       // "No activity" sorts last, so Software Development leads.
       await waitFor(() => expect(projectOrder()[0]).toContain('PRJ-001'))
     })
 
     it('sorts by the total', async () => {
-      const user = userEvent.setup()
       renderGrid({ entries: twoRows })
 
-      await user.click(screen.getByRole('columnheader', { name: 'Total' }))
+      fireEvent.click(screen.getByText('Total'))
 
       // Ascending first: the one-hour row leads.
       await waitFor(() => expect(projectOrder()[0]).toContain('PRJ-001'))
@@ -326,6 +341,21 @@ describe('TimecardWeekGrid', () => {
 
       expect(onOpenDay).toHaveBeenCalled()
       expect(projectOrder()).toEqual(before)
+    })
+
+    /* The day column's header is already an interactive Button; giving it a
+       sorter too would make one click do two things, so its <th> must carry
+       no click-to-sort handler at all — unlike Project/Activity/Total
+       above, clicking it (off the inner button) does nothing whatsoever. */
+    it('gives the day columns no sort affordance', () => {
+      const { onOpenDay } = renderGrid({ entries: twoRows })
+      const before = projectOrder()
+
+      const dayHeader = screen.getByRole('button', { name: 'Items on 2026-09-01' }).closest('th')!
+      fireEvent.click(dayHeader)
+
+      expect(projectOrder()).toEqual(before)
+      expect(onOpenDay).not.toHaveBeenCalled()
     })
   })
 })

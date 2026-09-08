@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Typography, Table, DatePicker, Flex, Empty, Spin, Space, Button } from 'antd'
+import { Typography, DatePicker, Flex, Space, Button } from 'antd'
 import { DownloadOutlined } from '@ant-design/icons'
 import ExcelJS from 'exceljs'
 import dayjs, { Dayjs } from 'dayjs'
@@ -11,6 +11,8 @@ import { getActivities } from '../../api/activities'
 import { saveFile } from '../../api/files'
 import { totalsByProjectActivity, TotalRow } from '../../utils/timecardGrid'
 import { projectLabel } from './TimecardEntryTable'
+import { DataGrid } from '../grid'
+import type { ColumnDef } from '../grid'
 
 const { Text } = Typography
 
@@ -135,57 +137,59 @@ const TimecardReport: React.FC = () => {
     }
   }
 
-  const columns = [
+  const columns: ColumnDef<TotalRow, unknown>[] = [
     {
-      title: 'Project',
-      key: 'project',
-      sorter: (a: TotalRow, b: TotalRow) =>
-        (projectById.get(a.project_id ?? -1)?.code ?? '').localeCompare(
-          projectById.get(b.project_id ?? -1)?.code ?? ''
-        ),
-      render: (_: unknown, row: TotalRow) =>
-        row.project_id === null ? (
+      // No accessorKey: the visible and sorted value is the project's code,
+      // looked up by id, not a field TotalRow carries directly. TanStack's
+      // getCanSort() requires an accessorFn regardless of the custom sortFn.
+      id: 'project',
+      header: 'Project',
+      accessorFn: row => projectById.get(row.project_id ?? -1)?.code ?? '',
+      footer: 'Total',
+      cell: ({ row }) =>
+        row.original.project_id === null ? (
           <Text type="warning">Unassigned</Text>
         ) : (
-          projectLabel(projectById.get(row.project_id))
+          projectLabel(projectById.get(row.original.project_id))
         )
     },
     {
-      title: 'Program',
-      key: 'program',
-      width: 180,
-      sorter: (a: TotalRow, b: TotalRow) =>
-        (projectById.get(a.project_id ?? -1)?.program ?? '').localeCompare(
-          projectById.get(b.project_id ?? -1)?.program ?? ''
-        ),
-      render: (_: unknown, row: TotalRow) => (
+      id: 'program',
+      header: 'Program',
+      size: 180,
+      accessorFn: row => (row.project_id !== null && projectById.get(row.project_id)?.program) || '',
+      cell: ({ row }) => (
         <Text type="secondary">
-          {(row.project_id !== null && projectById.get(row.project_id)?.program) || '—'}
+          {(row.original.project_id !== null && projectById.get(row.original.project_id)?.program) ||
+            '—'}
         </Text>
       )
     },
     {
-      title: 'Activity',
-      key: 'activity',
-      width: 220,
-      sorter: (a: TotalRow, b: TotalRow) =>
-        (activityById.get(a.activity_id ?? -1)?.name ?? '').localeCompare(
-          activityById.get(b.activity_id ?? -1)?.name ?? ''
-        ),
-      render: (_: unknown, row: TotalRow) => (
+      id: 'activity',
+      header: 'Activity',
+      size: 220,
+      accessorFn: row => activityById.get(row.activity_id ?? -1)?.name ?? '',
+      cell: ({ row }) => (
         <Text type="secondary">
-          {row.activity_id === null ? 'No activity' : activityById.get(row.activity_id)?.name}
+          {row.original.activity_id === null
+            ? 'No activity'
+            : activityById.get(row.original.activity_id)?.name}
         </Text>
       )
     },
     {
-      title: 'Hours',
-      key: 'hours',
-      width: 120,
-      align: 'right' as const,
-      defaultSortOrder: 'descend' as const,
-      sorter: (a: TotalRow, b: TotalRow) => a.hours - b.hours,
-      render: (_: unknown, row: TotalRow) => <Text strong>{row.hours.toFixed(2)}</Text>
+      id: 'hours',
+      header: 'Hours',
+      size: 120,
+      meta: { align: 'right' },
+      // totalsByProjectActivity already returns rows sorted by hours
+      // descending, and initialSorting below just makes that visible in the
+      // header's sort indicator on first render — same as the antd
+      // Table's defaultSortOrder did.
+      accessorFn: row => row.hours,
+      footer: () => total.toFixed(2),
+      cell: ({ row }) => <Text strong>{row.original.hours.toFixed(2)}</Text>
     }
   ]
 
@@ -235,29 +239,17 @@ const TimecardReport: React.FC = () => {
         </Button>
       </Flex>
 
-      <Spin spinning={loading}>
-        {!loading && rows.length === 0 ? (
-          <Empty description={`No time on any timecard between ${start} and ${end}`} />
-        ) : (
-          <Table
-            columns={columns}
-            dataSource={rows}
-            rowKey="key"
-            pagination={false}
-            size="small"
-            summary={() => (
-              <Table.Summary.Row>
-                <Table.Summary.Cell index={0} colSpan={3}>
-                  <Text strong>Total</Text>
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={3} align="right">
-                  <Text strong>{total.toFixed(2)}</Text>
-                </Table.Summary.Cell>
-              </Table.Summary.Row>
-            )}
-          />
-        )}
-      </Spin>
+      <DataGrid<TotalRow>
+        data={rows}
+        columns={columns}
+        isLoading={loading}
+        getRowId={row => row.key}
+        variant="advanced"
+        persistStateKey="timecard-report"
+        csvFileName="timecard-report"
+        emptyMessage={`No time on any timecard between ${start} and ${end}`}
+        initialSorting={[{ id: 'hours', desc: true }]}
+      />
     </Space>
   )
 }

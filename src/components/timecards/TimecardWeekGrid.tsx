@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react'
-import { Typography, Table, Button, Flex, Select, InputNumber, Badge, Tooltip, Empty } from 'antd'
+import { Typography, Button, Flex, Select, InputNumber, Badge, Tooltip, Empty } from 'antd'
 import { PlusOutlined, UnorderedListOutlined } from '@ant-design/icons'
 import { Project, Activity } from '../../types'
 import { TimecardEntry } from '../../api/timecards'
 import { GridDay, GridWeek, GridRow, buildRows, columnTotals, rowKey } from '../../utils/timecardGrid'
 import { projectLabel, NONE } from './TimecardEntryTable'
+import { DataGrid } from '../grid'
+import type { ColumnDef } from '../grid'
 
 const { Text } = Typography
 
@@ -143,155 +145,161 @@ const TimecardWeekGrid: React.FC<TimecardWeekGridProps> = ({
     setNewActivity(NONE)
   }
 
-  const columns = [
+  const columns: ColumnDef<GridRow, unknown>[] = [
     {
-      title: 'Project',
-      key: 'project',
-      width: 220,
-      sorter: (a: GridRow, b: GridRow) =>
-        byLabel(codeOf(a, projectById), codeOf(b, projectById)),
-      render: (_: unknown, row: GridRow) => (
+      // No accessorKey — the visible and sorted value is looked up by id via
+      // codeOf, not a field GridRow carries directly. TanStack's
+      // getCanSort() requires an accessorFn regardless of the custom sortFn.
+      id: 'project',
+      header: 'Project',
+      size: 220,
+      accessorFn: row => codeOf(row, projectById)[1],
+      sortFn: (a, b) => byLabel(codeOf(a.original, projectById), codeOf(b.original, projectById)),
+      cell: ({ row }) => (
         <Text style={{ fontSize: 13 }}>
-          {row.project_id === null ? (
+          {row.original.project_id === null ? (
             <Text type="warning">Unassigned</Text>
           ) : (
-            projectLabel(projectById.get(row.project_id))
+            projectLabel(projectById.get(row.original.project_id))
           )}
         </Text>
       )
     },
     {
-      title: 'Activity',
-      key: 'activity',
-      width: 160,
-      sorter: (a: GridRow, b: GridRow) =>
-        byLabel(nameOf(a, activityById), nameOf(b, activityById)),
-      render: (_: unknown, row: GridRow) => (
+      id: 'activity',
+      header: 'Activity',
+      size: 160,
+      accessorFn: row => nameOf(row, activityById)[1],
+      sortFn: (a, b) => byLabel(nameOf(a.original, activityById), nameOf(b.original, activityById)),
+      cell: ({ row }) => (
         <Text type="secondary" style={{ fontSize: 13 }}>
-          {row.activity_id === null ? 'No activity' : activityById.get(row.activity_id)?.name}
+          {row.original.activity_id === null
+            ? 'No activity'
+            : activityById.get(row.original.activity_id)?.name}
         </Text>
       )
     },
-    ...week.days.map(day => ({
-      key: day.date,
-      width: 108,
-      align: 'center' as const,
-      /* Deliberately not sortable: this header is already a button that opens
-         the day, and a sorter on the same cell would make one click do two
-         things. */
-      title: (
-        <Flex vertical align="center" gap={0}>
-          <Button
-            type="link"
-            size="small"
-            style={{
-              padding: 0,
-              height: 'auto',
-              fontWeight: 600,
-              // Dimmed, not disabled: the day counts towards the month next
-              // door, but this timecard is the only one that holds it.
-              opacity: elsewhere(day, month) ? 0.6 : 1
-            }}
-            onClick={() => onOpenDay(day.date)}
-            aria-label={`Items on ${day.date}`}
-          >
-            {dayLabel(day, month)}
-          </Button>
-          <Text type="secondary" style={{ fontSize: 11 }}>
-            {hours(totals.byDate[day.date] ?? 0)}
-          </Text>
-        </Flex>
-      ),
-      render: (_: unknown, row: GridRow) => {
-        const cell = row.cells[day.date]
-        // The activity belongs in the label: one project can have several
-        // rows in the same week, and they need telling apart.
-        const project =
-          row.project_id === null ? 'Unassigned' : projectById.get(row.project_id)?.code
-        const activity =
-          row.activity_id === null
-            ? 'no activity'
-            : activityById.get(row.activity_id)?.name ?? 'no activity'
-        const label = `${project}, ${activity} on ${day.date}`
-
-        return (
-          <Flex align="center" justify="center" gap={4}>
-            <InputNumber
+    ...week.days.map(
+      (day): ColumnDef<GridRow, unknown> => ({
+        id: day.date,
+        size: 108,
+        // Deliberately not sortable (no accessorFn/sortFn): this header is
+        // already a button that opens the day, and a sorter on the same
+        // cell would make one click do two things. Also holds its position —
+        // the week's days must stay in order regardless of column reorder.
+        meta: { enableReordering: false },
+        header: () => (
+          <Flex vertical align="center" gap={0}>
+            <Button
+              type="link"
               size="small"
-              min={0}
-              max={24}
-              step={0.25}
-              value={cell?.hours ?? null}
-              disabled={disabled}
-              placeholder="—"
-              style={{ width: 62 }}
-              aria-label={label}
-              onBlur={e => {
-                const raw = (e.target as HTMLInputElement).value
-                const next = raw === '' ? 0 : Number(raw)
-                if (!Number.isFinite(next)) return
-                if (next === (cell?.hours ?? 0)) return
-                onSetCell(day.date, row.project_id, row.activity_id, next)
+              style={{
+                padding: 0,
+                height: 'auto',
+                fontWeight: 600,
+                // Dimmed, not disabled: the day counts towards the month next
+                // door, but this timecard is the only one that holds it.
+                opacity: elsewhere(day, month) ? 0.6 : 1
               }}
-            />
-            {cell ? (
-              <Tooltip
-                title={
-                  cell.entries === 1
-                    ? 'One item — open the day'
-                    : `${cell.entries} items — open the day`
-                }
-              >
-                <Badge
-                  count={cell.entries > 1 ? cell.entries : 0}
-                  size="small"
-                  offset={[-2, 2]}
-                >
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<UnorderedListOutlined />}
-                    style={{ opacity: cell.entries > 1 ? 1 : 0.45 }}
-                    onClick={() => onOpenDay(day.date, row)}
-                    aria-label={`Items behind ${label}`}
-                  />
-                </Badge>
-              </Tooltip>
-            ) : (
-              <span style={{ display: 'inline-block', width: 24 }} />
-            )}
+              onClick={() => onOpenDay(day.date)}
+              aria-label={`Items on ${day.date}`}
+            >
+              {dayLabel(day, month)}
+            </Button>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {hours(totals.byDate[day.date] ?? 0)}
+            </Text>
           </Flex>
-        )
-      }
-    })),
+        ),
+        cell: ({ row }) => {
+          const cell = row.original.cells[day.date]
+          // The activity belongs in the label: one project can have several
+          // rows in the same week, and they need telling apart.
+          const project =
+            row.original.project_id === null
+              ? 'Unassigned'
+              : projectById.get(row.original.project_id)?.code
+          const activity =
+            row.original.activity_id === null
+              ? 'no activity'
+              : activityById.get(row.original.activity_id)?.name ?? 'no activity'
+          const label = `${project}, ${activity} on ${day.date}`
+
+          return (
+            <div data-row-activate="ignore">
+              <Flex align="center" justify="center" gap={4}>
+                <InputNumber
+                  size="small"
+                  min={0}
+                  max={24}
+                  step={0.25}
+                  value={cell?.hours ?? null}
+                  disabled={disabled}
+                  placeholder="—"
+                  style={{ width: 62 }}
+                  aria-label={label}
+                  onBlur={e => {
+                    const raw = (e.target as HTMLInputElement).value
+                    const next = raw === '' ? 0 : Number(raw)
+                    if (!Number.isFinite(next)) return
+                    if (next === (cell?.hours ?? 0)) return
+                    onSetCell(day.date, row.original.project_id, row.original.activity_id, next)
+                  }}
+                />
+                {cell ? (
+                  <Tooltip
+                    title={
+                      cell.entries === 1
+                        ? 'One item — open the day'
+                        : `${cell.entries} items — open the day`
+                    }
+                  >
+                    <Badge
+                      count={cell.entries > 1 ? cell.entries : 0}
+                      size="small"
+                      offset={[-2, 2]}
+                    >
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<UnorderedListOutlined />}
+                        style={{ opacity: cell.entries > 1 ? 1 : 0.45 }}
+                        onClick={() => onOpenDay(day.date, row.original)}
+                        aria-label={`Items behind ${label}`}
+                      />
+                    </Badge>
+                  </Tooltip>
+                ) : (
+                  <span style={{ display: 'inline-block', width: 24 }} />
+                )}
+              </Flex>
+            </div>
+          )
+        }
+      })
+    ),
     {
-      title: 'Total',
-      key: 'total',
-      width: 90,
-      align: 'right' as const,
-      sorter: (a: GridRow, b: GridRow) => a.total - b.total,
-      render: (_: unknown, row: GridRow) => <Text strong>{hours(row.total)}</Text>
+      id: 'total',
+      header: 'Total',
+      size: 90,
+      meta: { align: 'right' },
+      accessorFn: row => row.total,
+      // TanStack defaults a numeric column's first click to descending; the
+      // original antd sorter (like project/activity) went ascending first.
+      sortDescFirst: false,
+      cell: ({ row }) => <Text strong>{hours(row.original.total)}</Text>
     }
   ]
 
   return (
     <Flex vertical gap={12}>
 
-      <Table
+      <DataGrid<GridRow>
+        data={rows}
         columns={columns}
-        dataSource={rows}
-        rowKey="key"
-        pagination={false}
-        size="small"
-        scroll={{ x: 'max-content' }}
-        locale={{
-          emptyText: (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="Nothing this week. Pull from events, or add a row."
-            />
-          )
-        }}
+        getRowId={row => row.key}
+        variant="simple"
+        emptyMessage="Nothing this week. Pull from events, or add a row."
       />
 
       {adding ? (

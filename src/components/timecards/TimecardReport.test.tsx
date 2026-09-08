@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // `src/test/setup.ts` installs globally.
 vi.unmock('dayjs')
 
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
 import ExcelJS from 'exceljs'
@@ -13,6 +13,19 @@ import { getTimecardEntriesInRange, TimecardEntry } from '../../api/timecards'
 import { getProjects } from '../../api/projects'
 import { getActivities } from '../../api/activities'
 import { saveFile } from '../../api/files'
+
+/**
+ * The grid virtualizes its rows, and @tanstack/react-virtual sizes its window
+ * from the scroll viewport's `offsetHeight` — which jsdom always reports as 0.
+ * Without this stub the grid renders a header and no body rows at all. See
+ * DataGrid.test.tsx.
+ */
+Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+  configurable: true,
+  get() {
+    return this.hasAttribute('data-grid-body-viewport') ? 600 : 0
+  },
+})
 
 vi.mock('../../api/timecards', async () => {
   const actual = await vi.importActual('../../api/timecards')
@@ -54,6 +67,14 @@ describe('TimecardReport', () => {
     ])
   })
 
+  // The grid renders more than one <table> (header + virtualized body), so
+  // `getByRole('table')` — used to wait for load before the migration — no
+  // longer identifies a single element. The Export button only enables once
+  // loading finishes and there is at least one row, so it doubles as the
+  // "data has loaded" signal every test below waits on.
+  const waitForLoad = () =>
+    waitFor(() => expect(screen.getByRole('button', { name: /export/i })).not.toBeDisabled())
+
   it('reads the current month to start with', async () => {
     render(<TimecardReport />)
 
@@ -69,28 +90,28 @@ describe('TimecardReport', () => {
   it('totals by project and activity, whatever days the time fell on', async () => {
     render(<TimecardReport />)
 
-    const table = await screen.findByRole('table')
-    const dev = within(table).getByText('Software Development').closest('tr')!
+    // No longer scoped `within(table)` — the grid renders more than one
+    // <table> element, so a single row's own cells are queried instead.
+    const dev = (await screen.findByText('Software Development')).closest('tr')!
     // The 1st and the 20th, added together.
     expect(within(dev).getByText('5.00')).toBeInTheDocument()
-    expect(within(table).queryByText('2026-09-01')).not.toBeInTheDocument()
+    expect(screen.queryByText('2026-09-01')).not.toBeInTheDocument()
   })
 
   it('gives the total for the period', async () => {
     render(<TimecardReport />)
 
-    await screen.findByRole('table')
+    await waitForLoad()
     // The number and its unit are separate elements, so the number carries
     // the emphasis and the word does not. Scoped to the header, because the
-    // table's own Total row shows the same figure.
+    // grid's own footer row shows the same figure.
     expect(screen.getByText('hours').parentElement).toHaveTextContent('9.00')
   })
 
   it('carries the program, which is what totals roll up to', async () => {
     render(<TimecardReport />)
 
-    const table = await screen.findByRole('table')
-    expect(within(table).getByText('Platform')).toBeInTheDocument()
+    expect(await screen.findByText('Platform')).toBeInTheDocument()
   })
 
   /* Unmapped time has to be visible here, or it is billed to nobody. */
@@ -148,7 +169,7 @@ describe('TimecardReport', () => {
     it('writes the rows to a workbook and offers it for saving', async () => {
       const user = userEvent.setup()
       render(<TimecardReport />)
-      await screen.findByRole('table')
+      await waitForLoad()
 
       await user.click(screen.getByRole('button', { name: /export/i }))
 
@@ -164,7 +185,7 @@ describe('TimecardReport', () => {
     it('puts the period inside the workbook, not only in the name', async () => {
       const user = userEvent.setup()
       render(<TimecardReport />)
-      await screen.findByRole('table')
+      await waitForLoad()
 
       await user.click(screen.getByRole('button', { name: /export/i }))
 
@@ -179,7 +200,7 @@ describe('TimecardReport', () => {
     it('writes hours as numbers', async () => {
       const user = userEvent.setup()
       render(<TimecardReport />)
-      await screen.findByRole('table')
+      await waitForLoad()
 
       await user.click(screen.getByRole('button', { name: /export/i }))
 
@@ -193,7 +214,7 @@ describe('TimecardReport', () => {
     it('names the file for the period', async () => {
       const user = userEvent.setup()
       render(<TimecardReport />)
-      await screen.findByRole('table')
+      await waitForLoad()
 
       await user.click(screen.getByRole('button', { name: /export/i }))
 
@@ -210,7 +231,7 @@ describe('TimecardReport', () => {
       const user = userEvent.setup()
       vi.mocked(saveFile).mockResolvedValue(false)
       render(<TimecardReport />)
-      await screen.findByRole('table')
+      await waitForLoad()
 
       await user.click(screen.getByRole('button', { name: /export/i }))
 
@@ -222,7 +243,7 @@ describe('TimecardReport', () => {
       const user = userEvent.setup()
       vi.mocked(saveFile).mockRejectedValue(new Error('disk full'))
       render(<TimecardReport />)
-      await screen.findByRole('table')
+      await waitForLoad()
 
       await user.click(screen.getByRole('button', { name: /export/i }))
 
@@ -236,6 +257,54 @@ describe('TimecardReport', () => {
       await waitFor(() =>
         expect(screen.getByRole('button', { name: /export/i })).toBeDisabled()
       )
+    })
+  })
+
+  describe('the footer total', () => {
+    /* A fixture whose sum (7.85) is distinctive from the 9.00 the other
+       tests' fixture produces, so a passing assertion can't be coincidence. */
+    it('matches the header strip figure', async () => {
+      vi.mocked(getTimecardEntriesInRange).mockResolvedValue([
+        entry({ id: 1, hours: 3.35 }),
+        entry({ id: 2, hours: 4.5, project_id: 2, activity_id: null })
+      ])
+      render(<TimecardReport />)
+
+      await waitFor(() => expect(screen.getByText('hours').parentElement).toHaveTextContent('7.85'))
+
+      // Project's footer is the literal string 'Total', which becomes this
+      // row's accessible name.
+      const footerRow = screen.getByRole('row', { name: /total/i })
+      expect(within(footerRow).getByText('7.85')).toBeInTheDocument()
+    })
+
+    /* Task 23's review found the one gap in the footer feature: no test put
+       a footer cell under a PINNED column, where a total drifting out from
+       under its frozen column is exactly what the sticky offset exists to
+       prevent. Pins Program (which carries no footer of its own) left,
+       leaving Hours' real footer total to prove the row still renders and
+       lines up correctly around the pinned cell. */
+    it('keeps a pinned column footer cell at the same sticky offset as its header', async () => {
+      render(<TimecardReport />)
+      await waitForLoad()
+
+      const programHeader = screen.getByText('Program').closest('th')!
+      fireEvent.click(within(programHeader).getByLabelText('Column menu'))
+      const pinParent = await screen.findByRole('menuitem', { name: /pin column/i })
+      fireEvent.mouseEnter(pinParent)
+      fireEvent.click(await screen.findByRole('menuitem', { name: /pin left/i }))
+
+      const pinnedHeader = document.querySelector(
+        'th[data-column-id="program"]'
+      ) as HTMLElement
+      const pinnedFooterCell = document.querySelector(
+        'tfoot td[data-column-id="program"]'
+      ) as HTMLElement
+
+      // Assert the inline style attribute, not toHaveStyle — setup.ts stubs
+      // getComputedStyle with a fixed object.
+      expect(pinnedHeader.style.left).not.toBe('')
+      expect(pinnedFooterCell.style.left).toBe(pinnedHeader.style.left)
     })
   })
 })
