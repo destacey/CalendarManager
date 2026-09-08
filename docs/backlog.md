@@ -254,3 +254,23 @@ component render (it now needs only an `offsetHeight` stub on
 `[data-grid-body-viewport]` and the custom `render` from `src/test/utils`), and
 split out the few cases that genuinely need a frozen clock so the rest can use
 real dates.
+
+## The test suite rebuilds jsdom 81 times
+
+`npm run test:run` takes ~110-140s, and vitest reports that creating a jsdom
+environment per file accounts for about **a quarter of that** (81 environments,
+~578s of tracked work). Its own suggestion is `pool: 'vmThreads'` or
+`isolate: false`, either of which would reuse environments and cut the runtime
+substantially.
+
+**Deliberately not done** (2026-09-07): this suite mutates globals per file —
+`HTMLElement.prototype.offsetHeight` (the grid's virtualization stub),
+`matchMedia`, `getComputedStyle`, and the global `dayjs` mock that individual
+files opt out of with `vi.unmock`. Sharing one environment across files could
+break tests in ways that look unrelated to the change. Worth doing, but as its
+own piece of work with the global mutations audited first, not as a
+performance tweak.
+
+The cost of leaving it is real: CPU starvation under that load pushed the
+heaviest grid tests past vitest's 10s `testTimeout` (~1.4s alone, >10s in the
+full suite), which is why `EventTable.test.tsx` carries explicit 30s budgets.

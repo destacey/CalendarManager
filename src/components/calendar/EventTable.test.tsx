@@ -762,7 +762,16 @@ describe('EventTable', () => {
     // The offsetHeight stub at the top of this file gives the body viewport
     // 600px; rows keep the virtualizer's 28px estimate, so ~22 rows are
     // visible and the window is that plus 10 rows of overscan either side.
-    const ROW_ESTIMATE = 28
+    /* These three render the REAL EventTable over a 200-row fixture, open an antd
+   Select, and drive two virtualizer scroll cycles. They take ~1.0-1.4s on an
+   idle machine but over 10s when the full suite saturates the CPU — the suite
+   spins up 81 jsdom environments, which is 25% of its own runtime. That starved
+   them past vitest's global 10s testTimeout, failing ~2 runs in 3 with
+   "Test timed out" rather than any assertion. The work is genuinely expensive,
+   so the budget is raised here rather than the tests being thinned. */
+const HEAVY_VIRTUALIZATION_TIMEOUT = 30_000
+
+const ROW_ESTIMATE = 28
     const MONTH_SIZE = 200
 
     /** A month's worth of distinct events. The component dedupes on
@@ -818,9 +827,15 @@ describe('EventTable', () => {
       viewport.scrollTop = 100 * ROW_ESTIMATE
       fireEvent.scroll(viewport)
 
-      expect(screen.queryByText('Event 001')).not.toBeInTheDocument()
+      // The virtualizer re-renders in response to the scroll event rather than
+      // during it, so these have to be awaited — a synchronous read here passes
+      // or fails on whether React happened to have flushed yet, which under a
+      // loaded full-suite run it often has not.
+      await waitFor(() => {
+        expect(screen.queryByText('Event 001')).not.toBeInTheDocument()
+      })
       expect(screen.getByText('Event 100')).toBeInTheDocument()
-    })
+    }, HEAVY_VIRTUALIZATION_TIMEOUT)
 
     /* The hazard the click-to-edit mapping cells create under virtualization:
        they leave edit mode on `onBlur`, and a row unmounted by a scroll never
@@ -834,23 +849,34 @@ describe('EventTable', () => {
       fireEvent.click(screen.getByRole('button', { name: /Change project for Event 001/ }))
       expect(await screen.findByRole('combobox')).toBeInTheDocument()
 
-      // Scroll far enough that row 0 leaves the overscan window entirely…
+      /* Scroll far enough that row 0 leaves the overscan window entirely.
+         Wait on a FAR row appearing, not on row 0's label button vanishing:
+         while the cell is editing there is no label button (see the
+         `if (!editing)` early return), so "the button is gone" is already
+         true and would let us scroll back before the virtualizer had
+         processed this scroll at all — leaving the row mounted, still
+         editing, and the test failing for a reason it never meant to test. */
       const viewport = bodyViewport()
       viewport.scrollTop = 100 * ROW_ESTIMATE
       fireEvent.scroll(viewport)
-      expect(
-        screen.queryByRole('button', { name: /Change project for Event 001/ })
-      ).not.toBeInTheDocument()
+      await waitFor(() => {
+        expect(screen.getByText('Event 100')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('Event 001')).not.toBeInTheDocument()
 
-      // …and back.
+      // …and back, again waiting on the window to actually move.
       viewport.scrollTop = 0
       fireEvent.scroll(viewport)
+      await waitFor(() => {
+        expect(screen.getByText('Event 001')).toBeInTheDocument()
+      })
 
+      // The row came back as its label, not as a Select that never blurred.
       expect(
         screen.getByRole('button', { name: /Change project for Event 001/ })
       ).toBeInTheDocument()
       expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
-    })
+    }, HEAVY_VIRTUALIZATION_TIMEOUT)
 
     /* Rows are focusable buttons now, so the whole row opens the event — but
        a click on a mapping cell has to edit the mapping and nothing else. */

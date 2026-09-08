@@ -230,6 +230,23 @@ everything else, which is why the extensions carry it instead.
 
 ### Testing Patterns
 - **Component Tests**: Test user-visible behavior, not implementation details
+- **Watch for an assertion that passes for a reason other than the one it
+  names.** This bit twice during the grid work. A test claiming to prove the
+  row-click search is bounded couldn't fail, because an activatable row
+  matches the interactive selector itself, so the search never walked past it.
+  A test claiming a scrolled-away cell "returns to its label, not a still-open
+  Select" waited for that label to be *absent* as its signal the row had
+  unmounted — but editing already removes the label, so the wait was satisfied
+  instantly and the scroll it was meant to await never happened. Both looked
+  entirely reasonable. When a test guards something subtle, break it on
+  purpose and confirm it fails.
+- **A test can fail purely from CPU starvation.** The suite creates 81 jsdom
+  environments, about a quarter of its own runtime. The heaviest grid tests run
+  ~1.4s alone and over 10s under that load, which blew vitest's global 10s
+  `testTimeout` roughly two runs in three — reported as "Test timed out", never
+  as an assertion failure. `EventTable.test.tsx` gives those an explicit 30s
+  budget. Before restructuring a test that fails only in the full suite, time
+  it both ways.
 - **Grid tests need two things or every row assertion fails** — an
   `offsetHeight` stub on `[data-grid-body-viewport]` and the custom `render`
   from `src/test/utils`. See the Grids section above.
