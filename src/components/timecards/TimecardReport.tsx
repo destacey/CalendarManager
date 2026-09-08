@@ -145,6 +145,13 @@ const TimecardReport: React.FC = () => {
       id: 'project',
       header: 'Project',
       accessorFn: row => projectById.get(row.project_id ?? -1)?.code ?? '',
+      // Restored from the pre-migration antd `sorter`: locale-aware, unlike
+      // TanStack's default text sort, which lowercases and compares — the two
+      // diverge on accents and diacritics.
+      sortFn: (a, b) =>
+        (projectById.get(a.original.project_id ?? -1)?.code ?? '').localeCompare(
+          projectById.get(b.original.project_id ?? -1)?.code ?? ''
+        ),
       footer: 'Total',
       cell: ({ row }) =>
         row.original.project_id === null ? (
@@ -158,6 +165,12 @@ const TimecardReport: React.FC = () => {
       header: 'Program',
       size: 180,
       accessorFn: row => (row.project_id !== null && projectById.get(row.project_id)?.program) || '',
+      // Restored from the pre-migration antd `sorter` — see the Project
+      // column's comment.
+      sortFn: (a, b) =>
+        (projectById.get(a.original.project_id ?? -1)?.program ?? '').localeCompare(
+          projectById.get(b.original.project_id ?? -1)?.program ?? ''
+        ),
       cell: ({ row }) => (
         <Text type="secondary">
           {(row.original.project_id !== null && projectById.get(row.original.project_id)?.program) ||
@@ -170,6 +183,12 @@ const TimecardReport: React.FC = () => {
       header: 'Activity',
       size: 220,
       accessorFn: row => activityById.get(row.activity_id ?? -1)?.name ?? '',
+      // Restored from the pre-migration antd `sorter` — see the Project
+      // column's comment.
+      sortFn: (a, b) =>
+        (activityById.get(a.original.activity_id ?? -1)?.name ?? '').localeCompare(
+          activityById.get(b.original.activity_id ?? -1)?.name ?? ''
+        ),
       cell: ({ row }) => (
         <Text type="secondary">
           {row.original.activity_id === null

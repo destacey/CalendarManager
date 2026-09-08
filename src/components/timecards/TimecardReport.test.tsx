@@ -307,4 +307,44 @@ describe('TimecardReport', () => {
       expect(pinnedFooterCell.style.left).toBe(pinnedHeader.style.left)
     })
   })
+
+  describe('column sorting', () => {
+    /* The migration onto DataGrid gave Project/Program/Activity an
+       accessorFn and let TanStack's default text sort take over, silently
+       dropping the original antd `localeCompare` sorter — nothing here used
+       to click a header, so the change went unverified. `'cafe'.localeCompare('café')`
+       is -1 under a plain call; a case/accent-insensitive default ties the
+       two and falls back to insertion order instead, so this pins the exact
+       comparator rather than merely "some string sort". */
+    it('sorts the Project column with a plain localeCompare, not a case/accent-insensitive default', async () => {
+      vi.mocked(getProjects).mockResolvedValue([
+        { id: 1, name: 'Cafe One', code: 'café', program: 'Ops', is_active: true },
+        { id: 2, name: 'Cafe Two', code: 'cafe', program: 'Ops', is_active: true }
+      ])
+      // Hours deliberately favor café (project 1): totalsByProjectActivity
+      // returns rows sorted by hours descending, so the *pre-sort* (core)
+      // row order is café, then cafe. A comparator that ties the two (e.g.
+      // sensitivity: 'base') would leave that core order undisturbed on an
+      // ascending click — the opposite of what a real localeCompare produces
+      // — so this arrangement only passes under the exact restored
+      // comparator, not merely "some case/accent-insensitive string sort".
+      vi.mocked(getTimecardEntriesInRange).mockResolvedValue([
+        entry({ id: 1, project_id: 1, hours: 3 }),
+        entry({ id: 2, project_id: 2, hours: 2 })
+      ])
+      render(<TimecardReport />)
+      await waitForLoad()
+
+      fireEvent.click(screen.getByText('Project'))
+
+      const projectCells = () =>
+        Array.from(document.querySelectorAll('tbody td[data-column-id="project"]')).map(
+          c => c.textContent
+        )
+
+      await waitFor(() =>
+        expect(projectCells()).toEqual(['cafe — Cafe Two', 'café — Cafe One'])
+      )
+    })
+  })
 })
