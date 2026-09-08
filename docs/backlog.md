@@ -230,3 +230,27 @@ the current suite. Each of these needed a workaround or a deferral:
 Deliberately not done during the grid port: swapping the test environment
 under a 1200-test suite mid-migration would have destabilised the thing being
 used to prove the migration safe.
+
+## `EventTable.test.tsx` mostly tests a fake table
+
+Found during the DataGrid migration (2026-09-07), pre-existing and deliberately
+left alone — fixing it means rewriting a large test file, which was out of
+scope for a migration branch.
+
+The file carries a module-level `vi.mock('./EventTable')`. Most of its older
+cases therefore assert against a **hand-written fake table with its own eight
+columns**, not the real component — they would pass if `EventTable` were
+gutted. The eleven cases the migration added render the real component and are
+the honest ones.
+
+Compounding it, the file keeps `vi.mock('dayjs')` (whose `toDate()` returns a
+constant and `diff()` always returns 60) because its filename and billable
+assertions depend on that. The deviation is justified, but the consequence is
+that **no test exercises the real Start/End chronological sort or the date-cell
+formatting** — on the most date-heavy table in the app.
+
+Worth doing as its own piece of work: drop the self-mock, let the real
+component render (it now needs only an `offsetHeight` stub on
+`[data-grid-body-viewport]` and the custom `render` from `src/test/utils`), and
+split out the few cases that genuinely need a frozen clock so the rest can use
+real dates.
