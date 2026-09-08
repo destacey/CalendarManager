@@ -256,11 +256,7 @@ describe('TimecardDayModal', () => {
       await waitFor(() => expect(titleOrder()[0]).toBe('Daily Standup'))
 
       fireEvent.click(screen.getByText('Event'))
-      await new Promise(r => setTimeout(r, 100))
-      const eventTh = screen.getByText('Event').closest('th')!
-      require('fs').writeFileSync('scratch-th.html', eventTh.outerHTML)
-      require('fs').writeFileSync('scratch-order.json', JSON.stringify(titleOrder()))
-      await waitFor(() => expect(titleOrder()[0]).toBe('Sprint Review'), { timeout: 500 }).catch(() => {})
+      await waitFor(() => expect(titleOrder()[0]).toBe('Sprint Review'))
     })
 
     it('sorts by hours', async () => {
