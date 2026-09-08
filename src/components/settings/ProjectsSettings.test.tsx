@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
 import ProjectsSettings from './ProjectsSettings'
@@ -15,6 +15,20 @@ import {
   previewProjectImport,
   commitProjectImport
 } from '../../api/projectImport'
+
+/**
+ * The grid virtualizes its rows, and @tanstack/react-virtual sizes its window
+ * from the scroll viewport's `offsetHeight` — which jsdom always reports as 0.
+ * Without this stub the grid renders a header and no body rows at all, so
+ * every row-content assertion below would fail. Covers both the main table
+ * and the import-preview grid inside the modal. See DataGrid.test.tsx.
+ */
+Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+  configurable: true,
+  get() {
+    return this.hasAttribute('data-grid-body-viewport') ? 600 : 0
+  },
+})
 
 // A bare `vi.mock('../../api/projects')` automock replaces DuplicateProjectCodeError
 // with a mocked class whose constructor never runs, so `new DuplicateProjectCodeError(msg)`
@@ -78,24 +92,27 @@ describe('ProjectsSettings', () => {
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 
-  it('filters the list by the settings search term', async () => {
+  it('shows the section when the search term matches a project by name, without filtering its rows', async () => {
+    // Row-level filtering now belongs to the grid's own toolbar search, not
+    // this page-level searchTerm prop — it only gates whether the whole
+    // section renders. A matching term still shows every row.
     render(<ProjectsSettings searchTerm="billing" />)
 
     await waitFor(() => {
       expect(screen.getByText('Billing Migration')).toBeInTheDocument()
     })
-    expect(screen.queryByText('Website Rebuild')).not.toBeInTheDocument()
+    expect(screen.getByText('Website Rebuild')).toBeInTheDocument()
   })
 
   /* A code is often the thing someone actually remembers about a project, so
-     search has to match it and not just the name. */
-  it('finds a project by its code', async () => {
+     the section-matching still has to check it and not just the name. */
+  it('shows the section when the search term matches a project by its code', async () => {
     render(<ProjectsSettings searchTerm="prj-002" />)
 
     await waitFor(() => {
       expect(screen.getByText('Billing Migration')).toBeInTheDocument()
     })
-    expect(screen.queryByText('Website Rebuild')).not.toBeInTheDocument()
+    expect(screen.getByText('Website Rebuild')).toBeInTheDocument()
   })
 
   it('creates a project from the add modal', async () => {
@@ -147,7 +164,12 @@ describe('ProjectsSettings', () => {
     render(<ProjectsSettings />)
     await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Edit Website Rebuild' }))
+    // Individual per-action buttons were replaced by the grid's single "..."
+    // row-actions dropdown; open Website Rebuild's row (index 0) and click
+    // Edit. antd 6 renders a menu item's icon label inline with its text, so
+    // an anchored /^edit$/i regex matches nothing — match a substring.
+    await user.click(screen.getAllByLabelText('Row actions')[0])
+    await user.click(await screen.findByText(/edit/i))
     const nameField = await screen.findByLabelText('Name')
     await user.clear(nameField)
     await user.type(nameField, 'Website Rebuild v2')
@@ -167,8 +189,13 @@ describe('ProjectsSettings', () => {
     render(<ProjectsSettings />)
     await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Delete Website Rebuild' }))
-    await user.click(await screen.findByRole('button', { name: /^yes$/i }))
+    // A menu item's onClick can't host an anchored Popconfirm, so delete now
+    // confirms through a modal (confirmDelete), whose OK button reads
+    // "Delete" rather than the old Popconfirm's "Yes".
+    await user.click(screen.getAllByLabelText('Row actions')[0])
+    await user.click(await screen.findByText(/delete/i))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     await waitFor(() => {
       expect(deleteProject).toHaveBeenCalledWith(1)
@@ -185,8 +212,10 @@ describe('ProjectsSettings', () => {
     render(<ProjectsSettings />)
     await waitFor(() => expect(screen.getByText('Website Rebuild')).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Delete Website Rebuild' }))
-    await user.click(await screen.findByRole('button', { name: /^yes$/i }))
+    await user.click(screen.getAllByLabelText('Row actions')[0])
+    await user.click(await screen.findByText(/delete/i))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     await waitFor(() => {
       expect(screen.getByText(/34 events unmapped, 2 rules removed/)).toBeInTheDocument()

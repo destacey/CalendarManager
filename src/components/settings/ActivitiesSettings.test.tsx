@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/utils'
 import ActivitiesSettings from './ActivitiesSettings'
@@ -10,6 +10,19 @@ import {
   deleteActivity,
   DuplicateActivityError
 } from '../../api/activities'
+
+/**
+ * The grid virtualizes its rows, and @tanstack/react-virtual sizes its window
+ * from the scroll viewport's `offsetHeight` — which jsdom always reports as 0.
+ * Without this stub the grid renders a header and no body rows at all, so
+ * every row-content assertion below would fail. See DataGrid.test.tsx.
+ */
+Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+  configurable: true,
+  get() {
+    return this.hasAttribute('data-grid-body-viewport') ? 600 : 0
+  },
+})
 
 // A bare `vi.mock('../../api/activities')` automock replaces DuplicateActivityError
 // with a mocked class whose constructor never runs, so `new DuplicateActivityError(msg)`
@@ -56,13 +69,16 @@ describe('ActivitiesSettings', () => {
     })
   })
 
-  it('filters the list by the settings search term', async () => {
+  it('shows the section when the search term matches an activity by name, without filtering its rows', async () => {
+    // Row-level filtering now belongs to the grid's own toolbar search, not
+    // this page-level searchTerm prop — it only gates whether the whole
+    // section renders. A matching term still shows every row.
     render(<ActivitiesSettings searchTerm="devops" />)
 
     await waitFor(() => {
       expect(screen.getByText('DevOps')).toBeInTheDocument()
     })
-    expect(screen.queryByText('Architecture')).not.toBeInTheDocument()
+    expect(screen.getByText('Architecture')).toBeInTheDocument()
   })
 
   it('creates an activity from the add modal', async () => {
@@ -92,7 +108,11 @@ describe('ActivitiesSettings', () => {
     render(<ActivitiesSettings />)
     await waitFor(() => expect(screen.getByText('DevOps')).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Edit DevOps' }))
+    // Individual per-action buttons were replaced by the grid's single "..."
+    // row-actions dropdown; open the DevOps row's (index 1) and click Edit.
+    const actionButtons = screen.getAllByLabelText('Row actions')
+    await user.click(actionButtons[1])
+    await user.click(await screen.findByText(/edit/i))
     const nameField = await screen.findByLabelText('Name')
     await user.clear(nameField)
     await user.type(nameField, 'Platform DevOps')
@@ -112,8 +132,15 @@ describe('ActivitiesSettings', () => {
     render(<ActivitiesSettings />)
     await waitFor(() => expect(screen.getByText('Architecture')).toBeInTheDocument())
 
-    await user.click(screen.getAllByRole('button', { name: /delete/i })[0])
-    await user.click(await screen.findByRole('button', { name: /^yes$/i }))
+    // Individual per-action buttons were replaced by the grid's single "..."
+    // row-actions dropdown; a menu item's onClick can't host an anchored
+    // Popconfirm, so delete now confirms through a modal (confirmDelete),
+    // whose OK button reads "Delete" rather than the old Popconfirm's "Yes".
+    const actionButtons = screen.getAllByLabelText('Row actions')
+    await user.click(actionButtons[0])
+    await user.click(await screen.findByText(/delete/i))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     await waitFor(() => {
       expect(deleteActivity).toHaveBeenCalledWith(1)
@@ -130,8 +157,11 @@ describe('ActivitiesSettings', () => {
     render(<ActivitiesSettings />)
     await waitFor(() => expect(screen.getByText('Architecture')).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Delete Architecture' }))
-    await user.click(await screen.findByRole('button', { name: /^yes$/i }))
+    const actionButtons = screen.getAllByLabelText('Row actions')
+    await user.click(actionButtons[0])
+    await user.click(await screen.findByText(/delete/i))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     await waitFor(() => {
       expect(screen.getByText(/cleared from 12 events and 1 rule/)).toBeInTheDocument()

@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
-import {
-  Typography, Space, Button, Table, Modal, Form, DatePicker, Tag, Popconfirm, Flex, Empty
-} from 'antd'
+import { Typography, Space, Button, App, Modal, Form, DatePicker, Tag, Flex } from 'antd'
 import dayjs, { Dayjs } from 'dayjs'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
+import type { ItemType } from 'antd/es/menu/interface'
 import { Timecard } from '../../api/timecards'
 import { weekBoundsOf } from '../../utils/timecardGrid'
+import { DataGrid, createActionsColumn, confirmDelete } from '../grid'
+import type { ColumnDef } from '../grid'
 
 const { Text } = Typography
 
@@ -33,6 +34,7 @@ const TimecardList: React.FC<TimecardListProps> = ({
   onCreate,
   onDelete
 }) => {
+  const { modal } = App.useApp()
   const [modalVisible, setModalVisible] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form] = Form.useForm()
@@ -54,49 +56,57 @@ const TimecardList: React.FC<TimecardListProps> = ({
     }
   }
 
-  const columns = [
+  const handleDeleteClick = (timecard: Timecard) => {
+    confirmDelete(modal, {
+      content: 'Its entries go with it. The events are untouched.',
+      onConfirm: () => onDelete(timecard),
+    })
+  }
+
+  const columns: ColumnDef<Timecard, unknown>[] = [
     {
-      title: 'Week',
-      key: 'name',
-      sorter: (a: Timecard, b: Timecard) => a.start_date.localeCompare(b.start_date),
-      defaultSortOrder: 'descend' as const,
-      render: (_: unknown, record: Timecard) => (
+      // The visible label is the week's name, but the column sorts (and
+      // defaults to sorting) by its actual start date.
+      accessorKey: 'start_date',
+      header: 'Week',
+      meta: { columnType: 'dateOnly' },
+      cell: ({ row }) => (
         <Button
           type="link"
           style={{ padding: 0, height: 'auto' }}
-          onClick={() => onOpen(record)}
+          onClick={() => onOpen(row.original)}
         >
-          {record.name}
+          {row.original.name}
         </Button>
       )
     },
     {
-      title: 'Dates',
-      key: 'dates',
-      width: 220,
-      render: (_: unknown, record: Timecard) => (
+      id: 'dates',
+      header: 'Dates',
+      size: 220,
+      cell: ({ row }) => (
         <Text type="secondary" style={{ fontSize: 12 }}>
-          {record.start_date} to {record.end_date}
+          {row.original.start_date} to {row.original.end_date}
         </Text>
       )
     },
     {
-      title: 'Hours',
-      key: 'hours',
-      width: 100,
-      align: 'right' as const,
-      sorter: (a: Timecard, b: Timecard) => (hoursById[a.id!] ?? 0) - (hoursById[b.id!] ?? 0),
-      render: (_: unknown, record: Timecard) => (
-        <Text strong>{(hoursById[record.id!] ?? 0).toFixed(2)}</Text>
-      )
+      id: 'hours',
+      header: 'Hours',
+      size: 100,
+      meta: { align: 'right' },
+      accessorFn: (row) => hoursById[row.id!] ?? 0,
+      // TanStack defaults a numeric column's first click to descending; the
+      // original antd sorter went ascending first, like every column here.
+      sortDescFirst: false,
+      cell: ({ row }) => <Text strong>{(hoursById[row.original.id!] ?? 0).toFixed(2)}</Text>
     },
     {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      width: 120,
-      render: (status: string) =>
-        status === 'submitted' ? (
+      accessorKey: 'status',
+      header: 'Status',
+      size: 120,
+      cell: ({ row }) =>
+        row.original.status === 'submitted' ? (
           <Tag color="success" style={{ marginInlineEnd: 0 }}>
             Submitted
           </Tag>
@@ -105,12 +115,12 @@ const TimecardList: React.FC<TimecardListProps> = ({
         )
     },
     {
-      title: 'Pulled',
-      dataIndex: 'generated_at',
-      key: 'generated_at',
-      width: 170,
-      render: (generatedAt: string | null) =>
-        generatedAt ? (
+      accessorKey: 'generated_at',
+      header: 'Pulled',
+      size: 170,
+      cell: ({ row }) => {
+        const generatedAt = row.original.generated_at
+        return generatedAt ? (
           <Text type="secondary" style={{ fontSize: 12 }}>
             {generatedAt.slice(0, 16).replace('T', ' ')}
           </Text>
@@ -121,28 +131,19 @@ const TimecardList: React.FC<TimecardListProps> = ({
             Not yet pulled
           </Text>
         )
+      }
     },
-    {
-      title: '',
-      key: 'actions',
-      width: 60,
-      render: (_: unknown, record: Timecard) => (
-        <Popconfirm
-          title="Delete this week?"
-          description="Its entries go with it. The events are untouched."
-          okText="Yes"
-          cancelText="No"
-          onConfirm={() => onDelete(record)}
-        >
-          <Button
-            icon={<DeleteOutlined />}
-            size="small"
-            danger
-            aria-label={`Delete ${record.name}`}
-          />
-        </Popconfirm>
-      )
-    }
+    createActionsColumn<Timecard>({
+      getItems: (record) => [
+        {
+          key: 'delete',
+          label: 'Delete',
+          icon: <DeleteOutlined />,
+          danger: true,
+          onClick: () => handleDeleteClick(record),
+        },
+      ] as ItemType[],
+    }),
   ]
 
   return (
@@ -165,18 +166,17 @@ const TimecardList: React.FC<TimecardListProps> = ({
         </Button>
       </Flex>
 
-      {!loading && timecards.length === 0 ? (
-        <Empty description="No timecards yet" />
-      ) : (
-        <Table
-          columns={columns}
-          dataSource={timecards}
-          loading={loading}
-          rowKey="id"
-          pagination={false}
-          size="small"
-        />
-      )}
+      <DataGrid<Timecard>
+        data={timecards}
+        columns={columns}
+        isLoading={loading}
+        getRowId={row => String(row.id)}
+        variant="advanced"
+        persistStateKey="timecards"
+        csvFileName="timecards"
+        emptyMessage="No timecards yet"
+        initialSorting={[{ id: 'start_date', desc: true }]}
+      />
 
       <Modal
         title="New week"

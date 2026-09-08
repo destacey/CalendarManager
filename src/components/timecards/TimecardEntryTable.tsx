@@ -1,8 +1,10 @@
 import React from 'react'
-import { Typography, Table, Tag, Popconfirm, Button, Select, InputNumber, Input } from 'antd'
+import { Typography, Tag, Popconfirm, Button, Select, InputNumber, Input } from 'antd'
 import { DeleteOutlined } from '@ant-design/icons'
 import { Project, Activity } from '../../types'
 import { TimecardEntry } from '../../api/timecards'
+import { DataGrid } from '../grid'
+import type { ColumnDef } from '../grid'
 
 const { Text } = Typography
 
@@ -43,114 +45,130 @@ const TimecardEntryTable: React.FC<TimecardEntryTableProps> = ({
   showDate = true,
   showNote = false
 }) => {
-  const columns = [
+  const columns: ColumnDef<TimecardEntry, unknown>[] = [
     ...(showDate
       ? [
           {
-            title: 'Date',
-            dataIndex: 'date',
-            key: 'date',
-            width: 120,
-            sorter: (a: TimecardEntry, b: TimecardEntry) => a.date.localeCompare(b.date),
-            defaultSortOrder: 'ascend' as const
-          }
+            accessorKey: 'date',
+            header: 'Date',
+            size: 120,
+            sortFn: (a, b) => a.original.date.localeCompare(b.original.date),
+          } as ColumnDef<TimecardEntry, unknown>
         ]
       : []),
     {
-      title: 'Hours',
-      dataIndex: 'hours',
-      key: 'hours',
-      width: 110,
-      render: (hours: number, record: TimecardEntry) => (
-        <InputNumber
-          size="small"
-          min={0}
-          max={24}
-          step={0.25}
-          value={hours}
-          disabled={disabled}
-          style={{ width: 80 }}
-          aria-label={`Hours on ${record.date}`}
-          onBlur={e => {
-            const next = Number((e.target as HTMLInputElement).value)
-            if (Number.isFinite(next) && next !== hours) onPatch(record, { hours: next })
-          }}
-        />
-      )
+      accessorKey: 'hours',
+      header: 'Hours',
+      size: 110,
+      cell: ({ row }) => {
+        const record = row.original
+        return (
+          <div data-row-activate="ignore">
+            <InputNumber
+              size="small"
+              min={0}
+              max={24}
+              step={0.25}
+              value={record.hours}
+              disabled={disabled}
+              style={{ width: 80 }}
+              aria-label={`Hours on ${record.date}`}
+              onBlur={e => {
+                const next = Number((e.target as HTMLInputElement).value)
+                if (Number.isFinite(next) && next !== record.hours) onPatch(record, { hours: next })
+              }}
+            />
+          </div>
+        )
+      }
     },
     {
-      title: 'Project',
-      key: 'project',
-      render: (_: unknown, record: TimecardEntry) => (
-        <Select
-          size="small"
-          style={{ width: '100%', minWidth: 170 }}
-          value={record.project_id ?? NONE}
-          disabled={disabled}
-          aria-label={`Project on ${record.date}`}
-          showSearch
-          optionFilterProp="label"
-          onChange={value => onPatch(record, { project_id: value === NONE ? null : value })}
-          options={[
-            { value: NONE, label: 'Unassigned' },
-            ...projects
-              .filter(p => p.is_active || p.id === record.project_id)
-              .map(p => ({ value: p.id!, label: projectLabel(p) }))
-          ]}
-        />
-      )
+      id: 'project',
+      header: 'Project',
+      cell: ({ row }) => {
+        const record = row.original
+        return (
+          <div data-row-activate="ignore">
+            <Select
+              size="small"
+              style={{ width: '100%', minWidth: 170 }}
+              value={record.project_id ?? NONE}
+              disabled={disabled}
+              aria-label={`Project on ${record.date}`}
+              showSearch
+              optionFilterProp="label"
+              onChange={value => onPatch(record, { project_id: value === NONE ? null : value })}
+              options={[
+                { value: NONE, label: 'Unassigned' },
+                ...projects
+                  .filter(p => p.is_active || p.id === record.project_id)
+                  .map(p => ({ value: p.id!, label: projectLabel(p) }))
+              ]}
+            />
+          </div>
+        )
+      }
     },
     {
-      title: 'Activity',
-      key: 'activity',
-      render: (_: unknown, record: TimecardEntry) => (
-        <Select
-          size="small"
-          style={{ width: '100%', minWidth: 150 }}
-          value={record.activity_id ?? NONE}
-          disabled={disabled}
-          aria-label={`Activity on ${record.date}`}
-          showSearch
-          optionFilterProp="label"
-          onChange={value => onPatch(record, { activity_id: value === NONE ? null : value })}
-          options={[
-            { value: NONE, label: 'No activity' },
-            ...activities
-              .filter(a => a.is_active || a.id === record.activity_id)
-              .map(a => ({ value: a.id!, label: a.name }))
-          ]}
-        />
-      )
+      id: 'activity',
+      header: 'Activity',
+      cell: ({ row }) => {
+        const record = row.original
+        return (
+          <div data-row-activate="ignore">
+            <Select
+              size="small"
+              style={{ width: '100%', minWidth: 150 }}
+              value={record.activity_id ?? NONE}
+              disabled={disabled}
+              aria-label={`Activity on ${record.date}`}
+              showSearch
+              optionFilterProp="label"
+              onChange={value => onPatch(record, { activity_id: value === NONE ? null : value })}
+              options={[
+                { value: NONE, label: 'No activity' },
+                ...activities
+                  .filter(a => a.is_active || a.id === record.activity_id)
+                  .map(a => ({ value: a.id!, label: a.name }))
+              ]}
+            />
+          </div>
+        )
+      }
     },
     ...(showNote
       ? [
           {
-            title: 'Note',
-            dataIndex: 'note',
-            key: 'note',
-            render: (note: string | null, record: TimecardEntry) => (
-              <Input
-                size="small"
-                defaultValue={note ?? ''}
-                placeholder="Add a note"
-                disabled={disabled}
-                aria-label={`Note on ${record.date}`}
-                onBlur={e => {
-                  const next = e.target.value.trim()
-                  if (next !== (note ?? '')) onPatch(record, { note: next || null })
-                }}
-              />
-            )
-          }
+            accessorKey: 'note',
+            header: 'Note',
+            cell: ({ row }: { row: { original: TimecardEntry } }) => {
+              const record = row.original
+              return (
+                <div data-row-activate="ignore">
+                  <Input
+                    size="small"
+                    defaultValue={record.note ?? ''}
+                    placeholder="Add a note"
+                    disabled={disabled}
+                    aria-label={`Note on ${record.date}`}
+                    onBlur={e => {
+                      const next = e.target.value.trim()
+                      if (next !== (record.note ?? '')) onPatch(record, { note: next || null })
+                    }}
+                  />
+                </div>
+              )
+            }
+          } as ColumnDef<TimecardEntry, unknown>
         ]
       : []),
     {
-      title: 'Source',
-      dataIndex: 'source',
-      key: 'source',
-      width: 130,
-      render: (source: string, record: TimecardEntry) => {
-        if (source === 'cell') {
+      accessorKey: 'source',
+      header: 'Source',
+      size: 130,
+      cell: ({ row }) => {
+        const record = row.original
+        if (record.source === 'cell') {
           // Worth distinguishing: this one also keeps events out of its cell.
           return (
             <Tag color="purple" style={{ marginInlineEnd: 0 }}>
@@ -158,7 +176,7 @@ const TimecardEntryTable: React.FC<TimecardEntryTableProps> = ({
             </Tag>
           )
         }
-        if (source === 'manual') {
+        if (record.source === 'manual') {
           return (
             <Tag color="blue" style={{ marginInlineEnd: 0 }}>
               Yours
@@ -173,36 +191,41 @@ const TimecardEntryTable: React.FC<TimecardEntryTableProps> = ({
       }
     },
     {
-      title: '',
-      key: 'actions',
-      width: 60,
-      render: (_: unknown, record: TimecardEntry) => (
-        <Popconfirm
-          title="Delete this entry?"
-          okText="Yes"
-          cancelText="No"
-          disabled={disabled}
-          onConfirm={() => onDelete(record)}
-        >
-          <Button
-            icon={<DeleteOutlined />}
-            size="small"
-            danger
-            disabled={disabled}
-            aria-label={`Delete entry on ${record.date}`}
-          />
-        </Popconfirm>
-      )
+      id: 'actions',
+      header: '',
+      size: 60,
+      cell: ({ row }) => {
+        const record = row.original
+        return (
+          <div data-row-activate="ignore">
+            <Popconfirm
+              title="Delete this entry?"
+              okText="Yes"
+              cancelText="No"
+              disabled={disabled}
+              onConfirm={() => onDelete(record)}
+            >
+              <Button
+                icon={<DeleteOutlined />}
+                size="small"
+                danger
+                disabled={disabled}
+                aria-label={`Delete entry on ${record.date}`}
+              />
+            </Popconfirm>
+          </div>
+        )
+      }
     }
   ]
 
   return (
-    <Table
+    <DataGrid<TimecardEntry>
+      data={entries}
       columns={columns}
-      dataSource={entries}
-      rowKey="id"
-      pagination={false}
-      size="small"
+      getRowId={row => String(row.id)}
+      variant="simple"
+      initialSorting={showDate ? [{ id: 'date', desc: false }] : undefined}
     />
   )
 }

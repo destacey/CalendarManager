@@ -16,6 +16,19 @@ import { getProjects } from '../../api/projects'
 import { getActivities } from '../../api/activities'
 import { getEventTypes } from '../../api/eventTypes'
 
+/**
+ * The grid virtualizes its rows, and @tanstack/react-virtual sizes its window
+ * from the scroll viewport's `offsetHeight` — which jsdom always reports as 0.
+ * Without this stub the grid renders a header and no body rows at all, so
+ * every row-content assertion below would fail. See DataGrid.test.tsx.
+ */
+Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+  configurable: true,
+  get() {
+    return this.hasAttribute('data-grid-body-viewport') ? 600 : 0
+  },
+})
+
 // importActual keeps the real InvalidMappingRuleError: an automocked class
 // never runs its constructor, so `message` would come back empty and the
 // component's instanceof check would stop meaning what these tests expect.
@@ -171,7 +184,12 @@ describe('MappingRulesSettings', () => {
     render(<MappingRulesSettings />)
     await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Edit Daily Standup' }))
+    // Individual per-action buttons were replaced by the grid's single "..."
+    // row-actions dropdown; open the Daily Standup row's (index 0) and click
+    // Edit. antd 6 renders a menu item's icon label inline with its text, so
+    // an anchored /^edit$/i regex matches nothing — match a substring.
+    await user.click(screen.getAllByLabelText('Row actions')[0])
+    await user.click(await screen.findByText(/edit/i))
     const nameField = await screen.findByPlaceholderText('e.g. Daily Standup')
     await user.clear(nameField)
     await user.type(nameField, 'Standup')
@@ -191,8 +209,13 @@ describe('MappingRulesSettings', () => {
     render(<MappingRulesSettings />)
     await waitFor(() => expect(screen.getByText('Daily Standup')).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Delete Daily Standup' }))
-    await user.click(await screen.findByRole('button', { name: /^yes$/i }))
+    // A menu item's onClick can't host an anchored Popconfirm, so delete now
+    // confirms through a modal (confirmDelete), whose OK button reads
+    // "Delete" rather than the old Popconfirm's "Yes".
+    await user.click(screen.getAllByLabelText('Row actions')[0])
+    await user.click(await screen.findByText(/delete/i))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     await waitFor(() => expect(deleteMappingRule).toHaveBeenCalledWith(1))
   })
@@ -216,6 +239,44 @@ describe('MappingRulesSettings', () => {
 
     expect(screen.getByRole('button', { name: 'Move Daily Standup up' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Move Recruiting down' })).toBeDisabled()
+  })
+
+  /* The Order column's "#" and its arrows read `rule.priority`, never the
+     grid's row-render position (see the comment above the `columns` array in
+     MappingRulesSettings.tsx). The test above can't prove that: its fixture's
+     priorities (1, 2, 3) match array position exactly, so it passes
+     identically whether the code reads `priority` or a row's display index.
+     This one sorts the grid by a column OTHER than priority first, so the
+     two diverge, then proves the correct record moves — not whichever record
+     happened to render in that screen position. */
+  it('moves the record whose priority matches, not whichever row renders in that position after a sort', async () => {
+    const user = userEvent.setup()
+    const rules = [
+      { id: 10, priority: 1, name_operator: 'is' as const, name_value: 'Alpha', category_value: null, type_id: null, project_id: 1, activity_id: null, is_active: false },
+      { id: 20, priority: 2, name_operator: 'is' as const, name_value: 'Bravo', category_value: null, type_id: null, project_id: 1, activity_id: null, is_active: true },
+      { id: 30, priority: 3, name_operator: 'is' as const, name_value: 'Charlie', category_value: null, type_id: null, project_id: 1, activity_id: null, is_active: false }
+    ]
+    vi.mocked(getMappingRules).mockResolvedValue(rules)
+    vi.mocked(reorderMappingRules).mockResolvedValue(undefined)
+    render(<MappingRulesSettings />)
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument())
+
+    // Sort by Active (ascending: "No" before "Yes"). The DISPLAYED order
+    // becomes Alpha, Charlie, Bravo — Bravo (real priority 2, index 1) now
+    // renders third (index 2).
+    await user.click(screen.getByText('Active'))
+    await waitFor(() => {
+      const rows = screen.getAllByText(/^(Alpha|Bravo|Charlie)$/)
+      expect(rows.map(r => r.textContent)).toEqual(['Alpha', 'Charlie', 'Bravo'])
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Move Bravo up' }))
+
+    // Correct: swap priority-index 1 (Bravo) with priority-index 0 (Alpha) —
+    // id 20 and id 10 trade places, id 30 (Charlie) is untouched.
+    // A row-index-based bug would instead swap displayed index 2 with 1
+    // (Bravo and Charlie: ids 20 and 30), leaving Alpha's id (10) untouched.
+    await waitFor(() => expect(reorderMappingRules).toHaveBeenCalledWith([20, 10, 30]))
   })
 
   describe('re-running the rules', () => {
@@ -326,11 +387,14 @@ describe('MappingRulesSettings', () => {
     expect(screen.getByRole('button', { name: /add rule/i })).toBeDisabled()
   })
 
-  it('filters the list by the settings search term', async () => {
+  it('shows the section when the search term matches a rule by name, without filtering its rows', async () => {
+    // Row-level filtering now belongs to the grid's own toolbar search, not
+    // this page-level searchTerm prop — it only gates whether the whole
+    // section renders. A matching term still shows every row.
     render(<MappingRulesSettings searchTerm="escalation" />)
 
     await waitFor(() => expect(screen.getByText('Escalation')).toBeInTheDocument())
-    expect(screen.queryByText('Daily Standup')).not.toBeInTheDocument()
+    expect(screen.getByText('Daily Standup')).toBeInTheDocument()
   })
 
   it('reports a load failure instead of rendering an empty list silently', async () => {

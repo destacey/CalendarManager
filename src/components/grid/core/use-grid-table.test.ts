@@ -1,0 +1,105 @@
+import { act, renderHook } from '@testing-library/react'
+
+import { mergeColumnVisibility, useGridState } from './use-grid-table'
+
+describe('use-grid-table', () => {
+  describe('mergeColumnVisibility', () => {
+    it('lets a consumer-hidden column override a user show choice', () => {
+      // Arrange / Act
+      const merged = mergeColumnVisibility({ secret: false }, { secret: true })
+
+      // Assert
+      expect(merged).toEqual({ secret: false })
+    })
+
+    it('lets the user hide a column the consumer shows', () => {
+      // Arrange / Act
+      const merged = mergeColumnVisibility({ name: true }, { name: false })
+
+      // Assert
+      expect(merged).toEqual({ name: false })
+    })
+
+    it('keeps consumer-shown columns visible absent a user choice', () => {
+      // Arrange / Act
+      const merged = mergeColumnVisibility(
+        { name: true, secret: false },
+        { team: false },
+      )
+
+      // Assert
+      expect(merged).toEqual({ name: true, secret: false, team: false })
+    })
+
+    it('starts a hiddenByDefault column hidden', () => {
+      // Arrange / Act
+      const merged = mergeColumnVisibility({}, {}, { id: false })
+
+      // Assert
+      expect(merged).toEqual({ id: false })
+    })
+
+    it('lets a user show choice beat the default', () => {
+      // Arrange / Act
+      const merged = mergeColumnVisibility({}, { id: true }, { id: false })
+
+      // Assert
+      expect(merged).toEqual({ id: true })
+    })
+
+    it('falls back to hidden once the user choice is cleared by a reset', () => {
+      // Arrange — the state a reset leaves behind: no user layer at all
+      const merged = mergeColumnVisibility({}, {}, { id: false })
+
+      // Act / Assert
+      expect(merged.id).toBe(false)
+    })
+
+    it('still lets the consumer force a hiddenByDefault column hidden', () => {
+      // Arrange / Act
+      const merged = mergeColumnVisibility({ id: false }, { id: true }, { id: false })
+
+      // Assert
+      expect(merged).toEqual({ id: false })
+    })
+  })
+
+  describe('useGridState', () => {
+    it('starts columnOrder empty', () => {
+      // Arrange / Act
+      const { result } = renderHook(() => useGridState())
+
+      // Assert
+      expect(result.current.columnOrder).toEqual([])
+    })
+
+    it('resetColumnState restores sizing, user visibility, pinning, and order only', () => {
+      // Arrange — user-adjusted column state plus an active sort and filter
+      const { result } = renderHook(() => useGridState())
+      act(() => {
+        result.current.setColumnSizing({ name: 240 })
+        result.current.setUserColumnVisibility({ team: false })
+        result.current.setColumnPinning({ start: ['name'], end: [] })
+        result.current.setColumnOrder(['team', 'name'])
+        result.current.setSorting([{ id: 'name', desc: false }])
+        result.current.setColumnFilters([{ id: 'name', value: 'x' }])
+      })
+
+      // Act
+      act(() => {
+        result.current.resetColumnState()
+      })
+
+      // Assert — column state cleared (incl. order); sort/filters untouched
+      // (that's the toolbar Clear button's job)
+      expect(result.current.columnSizing).toEqual({})
+      expect(result.current.userColumnVisibility).toEqual({})
+      expect(result.current.columnPinning).toEqual({ start: [], end: [] })
+      expect(result.current.columnOrder).toEqual([])
+      expect(result.current.sorting).toEqual([{ id: 'name', desc: false }])
+      expect(result.current.columnFilters).toEqual([
+        { id: 'name', value: 'x' },
+      ])
+    })
+  })
+})

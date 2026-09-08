@@ -13,6 +13,25 @@ import {
 import EventTable from './EventTable'
 import { saveFile } from '../../api/files'
 
+/**
+ * The grid virtualizes its rows, and @tanstack/react-virtual sizes its window
+ * from the scroll viewport's `offsetHeight` — which jsdom always reports as 0.
+ * virtual-core's calculateRange returns an EMPTY range (not an overscan-sized
+ * one) at zero height, so without this the grid renders a header and no body
+ * rows at all, and every "no rows" assertion below would pass for the wrong
+ * reason. 600px over the virtualizer's 28px row estimate is also what fixes
+ * the window size the virtualization suite at the bottom of this file asserts.
+ *
+ * Only the suites rendering the REAL EventTable are affected; the self-mock
+ * below is a hand-rolled table with no virtualizer.
+ */
+Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+  configurable: true,
+  get() {
+    return this.hasAttribute('data-grid-body-viewport') ? 600 : 0
+  },
+})
+
 // Mock ExcelJS library. The buffer is non-empty so the "Excel Export" suite
 // below can assert the export actually hands real bytes to saveFile. The
 // real component calls `new ExcelJS.Workbook()` (a property on the default
@@ -141,6 +160,18 @@ vi.mock('./EventTable', () => ({
     )
   }
 }))
+
+/**
+ * The real component, bypassing the self-mock above. Resolved here at
+ * collection time rather than inside each suite that needs it: EventTable now
+ * pulls in the whole DataGrid module graph (TanStack table + virtual, dnd-kit,
+ * the filter panels), and paying that import inside the first test to call for
+ * it overran the 10s test timeout on a loaded machine — a failure that had
+ * nothing to do with the assertion under it.
+ */
+const { default: RealEventTable } = await vi.importActual<typeof import('./EventTable')>(
+  './EventTable'
+)
 
 describe('EventTable', () => {
   const defaultProps = createEventTableProps()
@@ -543,9 +574,6 @@ describe('EventTable', () => {
      timecard decision, so here they are counted, not converted. */
   describe('all-day events in the billable summary', () => {
     const renderRealTable = async (events: unknown[]) => {
-      const { default: RealEventTable } = await vi.importActual<typeof import('./EventTable')>(
-        './EventTable'
-      )
       const props = createEventTableProps({
         getEventsForDate: vi.fn(() => events),
         eventTypes: [
@@ -598,9 +626,6 @@ describe('EventTable', () => {
 
   describe('Excel Export', () => {
     const captureExportFn = async (overrides = {}) => {
-      const { default: RealEventTable } = await vi.importActual<typeof import('./EventTable')>(
-        './EventTable'
-      )
       let exportFn: (() => void) | undefined
       const props = createEventTableProps({
         onExportReady: (fn: () => void) => {
@@ -669,39 +694,44 @@ describe('EventTable', () => {
      stub has hand-written columns of its own and would prove nothing. */
   describe('Column widths', () => {
     const renderRealTable = async () => {
-      const { default: RealEventTable } = await vi.importActual<typeof import('./EventTable')>(
-        './EventTable'
-      )
       const props = createEventTableProps({
         getEventsForDate: vi.fn(() => [mockTimedEvent])
       })
       render(<RealEventTable {...props} />)
     }
 
-    /** The `<colgroup>` antd emits, as { header text -> width in px }. */
+    /* The grid's shared `<colgroup>`, as { column id -> width in px }. Keyed
+       on `data-column-id` rather than the header's text because a grid header
+       cell also carries a column-menu trigger and a resize handle, so its
+       textContent is no longer just the label. The widths are `width`
+       attributes on the `<col>`s, not inline styles as antd emitted, and the
+       trailing filler `<col>` (which has no column of its own) drops out
+       because only real columns have a header cell to pair with. */
     const columnWidths = () => {
-      const widths = Array.from(document.querySelectorAll('col')).map(col =>
-        parseFloat((col.getAttribute('style') || '').replace(/[^0-9.]/g, '')) || 0
+      const headerTable = document.querySelector('thead')!.closest('table')!
+      const widths = Array.from(headerTable.querySelectorAll('colgroup col')).map(
+        col => Number(col.getAttribute('width')) || 0
       )
-      const headers = Array.from(document.querySelectorAll('th')).map(th => th.textContent || '')
-      return Object.fromEntries(headers.map((h, i) => [h, widths[i]]))
+      const ids = Array.from(
+        headerTable.querySelectorAll('thead tr:not([data-role]) th[data-column-id]')
+      ).map(th => th.getAttribute('data-column-id') as string)
+      return Object.fromEntries(ids.map((id, i) => [id, widths[i]]))
     }
 
-    /* The bug this guards: Title was the only column without a width, so it
-       absorbed whatever space the other seven left over. A virtual table sizes
-       every column as `Math.max(width || 0, minWidth || 0)`, so once the other
-       columns' fixed widths exceeded the container, Title's share hit zero and
-       the column vanished rather than truncating via its `ellipsis` config. */
+    /* The bug this guards: Title used to be the only column without a width,
+       so it absorbed whatever space the others left over and collapsed to
+       nothing once their fixed widths exceeded the container. It now declares
+       a real `size` plus a `minSize` floor a drag-resize cannot go under. */
     it('gives Title a real width instead of letting it collapse to nothing', async () => {
       await renderRealTable()
 
-      expect(columnWidths()['Title']).toBeGreaterThanOrEqual(200)
+      expect(columnWidths()['title']).toBeGreaterThanOrEqual(200)
     })
 
-    /* Generalises the same failure: any column added without a width (or
-       minWidth) collapses the same way Title did, and the table quietly gets
-       narrower instead of scrolling. The floor is deliberately low - this is
-       catching "reserved no space at all", not policing column sizing. */
+    /* Generalises the same failure: any column added without a width collapses
+       the same way Title did, and the table quietly gets narrower instead of
+       scrolling. The floor is deliberately low - this is catching "reserved no
+       space at all", not policing column sizing. */
     it('reserves space for every column, so none can be squeezed away', async () => {
       await renderRealTable()
 
@@ -710,20 +740,174 @@ describe('EventTable', () => {
       expect(collapsed).toEqual([])
     })
 
-    /* The table's own width is what makes the container overflow and scroll.
-       It has to account for every column, or a narrow window squeezes the
-       flexible column to nothing instead of showing a horizontal scrollbar. */
-    it('sizes the table to the full width its columns demand', async () => {
+    /* The columns' total width is what makes the body viewport overflow and
+       scroll horizontally rather than squeezing every column. The grid sizes
+       its tables from the colgroup alone (table-layout: fixed) instead of the
+       explicit table width antd needed, so the assertion is on that total. */
+    it('demands more width in total than a narrow window can give it', async () => {
       await renderRealTable()
 
       const totalColumnWidth = Object.values(columnWidths()).reduce((sum, w) => sum + w, 0)
-      const tableWidth = parseFloat(
-        (document.querySelector('.ant-table-container table')?.getAttribute('style') || '')
-          .match(/width:\s*([0-9.]+)px/)?.[1] || '0'
+
+      expect(totalColumnWidth).toBeGreaterThanOrEqual(1110)
+    })
+  })
+
+  /* The grid this table now uses virtualizes its rows, which is what stops the
+     cost of a month scaling with its event count: before virtualization, one
+     commit of this table blocked the main thread for 1-3.5 seconds on a real
+     month of 504 rows, and the commit repeated. These run against the real
+     component, like the suites above. */
+  describe('row virtualization', () => {
+    // The offsetHeight stub at the top of this file gives the body viewport
+    // 600px; rows keep the virtualizer's 28px estimate, so ~22 rows are
+    // visible and the window is that plus 10 rows of overscan either side.
+    /* These three render the REAL EventTable over a 200-row fixture, open an antd
+   Select, and drive two virtualizer scroll cycles. They take ~1.0-1.4s on an
+   idle machine but over 10s when the full suite saturates the CPU — the suite
+   spins up 81 jsdom environments, which is 25% of its own runtime. That starved
+   them past vitest's global 10s testTimeout, failing ~2 runs in 3 with
+   "Test timed out" rather than any assertion. The work is genuinely expensive,
+   so the budget is raised here rather than the tests being thinned. */
+const HEAVY_VIRTUALIZATION_TIMEOUT = 30_000
+
+const ROW_ESTIMATE = 28
+    const MONTH_SIZE = 200
+
+    /** A month's worth of distinct events. The component dedupes on
+     *  graph_id, so the same array can be returned for every day. */
+    const bigMonth = Array.from({ length: MONTH_SIZE }, (_, i) => ({
+      ...mockTimedEvent,
+      id: i + 1,
+      graph_id: `graph-${String(i + 1).padStart(3, '0')}`,
+      title: `Event ${String(i + 1).padStart(3, '0')}`
+    }))
+
+    const projects = [
+      { id: 1, name: 'Website Rebuild', code: 'PRJ-001', program: 'Platform', is_active: true },
+      { id: 2, name: 'Billing Migration', code: 'PRJ-002', program: 'Finance', is_active: true }
+    ]
+
+    const renderRealTable = async (overrides = {}) => {
+      const props = createEventTableProps(overrides)
+      render(<RealEventTable {...props} />)
+      return props
+    }
+
+    /** The single scrolling body viewport. */
+    const bodyViewport = () =>
+      document.querySelector('[data-grid-body-viewport]') as HTMLElement
+
+    /** Real body rows, excluding the aria-hidden virtual spacers. */
+    const bodyRows = () =>
+      Array.from(
+        document.querySelectorAll('tbody tr:not([aria-hidden="true"])')
+      ) as HTMLTableRowElement[]
+
+    it('keeps only a window of a large month in the DOM, while still counting all of it', async () => {
+      await renderRealTable({ getEventsForDate: vi.fn(() => bigMonth) })
+
+      const rows = bodyRows()
+      // A window, not the month: 600px of viewport plus overscan is well
+      // under 200 rows.
+      expect(rows.length).toBeGreaterThan(0)
+      expect(rows.length).toBeLessThan(MONTH_SIZE / 2)
+      expect(screen.getByText('Event 001')).toBeInTheDocument()
+      expect(screen.queryByText(`Event ${MONTH_SIZE}`)).not.toBeInTheDocument()
+
+      // …but the summary, fed by the grid's displayed rows rather than the
+      // rendered ones, still sees every event.
+      expect(screen.getByText(new RegExp(`${MONTH_SIZE} events`))).toBeInTheDocument()
+    }, HEAVY_VIRTUALIZATION_TIMEOUT)
+
+    it('moves the window when the body scrolls', async () => {
+      await renderRealTable({ getEventsForDate: vi.fn(() => bigMonth) })
+
+      const viewport = bodyViewport()
+      viewport.scrollTop = 100 * ROW_ESTIMATE
+      fireEvent.scroll(viewport)
+
+      // The virtualizer re-renders in response to the scroll event rather than
+      // during it, so these have to be awaited — a synchronous read here passes
+      // or fails on whether React happened to have flushed yet, which under a
+      // loaded full-suite run it often has not.
+      await waitFor(() => {
+        expect(screen.queryByText('Event 001')).not.toBeInTheDocument()
+      })
+      expect(screen.getByText('Event 100')).toBeInTheDocument()
+    }, HEAVY_VIRTUALIZATION_TIMEOUT)
+
+    /* The hazard the click-to-edit mapping cells create under virtualization:
+       they leave edit mode on `onBlur`, and a row unmounted by a scroll never
+       fires one. A cell must not come back still believing it is editing —
+       an open Select over a stale row would silently commit to the wrong
+       event, or lose the choice with no sign it had. */
+    it('returns a scrolled-away mapping cell to its label, not a still-open Select', async () => {
+      await renderRealTable({ getEventsForDate: vi.fn(() => bigMonth), projects })
+
+      // Open the project editor on the first row.
+      fireEvent.click(screen.getByRole('button', { name: /Change project for Event 001/ }))
+      expect(await screen.findByRole('combobox')).toBeInTheDocument()
+
+      /* Scroll far enough that row 0 leaves the overscan window entirely.
+         Wait on a FAR row appearing, not on row 0's label button vanishing:
+         while the cell is editing there is no label button (see the
+         `if (!editing)` early return), so "the button is gone" is already
+         true and would let us scroll back before the virtualizer had
+         processed this scroll at all — leaving the row mounted, still
+         editing, and the test failing for a reason it never meant to test. */
+      const viewport = bodyViewport()
+      viewport.scrollTop = 100 * ROW_ESTIMATE
+      fireEvent.scroll(viewport)
+      await waitFor(() => {
+        expect(screen.getByText('Event 100')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('Event 001')).not.toBeInTheDocument()
+
+      // …and back, again waiting on the window to actually move.
+      viewport.scrollTop = 0
+      fireEvent.scroll(viewport)
+      await waitFor(() => {
+        expect(screen.getByText('Event 001')).toBeInTheDocument()
+      })
+
+      // The row came back as its label, not as a Select that never blurred.
+      expect(
+        screen.getByRole('button', { name: /Change project for Event 001/ })
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    }, HEAVY_VIRTUALIZATION_TIMEOUT)
+
+    /* Rows are focusable buttons now, so the whole row opens the event — but
+       a click on a mapping cell has to edit the mapping and nothing else. */
+    it('opens the event when the row itself is clicked', async () => {
+      const props = await renderRealTable({
+        getEventsForDate: vi.fn(() => [mockTimedEvent])
+      })
+
+      const row = document.querySelector('tbody tr[role="button"]') as HTMLElement
+      expect(row).toHaveAttribute('aria-label', mockTimedEvent.title)
+      fireEvent.click(row)
+
+      expect(props.setSelectedEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ title: mockTimedEvent.title })
+      )
+      expect(props.setIsModalVisible).toHaveBeenCalledWith(true)
+    })
+
+    it('does not open the event when a project cell is clicked', async () => {
+      const props = await renderRealTable({
+        getEventsForDate: vi.fn(() => [mockTimedEvent]),
+        projects
+      })
+
+      fireEvent.click(
+        screen.getByRole('button', { name: /Change project for Team Meeting/ })
       )
 
-      expect(tableWidth).toBe(totalColumnWidth)
-      expect(tableWidth).toBeGreaterThanOrEqual(1110)
+      expect(await screen.findByRole('combobox')).toBeInTheDocument()
+      expect(props.setIsModalVisible).not.toHaveBeenCalled()
+      expect(props.setSelectedEvent).not.toHaveBeenCalled()
     })
   })
 })

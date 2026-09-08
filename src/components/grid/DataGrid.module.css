@@ -1,0 +1,560 @@
+.grid {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Toolbar styles live in src/components/grid/core/grid-toolbar.module.css. */
+
+/*
+ * Bordered shell around the grid: a fixed header viewport on top of the
+ * scrolling body viewport. Splitting the two keeps the vertical scrollbar in
+ * the rows area only (ag-grid style) — the body syncs its horizontal scroll
+ * into the header. The header vars live here so the header table AND the
+ * scrollbar spacer can both use them.
+ */
+.tableArea {
+  --data-grid-header-row-height: 29px;
+  /*
+   * Subtle tinted header band, AG Grid style. Applied to the header + filter rows.
+   * One elevation step above the zebra alt-row tint (fill-quaternary) so the
+   * header stays distinct from both plain and zebra rows. Theme-safe: fill
+   * tokens resolve to the correct subtle overlay per theme (darker in light
+   * themes, lighter in dark themes).
+   *
+   * The fill token is semi-transparent, so the header/filter rows composite it
+   * over an OPAQUE base — we layer the tint over the container background as a
+   * flat gradient so the result is fully opaque.
+   */
+  --data-grid-header-tint: var(--ant-color-fill-tertiary);
+  --data-grid-header-bg: linear-gradient(
+      var(--data-grid-header-tint),
+      var(--data-grid-header-tint)
+    )
+    var(--ant-color-bg-container);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--ant-border-radius-lg);
+  border: 1px solid var(--ant-color-border);
+  background-color: var(--ant-color-bg-container);
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Header strip: the clipped header viewport plus the scrollbar spacer. */
+.headerArea {
+  display: flex;
+  flex: none;
+}
+
+/* Non-scrolling viewport for the header table; the body's onScroll writes its
+   scrollLeft here so columns track the body's horizontal position. */
+.headerViewport {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Sits above the body's vertical scrollbar (width set inline from a live
+   measurement; 0 when no scrollbar) so header and body columns stay aligned. */
+.headerScrollbarSpacer {
+  flex: none;
+  background: var(--data-grid-header-bg);
+  border-bottom: 1px solid var(--ant-color-border);
+}
+
+/* Fills the area under the header: the scrolling wrapper plus the status
+   overlay's positioning context. The overlay must NOT live inside the
+   scrolling wrapper — absolutely-positioned children of a scroll container
+   ride along with its scroll offsets. */
+.bodyArea {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The body viewport — the grid's one scrolling element. */
+.tableWrapper {
+  overflow-x: auto;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.tableElement {
+  /* Grouped-header band rows above the leaf header row; set inline by the
+   * grid (0 when no column groups). Drives the header row offsets so the
+   * leaf header and floating-filter rows sit beneath the bands. */
+  --data-grid-group-header-rows: 0;
+  /*
+   * Fill the wrapper so the header band and borders paint edge-to-edge (AG Grid
+   * style). Real columns keep their declared sizes via <col> widths; a trailing
+   * filler column (.fillerCol / .fillerTh) absorbs any leftover width instead of
+   * fanning it across the data columns. `min-width` keeps columns from being
+   * squeezed below their sizes when the viewport is narrow (horizontal scroll).
+   */
+  width: 100%;
+  min-width: max-content;
+  border-collapse: separate;
+  border-spacing: 0;
+  background-color: transparent;
+  font-size: var(--ant-font-size);
+  table-layout: fixed;
+}
+
+.th {
+  padding: 5px var(--ant-padding-xs);
+  background: var(--data-grid-header-bg);
+  border-bottom: 1px solid var(--ant-color-border);
+  /* Secondary (muted) text keeps headers from overpowering the data rows. */
+  color: var(--ant-color-text-secondary);
+  text-align: left;
+  font-size: 12px;
+  font-weight: var(--ant-font-weight-strong);
+  white-space: nowrap;
+  position: sticky;
+  top: calc(
+    var(--data-grid-group-header-rows) * var(--data-grid-header-row-height)
+  );
+  z-index: 20;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 0;
+}
+
+/*
+ * Grouped-header band cell. Band rows override .th's sticky `top` inline
+ * (bandIndex * row height) — band depth isn't expressible per-row in CSS.
+ */
+.groupTh {
+  text-align: center;
+}
+
+.thSortable {
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/*
+ * Trailing filler column. Its <col> has no width so it absorbs all leftover
+ * table width, letting the header band, filter band, and row backgrounds paint
+ * edge-to-edge while the real columns keep their declared sizes. The filler
+ * cells are non-interactive and draw no content or right-edge divider.
+ */
+.fillerCol {
+  width: auto;
+}
+
+.fillerTh {
+  padding: 0;
+  cursor: default;
+}
+
+.fillerTh::after {
+  display: none;
+}
+
+/* Fills the th (not shrink-to-fit) so the column-menu trigger can anchor to
+   the far right edge via margin-left: auto; the label and sort/filter icons
+   stay left, hugging the text. No extra right padding for the resizer — its
+   10px hit strip mostly overlays the th's own 8px padding, so the label
+   keeps every pixel it can get in narrow columns. */
+.thContent {
+  display: flex;
+  align-items: center;
+  gap: var(--ant-margin-xxs);
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.thText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+/*
+ * Reorderable header cell — the WHOLE cell is the drag handle (no separate grip
+ * taking up label width). dnd-kit's 8px activation distance means a plain click
+ * still sorts. touch-action:none lets a touch drag reorder instead of
+ * scrolling. The resizer overrides the cursor at the edge.
+ *
+ * No grab cursor at rest: on a sortable header, clicking is the far more common
+ * intent, so the header advertises `pointer` (see .thSortable) and only switches
+ * to `grabbing` once a drag actually starts. A non-sortable reorderable header
+ * has no competing action, so it keeps `grab`.
+ */
+.thDraggable {
+  touch-action: none;
+}
+
+.thDraggable:not(.thSortable) {
+  cursor: grab;
+}
+
+.thDraggable:active {
+  cursor: grabbing;
+}
+
+/* The cell being dragged: lift it and drop the header background's opacity so
+   the drop target underneath reads through. */
+.thDragging {
+  opacity: 0.85;
+  background: var(--data-grid-header-bg);
+}
+
+/* Numeric columns right-align their body cells so magnitudes line up;
+   headers deliberately stay left-aligned (see meta.align). */
+.tdNumeric {
+  text-align: right;
+}
+
+/* Floating-filter cell: input fills the width, filter-popup icon on the right. */
+.floatingCell {
+  display: flex;
+  align-items: center;
+  gap: var(--ant-margin-xxs);
+  min-width: 0;
+}
+
+.floatingCell > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * Set-filter display box — a compact, read-only summary that opens the
+ * SetFilterPanel. Styled like a (non-editable) input; the enclosing
+ * .floatingCell is the click trigger.
+ */
+.setSummary {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  min-width: 0;
+  padding: 0 var(--ant-padding-xs);
+  font-size: var(--ant-font-size-sm);
+  color: var(--ant-color-text);
+  background-color: var(--ant-color-bg-container-disabled);
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-border-radius);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.floatingCell:hover .setSummary {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.filterTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--ant-color-text-quaternary);
+  font-size: 11px;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: var(--ant-border-radius-sm);
+  transition: color 0.2s;
+}
+
+.filterTrigger:hover {
+  color: var(--ant-color-text-secondary);
+}
+
+.filterTriggerActive,
+.filterTriggerActive:hover {
+  color: var(--ant-color-primary);
+}
+
+.resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+  z-index: 1;
+}
+
+/*
+ * Active-resize highlight. The static divider line is drawn by .th::after
+ * (see below) for all columns; while actively resizing, tint the cell divider
+ * with the primary color.
+ */
+.resizerActive::after {
+  content: '';
+  position: absolute;
+  top: var(--ant-padding-xs);
+  bottom: var(--ant-padding-xs);
+  right: 0;
+  width: 1px;
+  background-color: var(--ant-color-primary);
+  opacity: 1;
+  z-index: 2;
+}
+
+.filterTh {
+  padding: 4px 4px;
+  background: var(--data-grid-header-bg);
+  border-bottom: 1px solid var(--ant-color-border);
+  color: var(--ant-color-text);
+  font-weight: normal;
+  overflow: hidden;
+  text-align: left;
+  position: sticky;
+  top: calc(
+    (var(--data-grid-group-header-rows) + 1) *
+      var(--data-grid-header-row-height)
+  );
+  z-index: 19;
+}
+
+/*
+ * Subtle vertical column dividers for the header and filter rows.
+ * Rendered as a ::after line matching the resizer grip, so every column gets a
+ * divider — including columns with no header title or no filter (e.g. an
+ * actions column). Suppressed on the last column.
+ */
+.th::after,
+.filterTh::after {
+  content: '';
+  position: absolute;
+  top: var(--ant-padding-xs);
+  bottom: var(--ant-padding-xs);
+  right: 0;
+  width: 1px;
+  background-color: var(--ant-color-border);
+  opacity: 0.7;
+}
+
+.th:last-child::after,
+.filterTh:last-child::after {
+  display: none;
+}
+
+.td {
+  padding: 2px 7px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  color: var(--ant-color-text);
+  font-size: 12px;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 0;
+}
+
+/* Filler data cell (aria-hidden, empty, keeps the zebra/hover band
+   edge-to-edge). Zero padding so it adds nothing to the body table's
+   intrinsic width: the header table's filler contributes 0, and any
+   difference makes the two tables' max scrollLeft diverge — the header
+   would detach from the body by that amount at full right scroll. */
+.td[aria-hidden='true'] {
+  padding: 0;
+}
+
+/*
+ * Virtual-offset spacer cell (row virtualization). Height is set inline from
+ * the virtualizer's offsets. Zero padding and border so the spacer's height
+ * is exactly the inline value and it contributes no width — any width the
+ * body table gains over the header table desyncs their max horizontal scroll.
+ */
+.virtualSpacer {
+  padding: 0;
+  border: 0;
+}
+
+.tr {
+  cursor: default;
+}
+
+.tr:hover .td {
+  background-color: var(--ant-color-fill-secondary);
+}
+
+.trAlt .td {
+  background-color: var(--ant-color-fill-quaternary);
+}
+
+/*
+ * Loading/empty status overlay: centered on the VISIBLE body viewport (via
+ * .bodyArea), not on the table — a wide table in a narrow window centers a
+ * spanning status <td> at half the scroll width, pushing it off-screen.
+ * pointer-events: none keeps the scrollbars beneath it usable.
+ */
+.statusOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--ant-padding-lg);
+  pointer-events: none;
+}
+
+/* ─── Row activation (onRowActivate) ────────────────────── */
+
+.trActivatable {
+  cursor: pointer;
+}
+
+/*
+ * The activated row's highlight. Has to be findable at a glance while the eye
+ * is on a panel beside it, so it wins over both the zebra band and hover.
+ */
+.trActivated .td,
+.trActivated:hover .td {
+  background-color: var(--ant-color-primary-bg);
+}
+
+.trActivated .td:first-child {
+  box-shadow: inset 2px 0 0 var(--ant-color-primary);
+}
+
+/* Pinned cells paint their own background, so the highlight needs restating
+   here or a pinned column would keep the plain container colour. */
+.trActivated .tdPinned,
+.trActivated:hover .tdPinned {
+  background: linear-gradient(
+      var(--ant-color-primary-bg),
+      var(--ant-color-primary-bg)
+    )
+    var(--ant-color-bg-container);
+}
+
+/* ─── Pinned columns ────────────────────────────────────── */
+
+/*
+ * Pinning is position: sticky + a left/right inset (set inline from
+ * TanStack's pinning offsets) on the pinned column's cells in BOTH tables.
+ * TanStack already reorders pinned columns to the table edges in the shared
+ * colgroup, so the header and body stick identically. Pinned cells must paint
+ * OPAQUE — the zebra/hover/selected tints are semi-transparent overlays, so
+ * they composite over the container background as a flat gradient (same
+ * technique as the header band) or scrolled-under content would bleed
+ * through.
+ */
+
+/* Header cells are already sticky (top) and opaque; pinning adds the
+   horizontal stick via the inline inset and a z-index above unpinned
+   header cells so those slide beneath on horizontal scroll. */
+.thPinned {
+  z-index: 22;
+}
+
+.filterThPinned {
+  z-index: 21;
+}
+
+.tdPinned {
+  position: sticky;
+  z-index: 2;
+  background: var(--ant-color-bg-container);
+}
+
+.trAlt .tdPinned {
+  background: linear-gradient(
+      var(--ant-color-fill-quaternary),
+      var(--ant-color-fill-quaternary)
+    )
+    var(--ant-color-bg-container);
+}
+
+.tr[data-dragging='true'] .tdPinned {
+  background: linear-gradient(
+      var(--ant-color-fill-tertiary),
+      var(--ant-color-fill-tertiary)
+    )
+    var(--ant-color-bg-container);
+}
+
+/* After the alt rules so the hover tint wins on those rows too
+   (specificity ties break by order for the background-image component). */
+.tr:hover .tdPinned {
+  background: linear-gradient(
+      var(--ant-color-fill-secondary),
+      var(--ant-color-fill-secondary)
+    )
+    var(--ant-color-bg-container);
+}
+
+/* Divider edge between the pinned and scrolling sections: an inset shadow
+   line (no layout impact — border widths would desync the two tables'
+   scroll widths) on the last left-pinned / first right-pinned cells. */
+.pinnedLeftEdge {
+  box-shadow: inset -1px 0 0 var(--ant-color-border);
+}
+
+.pinnedRightEdge {
+  box-shadow: inset 1px 0 0 var(--ant-color-border);
+}
+
+/* ─── Drag and drop (row reordering) ────────────────────── */
+
+.tr[data-dragging='true'] {
+  opacity: 0.4;
+  position: relative;
+  z-index: 999;
+}
+
+.tr[data-dragging='true'] .td {
+  background-color: var(--ant-color-fill-tertiary);
+}
+
+/* ─── Footer row (ColumnDef.footer totals) ──────────────── */
+
+/*
+ * Structural twin of .headerArea/.headerViewport: a non-scrolling viewport
+ * whose scrollLeft is mirrored from the body (see DataGrid's handleBodyScroll)
+ * so footer cells track the body's horizontal position, plus the same
+ * above-the-scrollbar spacer (.headerScrollbarSpacer, reused) that keeps
+ * footer and body columns aligned. flex: none, after the body's flex: 1, so
+ * it takes a fixed height at the bottom of the bordered shell instead of
+ * scrolling away with the rows.
+ */
+.footerArea {
+  display: flex;
+  flex: none;
+}
+
+.footerViewport {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/*
+ * Footer cell: the same tinted, opaque header background (AG Grid totals-row
+ * style) plus a divider from the body above it. Bold text distinguishes a
+ * total from an ordinary data row.
+ */
+.tdFooter {
+  background: var(--data-grid-header-bg);
+  border-top: 1px solid var(--ant-color-border);
+  font-weight: var(--ant-font-weight-strong);
+}
+
+/* Pinned footer cell: sticky like .tdPinned, but needs no separate opaque
+   background override — .tdFooter's background is already the opaque tinted
+   gradient (the same reasoning as .th/.thPinned: the base class is already
+   opaque, so the pinned modifier only adds the stick). */
+.tdFooterPinned {
+  position: sticky;
+  z-index: 2;
+}

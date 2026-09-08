@@ -1,12 +1,14 @@
 import React, { useMemo, useState, useEffect } from 'react'
 import {
-  Modal, Typography, Flex, Button, Table, Select, Tag, Empty, Alert, Popconfirm, InputNumber
+  Modal, Typography, Flex, Button, Select, Tag, Empty, Alert, Popconfirm, InputNumber
 } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { Project, Activity, Event, EventType } from '../../types'
 import { TimecardEntry, EntryInput } from '../../api/timecards'
 import { getEventsByIds } from '../../api/events'
 import { projectLabel, NONE } from './TimecardEntryTable'
+import { DataGrid } from '../grid'
+import type { ColumnDef } from '../grid'
 
 const { Text } = Typography
 
@@ -152,42 +154,48 @@ const TimecardDayModal: React.FC<TimecardDayModalProps> = ({
     setAdding(false)
   }
 
-  const columns = [
+  const columns: ColumnDef<DayRow, unknown>[] = [
     {
-      title: 'Event',
-      key: 'event',
-      sorter: (a: DayRow, b: DayRow) => (a.event?.title ?? '').localeCompare(b.event?.title ?? ''),
-      render: (_: unknown, row: DayRow) =>
-        row.event ? (
-          <Text>{row.event.title}</Text>
+      id: 'event',
+      header: 'Event',
+      // A plain `id` column has no accessor, and TanStack's getCanSort()
+      // requires one (column.accessorFn) regardless of a custom sortFn —
+      // without this, clicking the header would silently do nothing.
+      accessorFn: (row) => row.event?.title ?? '',
+      sortFn: (a, b) => (a.original.event?.title ?? '').localeCompare(b.original.event?.title ?? ''),
+      cell: ({ row }) =>
+        row.original.event ? (
+          <Text>{row.original.event.title}</Text>
         ) : (
           <Text type="secondary">
-            {row.entry.event_id == null ? 'Added by hand' : 'Event since deleted'}
+            {row.original.entry.event_id == null ? 'Added by hand' : 'Event since deleted'}
           </Text>
         )
     },
     {
-      title: 'Time',
-      key: 'time',
-      width: 130,
-      sorter: (a: DayRow, b: DayRow) =>
-        (a.event?.start_date ?? '').localeCompare(b.event?.start_date ?? ''),
-      render: (_: unknown, row: DayRow) => (
+      id: 'time',
+      header: 'Time',
+      size: 130,
+      accessorFn: (row) => row.event?.start_date ?? '',
+      sortFn: (a, b) =>
+        (a.original.event?.start_date ?? '').localeCompare(b.original.event?.start_date ?? ''),
+      cell: ({ row }) => (
         <Text type="secondary" style={{ fontSize: 12 }}>
-          {timeOf(row)}
+          {timeOf(row.original)}
         </Text>
       )
     },
     {
-      title: 'Type',
-      key: 'type',
-      width: 130,
-      sorter: (a: DayRow, b: DayRow) =>
-        (typeById.get(a.event?.type_id ?? -1)?.name ?? '').localeCompare(
-          typeById.get(b.event?.type_id ?? -1)?.name ?? ''
+      id: 'type',
+      header: 'Type',
+      size: 130,
+      accessorFn: (row) => typeById.get(row.event?.type_id ?? -1)?.name ?? '',
+      sortFn: (a, b) =>
+        (typeById.get(a.original.event?.type_id ?? -1)?.name ?? '').localeCompare(
+          typeById.get(b.original.event?.type_id ?? -1)?.name ?? ''
         ),
-      render: (_: unknown, row: DayRow) => {
-        const type = typeById.get(row.event?.type_id ?? -1)
+      cell: ({ row }) => {
+        const type = typeById.get(row.original.event?.type_id ?? -1)
         return type ? (
           <Tag color={type.color} style={{ marginInlineEnd: 0 }}>
             {type.name}
@@ -198,80 +206,95 @@ const TimecardDayModal: React.FC<TimecardDayModalProps> = ({
       }
     },
     {
-      title: 'Hours',
-      key: 'hours',
-      width: 90,
-      align: 'right' as const,
-      sorter: (a: DayRow, b: DayRow) => a.entry.hours - b.entry.hours,
-      render: (_: unknown, row: DayRow) => <Text>{row.entry.hours.toFixed(2)}</Text>
+      id: 'hours',
+      header: 'Hours',
+      size: 90,
+      meta: { align: 'right' },
+      accessorFn: (row) => row.entry.hours,
+      // TanStack defaults a numeric column's first click to descending; the
+      // original antd sorter (like every column here) went ascending first.
+      sortDescFirst: false,
+      sortFn: (a, b) => a.original.entry.hours - b.original.entry.hours,
+      cell: ({ row }) => <Text>{row.original.entry.hours.toFixed(2)}</Text>
     },
     {
-      title: 'Project',
-      key: 'project',
-      sorter: (a: DayRow, b: DayRow) => (a.entry.project_id ?? 0) - (b.entry.project_id ?? 0),
-      render: (_: unknown, row: DayRow) => (
-        <Select
-          size="small"
-          style={{ width: '100%', minWidth: 170 }}
-          value={row.entry.project_id ?? NONE}
-          disabled={disabled}
-          showSearch
-          optionFilterProp="label"
-          aria-label={`Project for ${row.event?.title ?? 'this item'}`}
-          onChange={value => remap(row, { project_id: value === NONE ? null : value })}
-          options={[
-            { value: NONE, label: 'Unassigned' },
-            ...projects
-              .filter(p => p.is_active || p.id === row.entry.project_id)
-              .map(p => ({ value: p.id!, label: projectLabel(p) }))
-          ]}
-        />
-      )
-    },
-    {
-      title: 'Activity',
-      key: 'activity',
-      sorter: (a: DayRow, b: DayRow) => (a.entry.activity_id ?? 0) - (b.entry.activity_id ?? 0),
-      render: (_: unknown, row: DayRow) => (
-        <Select
-          size="small"
-          style={{ width: '100%', minWidth: 150 }}
-          value={row.entry.activity_id ?? NONE}
-          disabled={disabled}
-          showSearch
-          optionFilterProp="label"
-          aria-label={`Activity for ${row.event?.title ?? 'this item'}`}
-          onChange={value => remap(row, { activity_id: value === NONE ? null : value })}
-          options={[
-            { value: NONE, label: 'No activity' },
-            ...activities
-              .filter(a => a.is_active || a.id === row.entry.activity_id)
-              .map(a => ({ value: a.id!, label: a.name }))
-          ]}
-        />
-      )
-    },
-    {
-      title: '',
-      key: 'actions',
-      width: 50,
-      render: (_: unknown, row: DayRow) => (
-        <Popconfirm
-          title="Remove this from the timecard?"
-          description="The event itself is untouched."
-          okText="Yes"
-          cancelText="No"
-          disabled={disabled}
-          onConfirm={() => onDelete(row.entry)}
-        >
-          <Button
-            icon={<DeleteOutlined />}
+      id: 'project',
+      header: 'Project',
+      accessorFn: (row) => row.entry.project_id ?? 0,
+      sortDescFirst: false,
+      sortFn: (a, b) => (a.original.entry.project_id ?? 0) - (b.original.entry.project_id ?? 0),
+      cell: ({ row }) => (
+        <div data-row-activate="ignore">
+          <Select
             size="small"
-            danger
+            style={{ width: '100%', minWidth: 170 }}
+            value={row.original.entry.project_id ?? NONE}
             disabled={disabled}
-            aria-label={`Remove ${row.event?.title ?? 'this item'}`}
+            showSearch
+            optionFilterProp="label"
+            aria-label={`Project for ${row.original.event?.title ?? 'this item'}`}
+            onChange={value => remap(row.original, { project_id: value === NONE ? null : value })}
+            options={[
+              { value: NONE, label: 'Unassigned' },
+              ...projects
+                .filter(p => p.is_active || p.id === row.original.entry.project_id)
+                .map(p => ({ value: p.id!, label: projectLabel(p) }))
+            ]}
           />
-        </Popconfirm>
+        </div>
+      )
+    },
+    {
+      id: 'activity',
+      header: 'Activity',
+      accessorFn: (row) => row.entry.activity_id ?? 0,
+      sortDescFirst: false,
+      sortFn: (a, b) => (a.original.entry.activity_id ?? 0) - (b.original.entry.activity_id ?? 0),
+      cell: ({ row }) => (
+        <div data-row-activate="ignore">
+          <Select
+            size="small"
+            style={{ width: '100%', minWidth: 150 }}
+            value={row.original.entry.activity_id ?? NONE}
+            disabled={disabled}
+            showSearch
+            optionFilterProp="label"
+            aria-label={`Activity for ${row.original.event?.title ?? 'this item'}`}
+            onChange={value => remap(row.original, { activity_id: value === NONE ? null : value })}
+            options={[
+              { value: NONE, label: 'No activity' },
+              ...activities
+                .filter(a => a.is_active || a.id === row.original.entry.activity_id)
+                .map(a => ({ value: a.id!, label: a.name }))
+            ]}
+          />
+        </div>
+      )
+    },
+    {
+      id: 'actions',
+      header: '',
+      size: 50,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div data-row-activate="ignore">
+          <Popconfirm
+            title="Remove this from the timecard?"
+            description="The event itself is untouched."
+            okText="Yes"
+            cancelText="No"
+            disabled={disabled}
+            onConfirm={() => onDelete(row.original.entry)}
+          >
+            <Button
+              icon={<DeleteOutlined />}
+              size="small"
+              danger
+              disabled={disabled}
+              aria-label={`Remove ${row.original.event?.title ?? 'this item'}`}
+            />
+          </Popconfirm>
+        </div>
       )
     }
   ]
@@ -305,12 +328,11 @@ const TimecardDayModal: React.FC<TimecardDayModalProps> = ({
         {rows.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Nothing on this day" />
         ) : (
-          <Table
+          <DataGrid<DayRow>
+            data={rows}
             columns={columns}
-            dataSource={rows}
-            rowKey={row => row.entry.id!}
-            pagination={false}
-            size="small"
+            getRowId={row => String(row.entry.id)}
+            variant="simple"
           />
         )}
 

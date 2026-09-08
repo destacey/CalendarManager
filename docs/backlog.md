@@ -190,3 +190,110 @@ Not bugs, but each cost real diagnosis time.
   SQLite with `-DSQLITE_DEFAULT_FOREIGN_KEYS=1`) where `better-sqlite3` left them
   off. This already changed one behaviour: deleting an in-use event type now
   reassigns its events to the default type rather than silently orphaning them.
+
+## Test environment: what jsdom cannot check
+
+The DataGrid work (2026-09-07) ran into a hard ceiling repeatedly: jsdom has
+no layout engine, so a whole class of this app's behaviour is untestable in
+the current suite. Each of these needed a workaround or a deferral:
+
+- **dnd-kit cannot be driven at all.** Collision detection needs real element
+  geometry and jsdom reports everything zero-sized. Row reorder and the Map
+  Events drag have no end-to-end test; both are tested via their callbacks.
+- **`getComputedStyle` is stubbed** in `src/test/setup.ts`, so `toHaveStyle`
+  passes or fails for the wrong reason and theming is effectively untested.
+- **Virtualization needs a faked viewport.** `@tanstack/react-virtual` sizes
+  its window from `offsetHeight`, which jsdom reports as 0, and the
+  virtualizer then returns an empty range — so the grid renders zero rows
+  until a test stubs `offsetHeight` on `[data-grid-body-viewport]`.
+- **Column autosize measures text**, which jsdom cannot do; its tests stub
+  `getBoundingClientRect` to `textContent.length * 10`.
+- **Scroll performance is unmeasurable.** EventTable's virtualization exists
+  to fix a 1-3.5s main-thread block on a real 504-row month; nothing in the
+  suite can detect a regression there.
+
+### Two tiers worth adding, in order
+
+1. **Vitest Browser Mode** (`@vitest/browser` + a Playwright provider; Vitest
+   5 already supports it, neither package installed). Runs tests in real
+   Chromium, which fixes every row above except the last. The grid is the
+   best argument for it in this codebase. Note several stubs in
+   `src/test/setup.ts` exist *because* of jsdom and would become unnecessary
+   or actively misleading in a real browser, so this is a per-file opt-in,
+   not a wholesale environment swap.
+2. **`tauri-driver` + WebdriverIO** against the built app, for what neither
+   jsdom nor a browser can reach: the WebView2 + Rust IPC path. The CSV
+   export's native save dialog is the concrete case — `src/api/files.ts`
+   exists because WebView2 silently ignores a Blob `<a download>`, and no
+   browser test can prove the replacement actually writes a file.
+
+Deliberately not done during the grid port: swapping the test environment
+under a 1200-test suite mid-migration would have destabilised the thing being
+used to prove the migration safe.
+
+## `EventTable.test.tsx` mostly tests a fake table
+
+Found during the DataGrid migration (2026-09-07), pre-existing and deliberately
+left alone — fixing it means rewriting a large test file, which was out of
+scope for a migration branch.
+
+The file carries a module-level `vi.mock('./EventTable')`. Most of its older
+cases therefore assert against a **hand-written fake table with its own eight
+columns**, not the real component — they would pass if `EventTable` were
+gutted. The eleven cases the migration added render the real component and are
+the honest ones.
+
+Compounding it, the file keeps `vi.mock('dayjs')` (whose `toDate()` returns a
+constant and `diff()` always returns 60) because its filename and billable
+assertions depend on that. The deviation is justified, but the consequence is
+that **no test exercises the real Start/End chronological sort or the date-cell
+formatting** — on the most date-heavy table in the app.
+
+Worth doing as its own piece of work: drop the self-mock, let the real
+component render (it now needs only an `offsetHeight` stub on
+`[data-grid-body-viewport]` and the custom `render` from `src/test/utils`), and
+split out the few cases that genuinely need a frozen clock so the rest can use
+real dates.
+
+## The test suite rebuilds jsdom 81 times
+
+`npm run test:run` takes ~110-140s, and vitest reports that creating a jsdom
+environment per file accounts for about **a quarter of that** (81 environments,
+~578s of tracked work). Its own suggestion is `pool: 'vmThreads'` or
+`isolate: false`, either of which would reuse environments and cut the runtime
+substantially.
+
+**Deliberately not done** (2026-09-07): this suite mutates globals per file —
+`HTMLElement.prototype.offsetHeight` (the grid's virtualization stub),
+`matchMedia`, `getComputedStyle`, and the global `dayjs` mock that individual
+files opt out of with `vi.unmock`. Sharing one environment across files could
+break tests in ways that look unrelated to the change. Worth doing, but as its
+own piece of work with the global mutations audited first, not as a
+performance tweak.
+
+The cost of leaving it is real: CPU starvation under that load pushed the
+heaviest grid tests past vitest's 10s `testTimeout` (~1.4s alone, >10s in the
+full suite), which is why `EventTable.test.tsx` carries explicit 30s budgets.
+
+## Two follow-ups from the DataGrid port's final review
+
+Both recorded rather than fixed, so they are decisions and not oversights.
+
+**`TimecardEntryTable` has no test file.** It is the only one of the eleven
+table migrations without direct assertions. Its 259-line rewrite (columns,
+`accessorFn`s, `initialSorting`, `variant="simple"`) is reached only through
+`Timecards.test.tsx`, which mocks `getTimecardEntries` to `[]` — so no row ever
+renders and none of the column work is exercised. The file never had a test, so
+this is a pre-existing gap rather than a regression, but every other migration
+got one and this is the outlier.
+
+**Four ported exports have no consumer.** Against this work's own "no exports
+without a consumer" standard: `setContainsFilter` and `numberRangeFilter`
+(`grid/core/grid-filters.ts`), `dateSortBy` (`grid/core/grid-sorting.ts`), and
+`clearAllGridColumnState` (`grid/core/use-grid-persistence.ts`) — roughly 130
+lines plus 8 tests. Note `grid-filters.ts` is effectively a second, older
+filter system superseded by the descriptor engine in `grid/core/filters/`; its
+only live member is `stringContainsFilter`, surviving as the grid's
+`globalFilterFn`. Deleting the dead four is straightforward; it was left alone
+only because removing 8 passing tests at the tail of a large branch is a
+judgement call worth making deliberately.
